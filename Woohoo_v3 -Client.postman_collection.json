@@ -1,0 +1,1875 @@
+{
+	"info": {
+		"_postman_id": "6ba7a157-f4f3-40c7-bca4-0764fb24ac8f",
+		"name": "Woohoo_v3 -Client",
+		"description": "- In this protocol authentication is done via Authorization header and the header will contain Bearer token.\n- The Api endpoints remain unchanged, based on the header OAuth1/OAuth2 authentications are initited.\n- Along with bearer header partners are expected to mandatorily send `dateAtClient` and `signature` headers, which are used to check API integrity between Woohoo server and Partner.\n- Authentication via Oauth2.0 section describes the requests required to genarate Bearer token.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "11991201"
+	},
+	"item": [
+		{
+			"name": "Generate Authorization Code",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"    let res = JSON.parse(responseBody);",
+							"    pm.environment.set(\"authorizationCode\", res.authorizationCode);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"const moment = require('moment');",
+							"pm.environment.set(\"dateAtClient\", moment().toISOString());",
+							"",
+							"// signature",
+							"const cryptoJS = require(\"crypto-js\");",
+							"",
+							"//url and sorted query param",
+							"let requestUrl = () => {",
+							"    let query = {},",
+							"        // pm.request.url is postman method to get url",
+							"        // sicne postman doesn't substitute values in pre request scripts, doing it manually. ",
+							"        url = request.url.replace('{{host}}', pm.environment.get(\"host\"));",
+							"",
+							"    //pm.request.url.getQueryString() is postman method to relevent method",
+							"    if (pm.request.url.getQueryString()) {",
+							"        let baseUrl = url.split('?'),",
+							"            ordered = {};",
+							"",
+							"        baseUrl = normaliseBaseUrl(baseUrl[0]);",
+							"        console.log('baseuel' + baseUrl);",
+							"        // pm.request.url.query.all() is postman method to get query parameters",
+							"        pm.request.url.query.all().forEach((param) => { query[param.key] = param.value})",
+							"",
+							"        Object.keys(query).sort().forEach(function(key) {",
+							"            ordered[key] = query[key];",
+							"        });",
+							"",
+							"        let queryString = Object.keys(ordered).map(key => key + '=' + ordered[key]).join('&');",
+							"        query = baseUrl + '?' + queryString;",
+							"    }",
+							"    else {",
+							"        query = url;",
+							"    }",
+							"    return encodeURIComponent(query);",
+							"}",
+							"",
+							"let sortObject = (object) =>  {",
+							"    if (object instanceof Array) {",
+							"        var sortedObj = [],",
+							"            keys = Object.keys(object);",
+							"    }",
+							"    else {",
+							"        sortedObj = {},",
+							"            keys = Object.keys(object);",
+							"    }",
+							"",
+							"    keys.sort(function(key1, key2) {",
+							"        if(key1 < key2) return -1;",
+							"        if(key1 > key2) return 1;",
+							"        return 0;",
+							"    });",
+							"",
+							"    for(var index in keys){",
+							"        var key = keys[index];",
+							"        if(typeof object[key] == 'object' ){",
+							"",
+							"            if ((object[key] instanceof Array)) {",
+							"                sortedObj[key] = sortObject(object[key]);",
+							"            }",
+							"            sortedObj[key] = sortObject(object[key]);",
+							"        } else {",
+							"            sortedObj[key] = object[key];",
+							"        }",
+							"    }",
+							"    return sortedObj;",
+							"}",
+							"",
+							"let normaliseBaseUrl = (baseUrl) => {",
+							"    let normalizedPort,",
+							"        normalizedUrl,",
+							"        data = baseUrl.split(':'),",
+							"        scheme = data[0].toLowerCase();",
+							"",
+							"    if (pm.request.url.port == 80 && scheme == 'http') {",
+							"        normalizedPort = data[2].substring(2);",
+							"    }",
+							"    else if (pm.request.url.port == 443 && scheme == 'https') {",
+							"        normalizedPort = data[2].substring(2);",
+							"    }",
+							"",
+							"    if (normalizedPort) {",
+							"        normalizedUrl = scheme + ':' + data[1] + normalizedPort;",
+							"    }",
+							"    else if (data[2]) {",
+							"        normalizedUrl = scheme + ':' + data[1] + ':' + data[2];",
+							"    }",
+							"    else {",
+							"        normalizedUrl = scheme + ':' + data[1];",
+							"    }",
+							"    return normalizedUrl;",
+							"}",
+							"",
+							"let query = null,",
+							"    url = null;",
+							"data = null;",
+							"url = requestUrl(), // This is postman method to get request URL",
+							"    method = request.method,",
+							"    key = pm.variables.get(\"clientSecret\"), // This is postman method the get consumer sceret",
+							"    body = null",
+							"requestData = null;",
+							"",
+							"if (!_.isEmpty(request.data)) {",
+							"    body = JSON.parse(request.data);",
+							"}",
+							"",
+							"let baseString = method + '&' + url;",
+							"if (body) {",
+							"    requestData = encodeURIComponent(JSON.stringify(sortObject(body)));",
+							"    baseString = method + '&' + url + '&' + requestData;",
+							"}",
+							"",
+							"//setting it into environmental variable",
+							"pm.environment.set(\"signature\", cryptoJS.HmacSHA512(baseString, key).toString());"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer"
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"clientId\": \"{{clientId}}\",\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}"
+				},
+				"url": {
+					"raw": "{{host}}/oauth2/verify",
+					"host": [
+						"{{host}}"
+					],
+					"path": [
+						"oauth2",
+						"verify"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Generate Bearer Token",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"    let res = JSON.parse(responseBody);",
+							"    pm.environment.set(\"bearerToken\", res.token);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {}
+			},
+			"request": {
+				"auth": {
+					"type": "oauth2",
+					"oauth2": [
+						{
+							"key": "addTokenTo",
+							"value": "header",
+							"type": "string"
+						},
+						{
+							"key": "client_authentication",
+							"value": "header",
+							"type": "string"
+						},
+						{
+							"key": "useBrowser",
+							"value": false,
+							"type": "boolean"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"authorizationCode\": \"{{authorizationCode}}\",\n    \"clientId\": \"{{clientId}}\",\n    \"clientSecret\": \"{{clientSecret}}\"\n}"
+				},
+				"url": {
+					"raw": "{{host}}/oauth2/token",
+					"host": [
+						"{{host}}"
+					],
+					"path": [
+						"oauth2",
+						"token"
+					]
+				},
+				"description": "- The api can be used to generate the Bearer token , which needs to be passed in all Apis\n- The api expects clientId , clientSecret and Authorization Code in the request body and responds with Bearer token\n- Access token has expiry of one week , which will require regenration once expired"
+			},
+			"response": []
+		},
+		{
+			"name": "Category API",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"// dateAtClient\r",
+							"const moment = require('moment');\r",
+							"pm.environment.set(\"dateAtClient\", moment().toISOString());\r",
+							"\r",
+							"console.log(request);\r",
+							"\r",
+							"// signature\r",
+							"\r",
+							"// This is postman pre request script, change code wherever we used `pm`\r",
+							"const cryptoJS = require(\"crypto-js\");\r",
+							"\r",
+							"//url and sorted query param\r",
+							"let requestUrl = () => {\r",
+							"    let query = {},\r",
+							"        url = request.url.replace('{{host}}', pm.environment.get(\"host\"));\r",
+							"\r",
+							"    //pm.request.url.getQueryString() is postman method to  \r",
+							"    if (pm.request.url.getQueryString()) {\r",
+							"        let baseUrl = url.split('?'),\r",
+							"            ordered = {};\r",
+							"\r",
+							"        baseUrl = normaliseBaseUrl(baseUrl[0]);\r",
+							"        console.log('baseuel' + baseUrl);\r",
+							"        // pm.request.url.query.all() is postman method to get query parameters\r",
+							"        pm.request.url.query.all().forEach((param) => { query[param.key] = param.value})\r",
+							"\r",
+							"        Object.keys(query).sort().forEach(function(key) {\r",
+							"            ordered[key] = query[key];\r",
+							"        });\r",
+							"\r",
+							"        let queryString = Object.keys(ordered).map(key => key + '=' + ordered[key]).join('&');\r",
+							"        query = baseUrl + '?' + queryString;\r",
+							"    }\r",
+							"    else {\r",
+							"        query = url;\r",
+							"    }\r",
+							"    return encodeURIComponent(query);\r",
+							"}\r",
+							"\r",
+							"let sortObject = (object) =>  {\r",
+							"    if (object instanceof Array) {\r",
+							"        var sortedObj = [],\r",
+							"            keys = Object.keys(object);\r",
+							"    }\r",
+							"    else {\r",
+							"        sortedObj = {},\r",
+							"            keys = Object.keys(object);\r",
+							"    }\r",
+							"\r",
+							"    keys.sort(function(key1, key2) {\r",
+							"        if(key1 < key2) return -1;\r",
+							"        if(key1 > key2) return 1;\r",
+							"        return 0;\r",
+							"    });\r",
+							"\r",
+							"    for(var index in keys){\r",
+							"        var key = keys[index];\r",
+							"        if(typeof object[key] == 'object' ){\r",
+							"\r",
+							"            if ((object[key] instanceof Array)) {\r",
+							"                sortedObj[key] = sortObject(object[key]);\r",
+							"            }\r",
+							"            sortedObj[key] = sortObject(object[key]);\r",
+							"        } else {\r",
+							"            sortedObj[key] = object[key];\r",
+							"        }\r",
+							"    }\r",
+							"    return sortedObj;\r",
+							"}\r",
+							"\r",
+							"let normaliseBaseUrl = (baseUrl) => {\r",
+							"    let normalizedPort,\r",
+							"        normalizedUrl,\r",
+							"        data = baseUrl.split(':'),\r",
+							"        scheme = data[0].toLowerCase();\r",
+							"\r",
+							"    if (pm.request.url.port == 80 && scheme == 'http') {\r",
+							"        normalizedPort = data[2].substring(2);\r",
+							"    }\r",
+							"    else if (pm.request.url.port == 443 && scheme == 'https') {\r",
+							"        normalizedPort = data[2].substring(2);\r",
+							"    }\r",
+							"\r",
+							"    if (normalizedPort) {\r",
+							"        normalizedUrl = scheme + ':' + data[1] + normalizedPort;\r",
+							"    }\r",
+							"    else if (data[2]) {\r",
+							"        normalizedUrl = scheme + ':' + data[1] + ':' + data[2];\r",
+							"    }\r",
+							"    else {\r",
+							"        normalizedUrl = scheme + ':' + data[1];\r",
+							"    }\r",
+							"    return normalizedUrl;\r",
+							"}\r",
+							"\r",
+							"let query = null,\r",
+							"    url = null;\r",
+							"data = null;\r",
+							"url = requestUrl(), // This is postman method to get request URL\r",
+							"    method = request.method,\r",
+							"    key = pm.variables.get(\"clientSecret\"), // This is postman method the get consumer sceret\r",
+							"    body = null\r",
+							"requestData = null;\r",
+							"\r",
+							"if (!_.isEmpty(request.data)) {\r",
+							"    body = JSON.parse(request.data);\r",
+							"}\r",
+							"\r",
+							"let baseString = method + '&' + url;\r",
+							"if (body) {\r",
+							"    requestData = encodeURIComponent(JSON.stringify(sortObject(body)));\r",
+							"    baseString = method + '&' + url + '&' + requestData;\r",
+							"}\r",
+							"\r",
+							"//setting it into environmental variable\r",
+							"pm.environment.set(\"signature\", cryptoJS.HmacSHA512(baseString, key).toString());"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{bearerToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [
+					{
+						"key": "dateAtClient",
+						"value": "{{dateAtClient}}",
+						"type": "text"
+					},
+					{
+						"key": "signature",
+						"value": "{{signature}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{host}}/rest/v3/catalog/categories",
+					"host": [
+						"{{host}}"
+					],
+					"path": [
+						"rest",
+						"v3",
+						"catalog",
+						"categories"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Product List API",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"// dateAtClient\r",
+							"const moment = require('moment');\r",
+							"pm.environment.set(\"dateAtClient\", moment().toISOString());\r",
+							"\r",
+							"console.log(request);\r",
+							"\r",
+							"// signature\r",
+							"\r",
+							"// This is postman pre request script, change code wherever we used `pm`\r",
+							"const cryptoJS = require(\"crypto-js\");\r",
+							"\r",
+							"//url and sorted query param\r",
+							"let requestUrl = () => {\r",
+							"    let query = {},\r",
+							"        url = request.url.replace('{{host}}', pm.environment.get(\"host\"));\r",
+							"\r",
+							"    //pm.request.url.getQueryString() is postman method to  \r",
+							"    if (pm.request.url.getQueryString()) {\r",
+							"        let baseUrl = url.split('?'),\r",
+							"            ordered = {};\r",
+							"\r",
+							"        baseUrl = normaliseBaseUrl(baseUrl[0]);\r",
+							"        console.log('baseuel' + baseUrl);\r",
+							"        // pm.request.url.query.all() is postman method to get query parameters\r",
+							"        pm.request.url.query.all().forEach((param) => { query[param.key] = param.value})\r",
+							"\r",
+							"        Object.keys(query).sort().forEach(function(key) {\r",
+							"            ordered[key] = query[key];\r",
+							"        });\r",
+							"\r",
+							"        let queryString = Object.keys(ordered).map(key => key + '=' + ordered[key]).join('&');\r",
+							"        query = baseUrl + '?' + queryString;\r",
+							"    }\r",
+							"    else {\r",
+							"        query = url;\r",
+							"    }\r",
+							"    return encodeURIComponent(query);\r",
+							"}\r",
+							"\r",
+							"let sortObject = (object) =>  {\r",
+							"    if (object instanceof Array) {\r",
+							"        var sortedObj = [],\r",
+							"            keys = Object.keys(object);\r",
+							"    }\r",
+							"    else {\r",
+							"        sortedObj = {},\r",
+							"            keys = Object.keys(object);\r",
+							"    }\r",
+							"\r",
+							"    keys.sort(function(key1, key2) {\r",
+							"        if(key1 < key2) return -1;\r",
+							"        if(key1 > key2) return 1;\r",
+							"        return 0;\r",
+							"    });\r",
+							"\r",
+							"    for(var index in keys){\r",
+							"        var key = keys[index];\r",
+							"        if(typeof object[key] == 'object' ){\r",
+							"\r",
+							"            if ((object[key] instanceof Array)) {\r",
+							"                sortedObj[key] = sortObject(object[key]);\r",
+							"            }\r",
+							"            sortedObj[key] = sortObject(object[key]);\r",
+							"        } else {\r",
+							"            sortedObj[key] = object[key];\r",
+							"        }\r",
+							"    }\r",
+							"    return sortedObj;\r",
+							"}\r",
+							"\r",
+							"let normaliseBaseUrl = (baseUrl) => {\r",
+							"    let normalizedPort,\r",
+							"        normalizedUrl,\r",
+							"        data = baseUrl.split(':'),\r",
+							"        scheme = data[0].toLowerCase();\r",
+							"\r",
+							"    if (pm.request.url.port == 80 && scheme == 'http') {\r",
+							"        normalizedPort = data[2].substring(2);\r",
+							"    }\r",
+							"    else if (pm.request.url.port == 443 && scheme == 'https') {\r",
+							"        normalizedPort = data[2].substring(2);\r",
+							"    }\r",
+							"\r",
+							"    if (normalizedPort) {\r",
+							"        normalizedUrl = scheme + ':' + data[1] + normalizedPort;\r",
+							"    }\r",
+							"    else if (data[2]) {\r",
+							"        normalizedUrl = scheme + ':' + data[1] + ':' + data[2];\r",
+							"    }\r",
+							"    else {\r",
+							"        normalizedUrl = scheme + ':' + data[1];\r",
+							"    }\r",
+							"    return normalizedUrl;\r",
+							"}\r",
+							"\r",
+							"let query = null,\r",
+							"    url = null;\r",
+							"data = null;\r",
+							"url = requestUrl(), // This is postman method to get request URL\r",
+							"    method = request.method,\r",
+							"    key = pm.variables.get(\"clientSecret\"), // This is postman method the get consumer sceret\r",
+							"    body = null\r",
+							"requestData = null;\r",
+							"\r",
+							"if (!_.isEmpty(request.data)) {\r",
+							"    body = JSON.parse(request.data);\r",
+							"}\r",
+							"\r",
+							"let baseString = method + '&' + url;\r",
+							"if (body) {\r",
+							"    requestData = encodeURIComponent(JSON.stringify(sortObject(body)));\r",
+							"    baseString = method + '&' + url + '&' + requestData;\r",
+							"}\r",
+							"\r",
+							"//setting it into environmental variable\r",
+							"pm.environment.set(\"signature\", cryptoJS.HmacSHA512(baseString, key).toString());"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{bearerToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [
+					{
+						"key": "dateAtClient",
+						"value": "{{dateAtClient}}",
+						"type": "text"
+					},
+					{
+						"key": "signature",
+						"value": "{{signature}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{host}}/rest/v3/catalog/categories/54/products",
+					"host": [
+						"{{host}}"
+					],
+					"path": [
+						"rest",
+						"v3",
+						"catalog",
+						"categories",
+						"54",
+						"products"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Product API",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"// dateAtClient\r",
+							"const moment = require('moment');\r",
+							"pm.environment.set(\"dateAtClient\", moment().toISOString());\r",
+							"\r",
+							"console.log(request);\r",
+							"\r",
+							"// signature\r",
+							"\r",
+							"// This is postman pre request script, change code wherever we used `pm`\r",
+							"const cryptoJS = require(\"crypto-js\");\r",
+							"\r",
+							"//url and sorted query param\r",
+							"let requestUrl = () => {\r",
+							"    let query = {},\r",
+							"        url = request.url.replace('{{host}}', pm.environment.get(\"host\"));\r",
+							"\r",
+							"    //pm.request.url.getQueryString() is postman method to  \r",
+							"    if (pm.request.url.getQueryString()) {\r",
+							"        let baseUrl = url.split('?'),\r",
+							"            ordered = {};\r",
+							"\r",
+							"        baseUrl = normaliseBaseUrl(baseUrl[0]);\r",
+							"        console.log('baseuel' + baseUrl);\r",
+							"        // pm.request.url.query.all() is postman method to get query parameters\r",
+							"        pm.request.url.query.all().forEach((param) => { query[param.key] = param.value})\r",
+							"\r",
+							"        Object.keys(query).sort().forEach(function(key) {\r",
+							"            ordered[key] = query[key];\r",
+							"        });\r",
+							"\r",
+							"        let queryString = Object.keys(ordered).map(key => key + '=' + ordered[key]).join('&');\r",
+							"        query = baseUrl + '?' + queryString;\r",
+							"    }\r",
+							"    else {\r",
+							"        query = url;\r",
+							"    }\r",
+							"    return encodeURIComponent(query);\r",
+							"}\r",
+							"\r",
+							"let sortObject = (object) =>  {\r",
+							"    if (object instanceof Array) {\r",
+							"        var sortedObj = [],\r",
+							"            keys = Object.keys(object);\r",
+							"    }\r",
+							"    else {\r",
+							"        sortedObj = {},\r",
+							"            keys = Object.keys(object);\r",
+							"    }\r",
+							"\r",
+							"    keys.sort(function(key1, key2) {\r",
+							"        if(key1 < key2) return -1;\r",
+							"        if(key1 > key2) return 1;\r",
+							"        return 0;\r",
+							"    });\r",
+							"\r",
+							"    for(var index in keys){\r",
+							"        var key = keys[index];\r",
+							"        if(typeof object[key] == 'object' ){\r",
+							"\r",
+							"            if ((object[key] instanceof Array)) {\r",
+							"                sortedObj[key] = sortObject(object[key]);\r",
+							"            }\r",
+							"            sortedObj[key] = sortObject(object[key]);\r",
+							"        } else {\r",
+							"            sortedObj[key] = object[key];\r",
+							"        }\r",
+							"    }\r",
+							"    return sortedObj;\r",
+							"}\r",
+							"\r",
+							"let normaliseBaseUrl = (baseUrl) => {\r",
+							"    let normalizedPort,\r",
+							"        normalizedUrl,\r",
+							"        data = baseUrl.split(':'),\r",
+							"        scheme = data[0].toLowerCase();\r",
+							"\r",
+							"    if (pm.request.url.port == 80 && scheme == 'http') {\r",
+							"        normalizedPort = data[2].substring(2);\r",
+							"    }\r",
+							"    else if (pm.request.url.port == 443 && scheme == 'https') {\r",
+							"        normalizedPort = data[2].substring(2);\r",
+							"    }\r",
+							"\r",
+							"    if (normalizedPort) {\r",
+							"        normalizedUrl = scheme + ':' + data[1] + normalizedPort;\r",
+							"    }\r",
+							"    else if (data[2]) {\r",
+							"        normalizedUrl = scheme + ':' + data[1] + ':' + data[2];\r",
+							"    }\r",
+							"    else {\r",
+							"        normalizedUrl = scheme + ':' + data[1];\r",
+							"    }\r",
+							"    return normalizedUrl;\r",
+							"}\r",
+							"\r",
+							"let query = null,\r",
+							"    url = null;\r",
+							"data = null;\r",
+							"url = requestUrl(), // This is postman method to get request URL\r",
+							"    method = request.method,\r",
+							"    key = pm.variables.get(\"clientSecret\"), // This is postman method the get consumer sceret\r",
+							"    body = null\r",
+							"requestData = null;\r",
+							"\r",
+							"if (!_.isEmpty(request.data)) {\r",
+							"    body = JSON.parse(request.data);\r",
+							"}\r",
+							"\r",
+							"let baseString = method + '&' + url;\r",
+							"if (body) {\r",
+							"    requestData = encodeURIComponent(JSON.stringify(sortObject(body)));\r",
+							"    baseString = method + '&' + url + '&' + requestData;\r",
+							"}\r",
+							"\r",
+							"//setting it into environmental variable\r",
+							"pm.environment.set(\"signature\", cryptoJS.HmacSHA512(baseString, key).toString());"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{bearerToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [
+					{
+						"key": "dateAtClient",
+						"value": "{{dateAtClient}}",
+						"type": "text"
+					},
+					{
+						"key": "signature",
+						"value": "{{signature}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{host}}/rest/v3/catalog/products/CNPIN",
+					"host": [
+						"{{host}}"
+					],
+					"path": [
+						"rest",
+						"v3",
+						"catalog",
+						"products",
+						"CNPIN"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Order API",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"const moment = require('moment');\r",
+							"pm.variables.get(\"variable_key\");\r",
+							"pm.environment.get(\"variable_key\");\r",
+							"pm.environment.set(\"dateAtClient\", moment().toISOString());\r",
+							"\r",
+							"// signature\r",
+							"const cryptoJS = require    (\"crypto-js\");\r",
+							"\r",
+							"//url and sorted query param\r",
+							"let requestUrl = () => {\r",
+							"    let query = {},\r",
+							"        // pm.request.url is postman method to get url\r",
+							"        // sicne postman doesn't substitute values in pre request scripts, doing it manually. \r",
+							"        url = request.url.replace('{{host}}', pm.environment.get(\"host\"));\r",
+							"\r",
+							"    //pm.request.url.getQueryString() is postman method to relevent method\r",
+							"    if (pm.request.url.getQueryString()) {\r",
+							"        let baseUrl = url.split('?'),\r",
+							"            ordered = {};\r",
+							"\r",
+							"        baseUrl = normaliseBaseUrl(baseUrl[0]);\r",
+							"        console.log('baseuel' + baseUrl);\r",
+							"        // pm.request.url.query.all() is postman method to get query parameters\r",
+							"        pm.request.url.query.all().forEach((param) => { query[param.key] = param.value})\r",
+							"\r",
+							"        Object.keys(query).sort().forEach(function(key) {\r",
+							"            ordered[key] = query[key];\r",
+							"        });\r",
+							"\r",
+							"        let queryString = Object.keys(ordered).map(key => key + '=' + ordered[key]).join('&');\r",
+							"        query = baseUrl + '?' + queryString;\r",
+							"    }\r",
+							"    else {\r",
+							"        query = url;\r",
+							"    }\r",
+							"    return encodeURIComponent(query);\r",
+							"}\r",
+							"\r",
+							"let sortObject = (object) =>  {\r",
+							"    if (object instanceof Array) {\r",
+							"        var sortedObj = [],\r",
+							"            keys = Object.keys(object);\r",
+							"    }\r",
+							"    else {\r",
+							"        sortedObj = {},\r",
+							"            keys = Object.keys(object);\r",
+							"    }\r",
+							"\r",
+							"    keys.sort(function(key1, key2) {\r",
+							"        if(key1 < key2) return -1;\r",
+							"        if(key1 > key2) return 1;\r",
+							"        return 0;\r",
+							"    });\r",
+							"\r",
+							"    for(var index in keys){\r",
+							"        var key = keys[index];\r",
+							"        if(typeof object[key] == 'object' ){\r",
+							"\r",
+							"            if ((object[key] instanceof Array)) {\r",
+							"                sortedObj[key] = sortObject(object[key]);\r",
+							"            }\r",
+							"            sortedObj[key] = sortObject(object[key]);\r",
+							"        } else {\r",
+							"            sortedObj[key] = object[key];\r",
+							"        }\r",
+							"    }\r",
+							"    return sortedObj;\r",
+							"}\r",
+							"\r",
+							"let normaliseBaseUrl = (baseUrl) => {\r",
+							"    let normalizedPort,\r",
+							"        normalizedUrl,\r",
+							"        data = baseUrl.split(':'),\r",
+							"        scheme = data[0].toLowerCase();\r",
+							"\r",
+							"    if (pm.request.url.port == 80 && scheme == 'http') {\r",
+							"        normalizedPort = data[2].substring(2);\r",
+							"    }\r",
+							"    else if (pm.request.url.port == 443 && scheme == 'https') {\r",
+							"        normalizedPort = data[2].substring(2);\r",
+							"    }\r",
+							"\r",
+							"    if (normalizedPort) {\r",
+							"        normalizedUrl = scheme + ':' + data[1] + normalizedPort;\r",
+							"    }\r",
+							"    else if (data[2]) {\r",
+							"        normalizedUrl = scheme + ':' + data[1] + ':' + data[2];\r",
+							"    }\r",
+							"    else {\r",
+							"        normalizedUrl = scheme + ':' + data[1];\r",
+							"    }\r",
+							"    return normalizedUrl;\r",
+							"}\r",
+							"\r",
+							"let query = null,\r",
+							"    url = null;\r",
+							"data = null;\r",
+							"url = requestUrl(), // This is postman method to get request URL\r",
+							"    method = request.method,\r",
+							"    key = pm.variables.get(\"clientSecret\"), // This is postman method the get consumer sceret\r",
+							"    body = null\r",
+							"requestData = null;\r",
+							"\r",
+							"if (!_.isEmpty(request.data)) {\r",
+							"    body = JSON.parse(request.data);\r",
+							"}\r",
+							"\r",
+							"let baseString = method + '&' + url;\r",
+							"if (body) {\r",
+							"    requestData = encodeURIComponent(JSON.stringify(sortObject(body)));\r",
+							"    baseString = method + '&' + url + '&' + requestData;\r",
+							"}\r",
+							"\r",
+							"//setting it into environmental variable\r",
+							"pm.environment.set(\"signature\", cryptoJS.HmacSHA512(baseString, key).toString());"
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"pm.test(\"Status code is 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {}
+			},
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{bearerToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "dateAtClient",
+						"value": "{{dateAtClient}}"
+					},
+					{
+						"key": "signature",
+						"value": "{{signature}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"address\": {\r\n        \"firstname\": \"POINTHAI\",\r\n        \"lastname\": \"PVT LTD\",\r\n        \"email\": \"POINTHAI@PINELABS.COM\",\r\n        \"telephone\": \"+918884520003\",\r\n        \"line1\": \"Koramangala\",\r\n        \"line2\": \",\",\r\n        \"city\": \"bangalore\",\r\n        \"region\": \"Karnataka\",\r\n        \"country\": \"IN\",\r\n        \"postcode\": \"560095\",\r\n        \"billToThis\": true\r\n    },\r\n    \r\n    \"payments\": [\r\n        {\r\n            \"code\": \"svc\",\r\n            \"amount\": 20\r\n        }\r\n    ],\r\n    \"refno\": \"PNTH123456\",\r\n    \"syncOnly\": false,\r\n    \"deliveryMode\": \"API\",\r\n    \"products\": [\r\n        {\r\n            \"sku\": \"CNPIN\",\r\n            \"price\": 10,\r\n            \"qty\": 2,\r\n            \"currency\": 356\r\n        }\r\n    ]\r\n}"
+				},
+				"url": {
+					"raw": "{{host}}/rest/v3/orders",
+					"host": [
+						"{{host}}"
+					],
+					"path": [
+						"rest",
+						"v3",
+						"orders"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Status API",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"// dateAtClient\r",
+							"const moment = require('moment');\r",
+							"pm.environment.set(\"dateAtClient\", moment().toISOString());\r",
+							"\r",
+							"console.log(request);\r",
+							"\r",
+							"// signature\r",
+							"\r",
+							"// This is postman pre request script, change code wherever we used `pm`\r",
+							"const cryptoJS = require(\"crypto-js\");\r",
+							"\r",
+							"//url and sorted query param\r",
+							"let requestUrl = () => {\r",
+							"    let query = {},\r",
+							"        url = request.url.replace('{{host}}', pm.environment.get(\"host\"));\r",
+							"\r",
+							"    //pm.request.url.getQueryString() is postman method to  \r",
+							"    if (pm.request.url.getQueryString()) {\r",
+							"        let baseUrl = url.split('?'),\r",
+							"            ordered = {};\r",
+							"\r",
+							"        baseUrl = normaliseBaseUrl(baseUrl[0]);\r",
+							"        console.log('baseuel' + baseUrl);\r",
+							"        // pm.request.url.query.all() is postman method to get query parameters\r",
+							"        pm.request.url.query.all().forEach((param) => { query[param.key] = param.value})\r",
+							"\r",
+							"        Object.keys(query).sort().forEach(function(key) {\r",
+							"            ordered[key] = query[key];\r",
+							"pm.collectionVariables.set(\"variable_key\", \"variable_value\");\r",
+							"pm.globals.set(\"variable_key\", \"variable_value\");\r",
+							"        });\r",
+							"\r",
+							"        let queryString = Object.keys(ordered).map(key => key + '=' + ordered[key]).join('&');\r",
+							"        query = baseUrl + '?' + queryString;\r",
+							"    }\r",
+							"    else {\r",
+							"        query = url;\r",
+							"    }\r",
+							"    return encodeURIComponent(query);\r",
+							"}\r",
+							"\r",
+							"let sortObject = (object) =>  {\r",
+							"    if (object instanceof Array) {\r",
+							"        var sortedObj = [],\r",
+							"            keys = Object.keys(object);\r",
+							"    }\r",
+							"    else {\r",
+							"        sortedObj = {},\r",
+							"            keys = Object.keys(object);\r",
+							"    }\r",
+							"\r",
+							"    keys.sort(function(key1, key2) {\r",
+							"        if(key1 < key2) return -1;\r",
+							"        if(key1 > key2) return 1;\r",
+							"        return 0;\r",
+							"    });\r",
+							"\r",
+							"    for(var index in keys){\r",
+							"        var key = keys[index];\r",
+							"        if(typeof object[key] == 'object' ){\r",
+							"\r",
+							"            if ((object[key] instanceof Array)) {\r",
+							"                sortedObj[key] = sortObject(object[key]);\r",
+							"            }\r",
+							"            sortedObj[key] = sortObject(object[key]);\r",
+							"        } else {\r",
+							"            sortedObj[key] = object[key];\r",
+							"        }\r",
+							"    }\r",
+							"    return sortedObj;\r",
+							"}\r",
+							"\r",
+							"let normaliseBaseUrl = (baseUrl) => {\r",
+							"    let normalizedPort,\r",
+							"        normalizedUrl,\r",
+							"        data = baseUrl.split(':'),\r",
+							"        scheme = data[0].toLowerCase();\r",
+							"\r",
+							"    if (pm.request.url.port == 80 && scheme == 'http') {\r",
+							"        normalizedPort = data[2].substring(2);\r",
+							"    }\r",
+							"    else if (pm.request.url.port == 443 && scheme == 'https') {\r",
+							"        normalizedPort = data[2].substring(2);\r",
+							"    }\r",
+							"\r",
+							"    if (normalizedPort) {\r",
+							"        normalizedUrl = scheme + ':' + data[1] + normalizedPort;\r",
+							"    }\r",
+							"    else if (data[2]) {\r",
+							"        normalizedUrl = scheme + ':' + data[1] + ':' + data[2];\r",
+							"    }\r",
+							"    else {\r",
+							"        normalizedUrl = scheme + ':' + data[1];\r",
+							"    }\r",
+							"    return normalizedUrl;\r",
+							"}\r",
+							"\r",
+							"let query = null,\r",
+							"    url = null;\r",
+							"data = null;\r",
+							"url = requestUrl(), // This is postman method to get request URL\r",
+							"    method = request.method,\r",
+							"    key = pm.variables.get(\"clientSecret\"), // This is postman method the get consumer sceret\r",
+							"    body = null\r",
+							"requestData = null;\r",
+							"\r",
+							"if (!_.isEmpty(request.data)) {\r",
+							"    body = JSON.parse(request.data);\r",
+							"}\r",
+							"\r",
+							"let baseString = method + '&' + url;\r",
+							"if (body) {\r",
+							"    requestData = encodeURIComponent(JSON.stringify(sortObject(body)));\r",
+							"    baseString = method + '&' + url + '&' + requestData;\r",
+							"}\r",
+							"\r",
+							"//setting it into environmental variable\r",
+							"pm.environment.set(\"signature\", cryptoJS.HmacSHA512(baseString, key).toString());"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{bearerToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [
+					{
+						"key": "dateAtClient",
+						"value": "{{dateAtClient}}",
+						"type": "text"
+					},
+					{
+						"key": "signature",
+						"value": "{{signature}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{host}}/rest/v3/order/IT-001anv22220001/status",
+					"host": [
+						"{{host}}"
+					],
+					"path": [
+						"rest",
+						"v3",
+						"order",
+						"IT-001anv22220001",
+						"status"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Activated cards API",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"// dateAtClient\r",
+							"const moment = require('moment');\r",
+							"pm.environment.set(\"dateAtClient\", moment().toISOString());\r",
+							"\r",
+							"console.log(request);\r",
+							"\r",
+							"// signature\r",
+							"\r",
+							"// This is postman pre request script, change code wherever we used `pm`\r",
+							"const cryptoJS = require(\"crypto-js\");\r",
+							"\r",
+							"//url and sorted query param\r",
+							"let requestUrl = () => {\r",
+							"    let query = {},\r",
+							"        url = request.url.replace('{{host}}', pm.environment.get(\"host\"));\r",
+							"\r",
+							"    //pm.request.url.getQueryString() is postman method to  \r",
+							"    if (pm.request.url.getQueryString()) {\r",
+							"        let baseUrl = url.split('?'),\r",
+							"            ordered = {};\r",
+							"\r",
+							"        baseUrl = normaliseBaseUrl(baseUrl[0]);\r",
+							"        console.log('baseuel' + baseUrl);\r",
+							"        // pm.request.url.query.all() is postman method to get query parameters\r",
+							"        pm.request.url.query.all().forEach((param) => { query[param.key] = param.value})\r",
+							"\r",
+							"        Object.keys(query).sort().forEach(function(key) {\r",
+							"            ordered[key] = query[key];\r",
+							"pm.collectionVariables.set(\"variable_key\", \"variable_value\");\r",
+							"pm.globals.set(\"variable_key\", \"variable_value\");\r",
+							"        });\r",
+							"\r",
+							"        let queryString = Object.keys(ordered).map(key => key + '=' + ordered[key]).join('&');\r",
+							"        query = baseUrl + '?' + queryString;\r",
+							"    }\r",
+							"    else {\r",
+							"        query = url;\r",
+							"    }\r",
+							"    return encodeURIComponent(query);\r",
+							"}\r",
+							"\r",
+							"let sortObject = (object) =>  {\r",
+							"    if (object instanceof Array) {\r",
+							"        var sortedObj = [],\r",
+							"            keys = Object.keys(object);\r",
+							"    }\r",
+							"    else {\r",
+							"        sortedObj = {},\r",
+							"            keys = Object.keys(object);\r",
+							"    }\r",
+							"\r",
+							"    keys.sort(function(key1, key2) {\r",
+							"        if(key1 < key2) return -1;\r",
+							"        if(key1 > key2) return 1;\r",
+							"        return 0;\r",
+							"    });\r",
+							"\r",
+							"    for(var index in keys){\r",
+							"        var key = keys[index];\r",
+							"        if(typeof object[key] == 'object' ){\r",
+							"\r",
+							"            if ((object[key] instanceof Array)) {\r",
+							"                sortedObj[key] = sortObject(object[key]);\r",
+							"            }\r",
+							"            sortedObj[key] = sortObject(object[key]);\r",
+							"        } else {\r",
+							"            sortedObj[key] = object[key];\r",
+							"        }\r",
+							"    }\r",
+							"    return sortedObj;\r",
+							"}\r",
+							"\r",
+							"let normaliseBaseUrl = (baseUrl) => {\r",
+							"    let normalizedPort,\r",
+							"        normalizedUrl,\r",
+							"        data = baseUrl.split(':'),\r",
+							"        scheme = data[0].toLowerCase();\r",
+							"\r",
+							"    if (pm.request.url.port == 80 && scheme == 'http') {\r",
+							"        normalizedPort = data[2].substring(2);\r",
+							"    }\r",
+							"    else if (pm.request.url.port == 443 && scheme == 'https') {\r",
+							"        normalizedPort = data[2].substring(2);\r",
+							"    }\r",
+							"\r",
+							"    if (normalizedPort) {\r",
+							"        normalizedUrl = scheme + ':' + data[1] + normalizedPort;\r",
+							"    }\r",
+							"    else if (data[2]) {\r",
+							"        normalizedUrl = scheme + ':' + data[1] + ':' + data[2];\r",
+							"    }\r",
+							"    else {\r",
+							"        normalizedUrl = scheme + ':' + data[1];\r",
+							"    }\r",
+							"    return normalizedUrl;\r",
+							"}\r",
+							"\r",
+							"let query = null,\r",
+							"    url = null;\r",
+							"data = null;\r",
+							"url = requestUrl(), // This is postman method to get request URL\r",
+							"    method = request.method,\r",
+							"    key = pm.variables.get(\"clientSecret\"), // This is postman method the get consumer sceret\r",
+							"    body = null\r",
+							"requestData = null;\r",
+							"\r",
+							"if (!_.isEmpty(request.data)) {\r",
+							"    body = JSON.parse(request.data);\r",
+							"}\r",
+							"\r",
+							"let baseString = method + '&' + url;\r",
+							"if (body) {\r",
+							"    requestData = encodeURIComponent(JSON.stringify(sortObject(body)));\r",
+							"    baseString = method + '&' + url + '&' + requestData;\r",
+							"}\r",
+							"\r",
+							"//setting it into environmental variable\r",
+							"pm.environment.set(\"signature\", cryptoJS.HmacSHA512(baseString, key).toString());"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{bearerToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [
+					{
+						"key": "Content-Type",
+						"name": "Content-Type",
+						"type": "text",
+						"value": "application/json"
+					},
+					{
+						"key": "dateAtClient",
+						"value": "{{dateAtClient}}",
+						"type": "text"
+					},
+					{
+						"key": "signature",
+						"value": "{{signature}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{host}}/rest/v3/order/3182427590/cards/?offset=0&limit=0",
+					"host": [
+						"{{host}}"
+					],
+					"path": [
+						"rest",
+						"v3",
+						"order",
+						"3182427590",
+						"cards",
+						""
+					],
+					"query": [
+						{
+							"key": "offset",
+							"value": "0"
+						},
+						{
+							"key": "limit",
+							"value": "0"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Order Ddetails API",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"const moment = require('moment');\r",
+							"pm.variables.get(\"variable_key\");\r",
+							"pm.environment.get(\"variable_key\");\r",
+							"pm.environment.set(\"dateAtClient\", moment().toISOString());\r",
+							"\r",
+							"// signature\r",
+							"const cryptoJS = require    (\"crypto-js\");\r",
+							"\r",
+							"//url and sorted query param\r",
+							"let requestUrl = () => {\r",
+							"    let query = {},\r",
+							"        // pm.request.url is postman method to get url\r",
+							"        // sicne postman doesn't substitute values in pre request scripts, doing it manually. \r",
+							"        url = request.url.replace('{{host}}', pm.environment.get(\"host\"));\r",
+							"\r",
+							"    //pm.request.url.getQueryString() is postman method to relevent method\r",
+							"    if (pm.request.url.getQueryString()) {\r",
+							"        let baseUrl = url.split('?'),\r",
+							"            ordered = {};\r",
+							"\r",
+							"        baseUrl = normaliseBaseUrl(baseUrl[0]);\r",
+							"        console.log('baseuel' + baseUrl);\r",
+							"        // pm.request.url.query.all() is postman method to get query parameters\r",
+							"        pm.request.url.query.all().forEach((param) => { query[param.key] = param.value})\r",
+							"\r",
+							"        Object.keys(query).sort().forEach(function(key) {\r",
+							"            ordered[key] = query[key];\r",
+							"        });\r",
+							"\r",
+							"        let queryString = Object.keys(ordered).map(key => key + '=' + ordered[key]).join('&');\r",
+							"        query = baseUrl + '?' + queryString;\r",
+							"    }\r",
+							"    else {\r",
+							"        query = url;\r",
+							"    }\r",
+							"    return encodeURIComponent(query);\r",
+							"}\r",
+							"\r",
+							"let sortObject = (object) =>  {\r",
+							"    if (object instanceof Array) {\r",
+							"        var sortedObj = [],\r",
+							"            keys = Object.keys(object);\r",
+							"    }\r",
+							"    else {\r",
+							"        sortedObj = {},\r",
+							"            keys = Object.keys(object);\r",
+							"    }\r",
+							"\r",
+							"    keys.sort(function(key1, key2) {\r",
+							"        if(key1 < key2) return -1;\r",
+							"        if(key1 > key2) return 1;\r",
+							"        return 0;\r",
+							"    });\r",
+							"\r",
+							"    for(var index in keys){\r",
+							"        var key = keys[index];\r",
+							"        if(typeof object[key] == 'object' ){\r",
+							"\r",
+							"            if ((object[key] instanceof Array)) {\r",
+							"                sortedObj[key] = sortObject(object[key]);\r",
+							"            }\r",
+							"            sortedObj[key] = sortObject(object[key]);\r",
+							"        } else {\r",
+							"            sortedObj[key] = object[key];\r",
+							"        }\r",
+							"    }\r",
+							"    return sortedObj;\r",
+							"}\r",
+							"\r",
+							"let normaliseBaseUrl = (baseUrl) => {\r",
+							"    let normalizedPort,\r",
+							"        normalizedUrl,\r",
+							"        data = baseUrl.split(':'),\r",
+							"        scheme = data[0].toLowerCase();\r",
+							"\r",
+							"    if (pm.request.url.port == 80 && scheme == 'http') {\r",
+							"        normalizedPort = data[2].substring(2);\r",
+							"    }\r",
+							"    else if (pm.request.url.port == 443 && scheme == 'https') {\r",
+							"        normalizedPort = data[2].substring(2);\r",
+							"    }\r",
+							"\r",
+							"    if (normalizedPort) {\r",
+							"        normalizedUrl = scheme + ':' + data[1] + normalizedPort;\r",
+							"    }\r",
+							"    else if (data[2]) {\r",
+							"        normalizedUrl = scheme + ':' + data[1] + ':' + data[2];\r",
+							"    }\r",
+							"    else {\r",
+							"        normalizedUrl = scheme + ':' + data[1];\r",
+							"    }\r",
+							"    return normalizedUrl;\r",
+							"}\r",
+							"\r",
+							"let query = null,\r",
+							"    url = null;\r",
+							"data = null;\r",
+							"url = requestUrl(), // This is postman method to get request URL\r",
+							"    method = request.method,\r",
+							"    key = pm.variables.get(\"clientSecret\"), // This is postman method the get consumer sceret\r",
+							"    body = null\r",
+							"requestData = null;\r",
+							"\r",
+							"if (!_.isEmpty(request.data)) {\r",
+							"    body = JSON.parse(request.data);\r",
+							"}\r",
+							"\r",
+							"let baseString = method + '&' + url;\r",
+							"if (body) {\r",
+							"    requestData = encodeURIComponent(JSON.stringify(sortObject(body)));\r",
+							"    baseString = method + '&' + url + '&' + requestData;\r",
+							"}\r",
+							"\r",
+							"//setting it into environmental variable\r",
+							"pm.environment.set(\"signature\", cryptoJS.HmacSHA512(baseString, key).toString());"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{bearerToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [
+					{
+						"key": "dateAtClient",
+						"value": "{{dateAtClient}}",
+						"type": "text"
+					},
+					{
+						"key": "signature",
+						"value": "{{signature}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://sandbox.woohoo.in/rest/v3/orders/3182427590",
+					"protocol": "https",
+					"host": [
+						"sandbox",
+						"woohoo",
+						"in"
+					],
+					"path": [
+						"rest",
+						"v3",
+						"orders",
+						"3182427590"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Card Balance API",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"// dateAtClient\r",
+							"const moment = require('moment');\r",
+							"pm.environment.set(\"dateAtClient\", moment().toISOString());\r",
+							"\r",
+							"console.log(request);\r",
+							"\r",
+							"// signature\r",
+							"\r",
+							"// This is postman pre request script, change code wherever we used `pm`\r",
+							"const cryptoJS = require(\"crypto-js\");\r",
+							"\r",
+							"//url and sorted query param\r",
+							"let requestUrl = () => {\r",
+							"    let query = {},\r",
+							"        url = request.url.replace('{{host}}', pm.environment.get(\"host\"));\r",
+							"\r",
+							"    //pm.request.url.getQueryString() is postman method to  \r",
+							"    if (pm.request.url.getQueryString()) {\r",
+							"        let baseUrl = url.split('?'),\r",
+							"            ordered = {};\r",
+							"\r",
+							"        baseUrl = normaliseBaseUrl(baseUrl[0]);\r",
+							"        console.log('baseuel' + baseUrl);\r",
+							"        // pm.request.url.query.all() is postman method to get query parameters\r",
+							"        pm.request.url.query.all().forEach((param) => { query[param.key] = param.value})\r",
+							"\r",
+							"        Object.keys(query).sort().forEach(function(key) {\r",
+							"            ordered[key] = query[key];\r",
+							"        });\r",
+							"\r",
+							"        let queryString = Object.keys(ordered).map(key => key + '=' + ordered[key]).join('&');\r",
+							"        query = baseUrl + '?' + queryString;\r",
+							"    }\r",
+							"    else {\r",
+							"        query = url;\r",
+							"    }\r",
+							"    return encodeURIComponent(query);\r",
+							"}\r",
+							"\r",
+							"let sortObject = (object) =>  {\r",
+							"    if (object instanceof Array) {\r",
+							"        var sortedObj = [],\r",
+							"            keys = Object.keys(object);\r",
+							"    }\r",
+							"    else {\r",
+							"        sortedObj = {},\r",
+							"            keys = Object.keys(object);\r",
+							"    }\r",
+							"\r",
+							"    keys.sort(function(key1, key2) {\r",
+							"        if(key1 < key2) return -1;\r",
+							"        if(key1 > key2) return 1;\r",
+							"        return 0;\r",
+							"    });\r",
+							"\r",
+							"    for(var index in keys){\r",
+							"        var key = keys[index];\r",
+							"        if(typeof object[key] == 'object' ){\r",
+							"\r",
+							"            if ((object[key] instanceof Array)) {\r",
+							"                sortedObj[key] = sortObject(object[key]);\r",
+							"            }\r",
+							"            sortedObj[key] = sortObject(object[key]);\r",
+							"        } else {\r",
+							"            sortedObj[key] = object[key];\r",
+							"        }\r",
+							"    }\r",
+							"    return sortedObj;\r",
+							"}\r",
+							"\r",
+							"let normaliseBaseUrl = (baseUrl) => {\r",
+							"    let normalizedPort,\r",
+							"        normalizedUrl,\r",
+							"        data = baseUrl.split(':'),\r",
+							"        scheme = data[0].toLowerCase();\r",
+							"\r",
+							"    if (pm.request.url.port == 80 && scheme == 'http') {\r",
+							"        normalizedPort = data[2].substring(2);\r",
+							"    }\r",
+							"    else if (pm.request.url.port == 443 && scheme == 'https') {\r",
+							"        normalizedPort = data[2].substring(2);\r",
+							"    }\r",
+							"\r",
+							"    if (normalizedPort) {\r",
+							"        normalizedUrl = scheme + ':' + data[1] + normalizedPort;\r",
+							"    }\r",
+							"    else if (data[2]) {\r",
+							"        normalizedUrl = scheme + ':' + data[1] + ':' + data[2];\r",
+							"    }\r",
+							"    else {\r",
+							"        normalizedUrl = scheme + ':' + data[1];\r",
+							"    }\r",
+							"    return normalizedUrl;\r",
+							"}\r",
+							"\r",
+							"let query = null,\r",
+							"    url = null;\r",
+							"data = null;\r",
+							"url = requestUrl(), // This is postman method to get request URL\r",
+							"    method = request.method,\r",
+							"    key = pm.variables.get(\"clientSecret\"), // This is postman method the get consumer sceret\r",
+							"    body = null\r",
+							"requestData = null;\r",
+							"\r",
+							"if (!_.isEmpty(request.data)) {\r",
+							"    body = JSON.parse(request.data);\r",
+							"}\r",
+							"\r",
+							"let baseString = method + '&' + url;\r",
+							"if (body) {\r",
+							"    requestData = encodeURIComponent(JSON.stringify(sortObject(body)));\r",
+							"    baseString = method + '&' + url + '&' + requestData;\r",
+							"}\r",
+							"\r",
+							"//setting it into environmental variable\r",
+							"pm.environment.set(\"signature\", cryptoJS.HmacSHA512(baseString, key).toString());"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{bearerToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "dateAtClient",
+						"value": "{{dateAtClient}}",
+						"type": "text"
+					},
+					{
+						"key": "signature",
+						"value": "{{signature}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"cardNumber\": \"1122001540000247\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{host}}/rest/v3/balance",
+					"host": [
+						"{{host}}"
+					],
+					"path": [
+						"rest",
+						"v3",
+						"balance"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Resend API",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"const moment = require('moment');\r",
+							"pm.variables.get(\"variable_key\");\r",
+							"pm.environment.get(\"variable_key\");\r",
+							"pm.environment.set(\"dateAtClient\", moment().toISOString());\r",
+							"\r",
+							"// signature\r",
+							"const cryptoJS = require    (\"crypto-js\");\r",
+							"\r",
+							"//url and sorted query param\r",
+							"let requestUrl = () => {\r",
+							"    let query = {},\r",
+							"        // pm.request.url is postman method to get url\r",
+							"        // sicne postman doesn't substitute values in pre request scripts, doing it manually. \r",
+							"        url = request.url.replace('{{host}}', pm.environment.get(\"host\"));\r",
+							"\r",
+							"    //pm.request.url.getQueryString() is postman method to relevent method\r",
+							"    if (pm.request.url.getQueryString()) {\r",
+							"        let baseUrl = url.split('?'),\r",
+							"            ordered = {};\r",
+							"\r",
+							"        baseUrl = normaliseBaseUrl(baseUrl[0]);\r",
+							"        console.log('baseuel' + baseUrl);\r",
+							"        // pm.request.url.query.all() is postman method to get query parameters\r",
+							"        pm.request.url.query.all().forEach((param) => { query[param.key] = param.value})\r",
+							"\r",
+							"        Object.keys(query).sort().forEach(function(key) {\r",
+							"            ordered[key] = query[key];\r",
+							"        });\r",
+							"\r",
+							"        let queryString = Object.keys(ordered).map(key => key + '=' + ordered[key]).join('&');\r",
+							"        query = baseUrl + '?' + queryString;\r",
+							"    }\r",
+							"    else {\r",
+							"        query = url;\r",
+							"    }\r",
+							"    return encodeURIComponent(query);\r",
+							"}\r",
+							"\r",
+							"let sortObject = (object) =>  {\r",
+							"    if (object instanceof Array) {\r",
+							"        var sortedObj = [],\r",
+							"            keys = Object.keys(object);\r",
+							"    }\r",
+							"    else {\r",
+							"        sortedObj = {},\r",
+							"            keys = Object.keys(object);\r",
+							"    }\r",
+							"\r",
+							"    keys.sort(function(key1, key2) {\r",
+							"        if(key1 < key2) return -1;\r",
+							"        if(key1 > key2) return 1;\r",
+							"        return 0;\r",
+							"    });\r",
+							"\r",
+							"    for(var index in keys){\r",
+							"        var key = keys[index];\r",
+							"        if(typeof object[key] == 'object' ){\r",
+							"\r",
+							"            if ((object[key] instanceof Array)) {\r",
+							"                sortedObj[key] = sortObject(object[key]);\r",
+							"            }\r",
+							"            sortedObj[key] = sortObject(object[key]);\r",
+							"        } else {\r",
+							"            sortedObj[key] = object[key];\r",
+							"        }\r",
+							"    }\r",
+							"    return sortedObj;\r",
+							"}\r",
+							"\r",
+							"let normaliseBaseUrl = (baseUrl) => {\r",
+							"    let normalizedPort,\r",
+							"        normalizedUrl,\r",
+							"        data = baseUrl.split(':'),\r",
+							"        scheme = data[0].toLowerCase();\r",
+							"\r",
+							"    if (pm.request.url.port == 80 && scheme == 'http') {\r",
+							"        normalizedPort = data[2].substring(2);\r",
+							"    }\r",
+							"    else if (pm.request.url.port == 443 && scheme == 'https') {\r",
+							"        normalizedPort = data[2].substring(2);\r",
+							"    }\r",
+							"\r",
+							"    if (normalizedPort) {\r",
+							"        normalizedUrl = scheme + ':' + data[1] + normalizedPort;\r",
+							"    }\r",
+							"    else if (data[2]) {\r",
+							"        normalizedUrl = scheme + ':' + data[1] + ':' + data[2];\r",
+							"    }\r",
+							"    else {\r",
+							"        normalizedUrl = scheme + ':' + data[1];\r",
+							"    }\r",
+							"    return normalizedUrl;\r",
+							"}\r",
+							"\r",
+							"let query = null,\r",
+							"    url = null;\r",
+							"data = null;\r",
+							"url = requestUrl(), // This is postman method to get request URL\r",
+							"    method = request.method,\r",
+							"    key = pm.variables.get(\"clientSecret\"), // This is postman method the get consumer sceret\r",
+							"    body = null\r",
+							"requestData = null;\r",
+							"\r",
+							"if (!_.isEmpty(request.data)) {\r",
+							"    body = JSON.parse(request.data);\r",
+							"}\r",
+							"\r",
+							"let baseString = method + '&' + url;\r",
+							"if (body) {\r",
+							"    requestData = encodeURIComponent(JSON.stringify(sortObject(body)));\r",
+							"    baseString = method + '&' + url + '&' + requestData;\r",
+							"}\r",
+							"\r",
+							"//setting it into environmental variable\r",
+							"pm.environment.set(\"signature\", cryptoJS.HmacSHA512(baseString, key).toString());"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{bearerToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "dateAtClient",
+						"value": "{{dateAtClient}}",
+						"type": "text"
+					},
+					{
+						"key": "signature",
+						"value": "{{signature}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"cards\": [\r\n        {\r\n          \"id\" : 1366668,\r\n          \"name\": \"Shashank\",\r\n          \"telephone\" : \"+919988998899\",\r\n          \"email\" : \"shashank.rao@qwikcilver.com\"\r\n        }\r\n      ]\r\n}"
+				},
+				"url": {
+					"raw": "{{host}}/rest/v3/orders/3181747442/resend",
+					"host": [
+						"{{host}}"
+					],
+					"path": [
+						"rest",
+						"v3",
+						"orders",
+						"3181747442",
+						"resend"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "variable_key",
+			"value": ""
+		}
+	]
+}
