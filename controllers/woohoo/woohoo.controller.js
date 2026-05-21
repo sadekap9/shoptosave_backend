@@ -1,0 +1,319 @@
+import * as woohooService from '../../services/woohoo/woohoo.service.js';
+import logger from '../../utils/logger.js';
+
+// ─── AUTHENTICATION ────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/v1/woohoo/auth/generate-code
+ * Generate Authorization Code from Woohoo (Step 1 of OAuth2)
+ */
+export const generateAuthCode = async (req, res) => {
+    try {
+        const result = await woohooService.generateAuthorizationCode();
+        return res.status(200).json({
+            success: true,
+            message: 'Authorization code generated successfully',
+            result,
+        });
+    } catch (error) {
+        logger.error('Error in generateAuthCode', { error: error.response?.data || error.message });
+        return res.status(error.response?.status || 500).json({
+            success: false,
+            message: error.response?.data?.message || 'Failed to generate authorization code',
+            result: error.response?.data || {},
+        });
+    }
+};
+
+/**
+ * POST /api/v1/woohoo/auth/generate-token
+ * Generate Bearer Token from Woohoo (Step 2 of OAuth2)
+ * Body: { authorizationCode }
+ */
+export const generateBearerToken = async (req, res) => {
+    try {
+        const { authorizationCode } = req.body;
+        if (!authorizationCode) {
+            return res.status(400).json({
+                success: false,
+                message: 'authorizationCode is required',
+                result: {},
+            });
+        }
+        const result = await woohooService.generateBearerToken(authorizationCode);
+        return res.status(200).json({
+            success: true,
+            message: 'Bearer token generated successfully',
+            result,
+        });
+    } catch (error) {
+        logger.error('Error in generateBearerToken', { error: error.response?.data || error.message });
+        return res.status(error.response?.status || 500).json({
+            success: false,
+            message: error.response?.data?.message || 'Failed to generate bearer token',
+            result: error.response?.data || {},
+        });
+    }
+};
+
+// ─── CATALOG ──────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/v1/woohoo/catalog/categories
+ * Get all gift card categories from Woohoo
+ * Header: Authorization: Bearer <token>
+ */
+export const getCategories = async (req, res) => {
+    try {
+        const bearerToken = req.headers.authorization?.split(' ')[1];
+        if (!bearerToken) {
+            return res.status(401).json({ success: false, message: 'Woohoo Bearer token required', result: {} });
+        }
+        const result = await woohooService.getWoohooCategories(bearerToken);
+        return res.status(200).json({
+            success: true,
+            message: 'Categories fetched successfully',
+            result,
+        });
+    } catch (error) {
+        logger.error('Error in getCategories (woohoo)', { error: error.response?.data || error.message });
+        return res.status(error.response?.status || 500).json({
+            success: false,
+            message: error.response?.data?.message || 'Failed to fetch categories',
+            result: error.response?.data || {},
+        });
+    }
+};
+
+/**
+ * GET /api/v1/woohoo/catalog/categories/:categoryId/products
+ * Get products in a category from Woohoo
+ */
+export const getProductsByCategory = async (req, res) => {
+    try {
+        const bearerToken = req.headers.authorization?.split(' ')[1];
+        if (!bearerToken) {
+            return res.status(401).json({ success: false, message: 'Woohoo Bearer token required', result: {} });
+        }
+        const { categoryId } = req.params;
+        const result = await woohooService.getWoohooProductsByCategory(bearerToken, categoryId);
+        return res.status(200).json({
+            success: true,
+            message: 'Products fetched successfully',
+            result,
+        });
+    } catch (error) {
+        logger.error('Error in getProductsByCategory (woohoo)', { error: error.response?.data || error.message });
+        return res.status(error.response?.status || 500).json({
+            success: false,
+            message: error.response?.data?.message || 'Failed to fetch products',
+            result: error.response?.data || {},
+        });
+    }
+};
+
+/**
+ * GET /api/v1/woohoo/catalog/products/:sku
+ * Get a single product by SKU from Woohoo
+ */
+export const getProduct = async (req, res) => {
+    try {
+        const bearerToken = req.headers.authorization?.split(' ')[1];
+        if (!bearerToken) {
+            return res.status(401).json({ success: false, message: 'Woohoo Bearer token required', result: {} });
+        }
+        const { sku } = req.params;
+        const result = await woohooService.getWoohooProduct(bearerToken, sku);
+        return res.status(200).json({
+            success: true,
+            message: 'Product fetched successfully',
+            result,
+        });
+    } catch (error) {
+        logger.error('Error in getProduct (woohoo)', { error: error.response?.data || error.message });
+        return res.status(error.response?.status || 500).json({
+            success: false,
+            message: error.response?.data?.message || 'Failed to fetch product',
+            result: error.response?.data || {},
+        });
+    }
+};
+
+// ─── ORDERS ───────────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/v1/woohoo/orders
+ * Place a new order on Woohoo
+ * Body: { address, payments, refno, syncOnly, deliveryMode, products }
+ */
+export const placeOrder = async (req, res) => {
+    try {
+        const bearerToken = req.headers.authorization?.split(' ')[1];
+        if (!bearerToken) {
+            return res.status(401).json({ success: false, message: 'Woohoo Bearer token required', result: {} });
+        }
+        const result = await woohooService.placeWoohooOrder(bearerToken, req.body);
+        return res.status(200).json({
+            success: true,
+            message: 'Order placed successfully',
+            result,
+        });
+    } catch (error) {
+        logger.error('Error in placeOrder (woohoo)', { error: error.response?.data || error.message });
+        return res.status(error.response?.status || 500).json({
+            success: false,
+            message: error.response?.data?.message || 'Failed to place order',
+            result: error.response?.data || {},
+        });
+    }
+};
+
+/**
+ * GET /api/v1/woohoo/orders/:orderId/status
+ * Get order status from Woohoo
+ */
+export const getOrderStatus = async (req, res) => {
+    try {
+        const bearerToken = req.headers.authorization?.split(' ')[1];
+        if (!bearerToken) {
+            return res.status(401).json({ success: false, message: 'Woohoo Bearer token required', result: {} });
+        }
+        const { orderId } = req.params;
+        const result = await woohooService.getWoohooOrderStatus(bearerToken, orderId);
+        return res.status(200).json({
+            success: true,
+            message: 'Order status fetched successfully',
+            result,
+        });
+    } catch (error) {
+        logger.error('Error in getOrderStatus (woohoo)', { error: error.response?.data || error.message });
+        return res.status(error.response?.status || 500).json({
+            success: false,
+            message: error.response?.data?.message || 'Failed to fetch order status',
+            result: error.response?.data || {},
+        });
+    }
+};
+
+/**
+ * GET /api/v1/woohoo/orders/:orderId/cards
+ * Get activated cards for an order
+ * Query: ?offset=0&limit=10
+ */
+export const getActivatedCards = async (req, res) => {
+    try {
+        const bearerToken = req.headers.authorization?.split(' ')[1];
+        if (!bearerToken) {
+            return res.status(401).json({ success: false, message: 'Woohoo Bearer token required', result: {} });
+        }
+        const { orderId } = req.params;
+        const { offset = 0, limit = 10 } = req.query;
+        const result = await woohooService.getActivatedCards(bearerToken, orderId, offset, limit);
+        return res.status(200).json({
+            success: true,
+            message: 'Activated cards fetched successfully',
+            result,
+        });
+    } catch (error) {
+        logger.error('Error in getActivatedCards (woohoo)', { error: error.response?.data || error.message });
+        return res.status(error.response?.status || 500).json({
+            success: false,
+            message: error.response?.data?.message || 'Failed to fetch activated cards',
+            result: error.response?.data || {},
+        });
+    }
+};
+
+/**
+ * GET /api/v1/woohoo/orders/:orderId
+ * Get full order details from Woohoo
+ */
+export const getOrderDetails = async (req, res) => {
+    try {
+        const bearerToken = req.headers.authorization?.split(' ')[1];
+        if (!bearerToken) {
+            return res.status(401).json({ success: false, message: 'Woohoo Bearer token required', result: {} });
+        }
+        const { orderId } = req.params;
+        const result = await woohooService.getWoohooOrderDetails(bearerToken, orderId);
+        return res.status(200).json({
+            success: true,
+            message: 'Order details fetched successfully',
+            result,
+        });
+    } catch (error) {
+        logger.error('Error in getOrderDetails (woohoo)', { error: error.response?.data || error.message });
+        return res.status(error.response?.status || 500).json({
+            success: false,
+            message: error.response?.data?.message || 'Failed to fetch order details',
+            result: error.response?.data || {},
+        });
+    }
+};
+
+// ─── CARD BALANCE ─────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/v1/woohoo/balance
+ * Check gift card balance
+ * Body: { cardNumber }
+ */
+export const getCardBalance = async (req, res) => {
+    try {
+        const bearerToken = req.headers.authorization?.split(' ')[1];
+        if (!bearerToken) {
+            return res.status(401).json({ success: false, message: 'Woohoo Bearer token required', result: {} });
+        }
+        const { cardNumber } = req.body;
+        if (!cardNumber) {
+            return res.status(400).json({ success: false, message: 'cardNumber is required', result: {} });
+        }
+        const result = await woohooService.getWoohooCardBalance(bearerToken, cardNumber);
+        return res.status(200).json({
+            success: true,
+            message: 'Card balance fetched successfully',
+            result,
+        });
+    } catch (error) {
+        logger.error('Error in getCardBalance (woohoo)', { error: error.response?.data || error.message });
+        return res.status(error.response?.status || 500).json({
+            success: false,
+            message: error.response?.data?.message || 'Failed to fetch card balance',
+            result: error.response?.data || {},
+        });
+    }
+};
+
+// ─── RESEND ───────────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/v1/woohoo/orders/:orderId/resend
+ * Resend gift cards for an order
+ * Body: { cards: [{ id, name, telephone, email }] }
+ */
+export const resendCards = async (req, res) => {
+    try {
+        const bearerToken = req.headers.authorization?.split(' ')[1];
+        if (!bearerToken) {
+            return res.status(401).json({ success: false, message: 'Woohoo Bearer token required', result: {} });
+        }
+        const { orderId } = req.params;
+        const { cards } = req.body;
+        if (!cards || !Array.isArray(cards) || cards.length === 0) {
+            return res.status(400).json({ success: false, message: 'cards array is required', result: {} });
+        }
+        const result = await woohooService.resendWoohooCards(bearerToken, orderId, cards);
+        return res.status(200).json({
+            success: true,
+            message: 'Cards resent successfully',
+            result,
+        });
+    } catch (error) {
+        logger.error('Error in resendCards (woohoo)', { error: error.response?.data || error.message });
+        return res.status(error.response?.status || 500).json({
+            success: false,
+            message: error.response?.data?.message || 'Failed to resend cards',
+            result: error.response?.data || {},
+        });
+    }
+};
