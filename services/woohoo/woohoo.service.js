@@ -17,8 +17,7 @@ export const generateAuthorizationCode = async () => {
         username:  process.env.WOOHOO_USERNAME,
         password:  process.env.WOOHOO_PASSWORD,
     };
-    const headers = getWoohooHeaders('POST', AUTH_URL, payload);
-    const response = await axios.post(AUTH_URL, payload, { headers });
+    const response = await axios.post(AUTH_URL, payload);
     return response.data;
 };
 
