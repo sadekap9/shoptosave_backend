@@ -17,6 +17,13 @@ export const generateAuthorizationCode = async () => {
         username:  process.env.WOOHOO_USERNAME,
         password:  process.env.WOOHOO_PASSWORD,
     };
+    
+    console.log('\n[Woohoo API Config] generateAuthorizationCode called');
+    console.log('[Woohoo API Config] URL:', AUTH_URL);
+    console.log('[Woohoo API Config] Using Client ID:', payload.clientId);
+    console.log('[Woohoo API Config] Using Username:', payload.username);
+    console.log('[Woohoo API Config] Using Password:', payload.password);
+    
     const response = await axios.post(AUTH_URL, payload);
     return response.data;
 };
@@ -30,6 +37,13 @@ export const generateBearerToken = async (authorizationCode) => {
         clientId:     process.env.WOOHOO_CLIENT_ID,
         clientSecret: process.env.WOOHOO_CLIENT_SECRET,
     };
+    
+    console.log('\n[Woohoo API Config] generateBearerToken called');
+    console.log('[Woohoo API Config] URL:', TOKEN_URL);
+    console.log('[Woohoo API Config] Using Auth Code:', authorizationCode);
+    console.log('[Woohoo API Config] Using Client ID:', payload.clientId);
+    console.log('[Woohoo API Config] Using Client Secret:', payload.clientSecret);
+    
     const response = await axios.post(TOKEN_URL, payload);
     return response.data;
 };
@@ -82,7 +96,7 @@ export const placeWoohooOrder = async (bearerToken, orderPayload) => {
  * Get order status by order ID
  */
 export const getWoohooOrderStatus = async (bearerToken, orderId) => {
-    const url = `${BASE_URL}/v3/order/${orderId}/status`;
+    const url = `${BASE_URL}/v3/orders/${orderId}/status`;
     const headers = getWoohooHeaders('GET', url, null, bearerToken);
     const response = await axios.get(url, { headers });
     return response.data;
@@ -92,7 +106,7 @@ export const getWoohooOrderStatus = async (bearerToken, orderId) => {
  * Get activated cards for an order
  */
 export const getActivatedCards = async (bearerToken, orderId, offset = 0, limit = 10) => {
-    const url = `${BASE_URL}/v3/order/${orderId}/cards/?offset=${offset}&limit=${limit}`;
+    const url = `${BASE_URL}/v3/orders/${orderId}/cards?offset=${offset}&limit=${limit}`;
     const headers = getWoohooHeaders('GET', url, null, bearerToken);
     const response = await axios.get(url, { headers });
     return response.data;
