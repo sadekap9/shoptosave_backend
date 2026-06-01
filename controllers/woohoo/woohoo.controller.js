@@ -1,4 +1,6 @@
 import * as woohooService from '../../services/woohoo/woohoo.service.js';
+import { saveCategoriesToDB } from '../../services/categories/categories.service.js';
+import pool from '../../utils/db.js';
 import logger from '../../utils/logger.js';
 
 // ─── AUTHENTICATION ────────────────────────────────────────────────────────────
@@ -10,6 +12,19 @@ import logger from '../../utils/logger.js';
 export const generateAuthCode = async (req, res) => {
     try {
         const result = await woohooService.generateAuthorizationCode();
+        
+        // Store authorizationCode in the database
+        const authorizationCode = result.authorizationCode;
+        if (authorizationCode) {
+            await pool.query(
+                `INSERT INTO app_config (config_key, config_value, description)
+                 VALUES ('woohoo_auth_code', ?, 'Woohoo OAuth2 Authorization Code')
+                 ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`,
+                [authorizationCode]
+            );
+            logger.info('Woohoo authorization code stored in app_config table');
+        }
+
         return res.status(200).json({
             success: true,
             message: 'Authorization code generated successfully',
@@ -40,7 +55,21 @@ export const generateBearerToken = async (req, res) => {
                 result: {},
             });
         }
+        
         const result = await woohooService.generateBearerToken(authorizationCode);
+        
+        // Store bearerToken in the database
+        const token = result.token;
+        if (token) {
+            await pool.query(
+                `INSERT INTO app_config (config_key, config_value, description)
+                 VALUES ('woohoo_bearer_token', ?, 'Woohoo OAuth2 Bearer Token')
+                 ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`,
+                [token]
+            );
+            logger.info('Woohoo bearer token stored in app_config table');
+        }
+
         return res.status(200).json({
             success: true,
             message: 'Bearer token generated successfully',
@@ -70,6 +99,14 @@ export const getCategories = async (req, res) => {
             return res.status(401).json({ success: false, message: 'Woohoo Bearer token required', result: {} });
         }
         const result = await woohooService.getWoohooCategories(bearerToken);
+        
+        // Save categories to database
+        if (result) {
+            const categoriesToSync = Array.isArray(result) ? result : [result];
+            await saveCategoriesToDB(categoriesToSync);
+            logger.info(`Successfully stored fetched categories to database`);
+        }
+
         return res.status(200).json({
             success: true,
             message: 'Categories fetched successfully',

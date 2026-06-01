@@ -45,7 +45,7 @@ const buildWoohooTree = (categories, parentId = null) => {
  */
 export const getCategoriesFromDB = async () => {
     const [rows] = await pool.query(
-        'SELECT id, maincategory_id, name, url, description, image_url, thumbnail_url, color_code, offer_description FROM woohoo_categories WHERE is_active = 1'
+        'SELECT woohoo_category_id AS id, parent_id AS maincategory_id, name, url_slug AS url, description, image_url, thumbnail_url, color_code, offer_description FROM woohoo_categories WHERE is_active = 1'
     );
 
     return buildWoohooTree(rows, null);
@@ -81,21 +81,22 @@ export const getProductsByCategoryFromDB = async (categoryId) => {
 /**
  * Recursively saves categories and subcategories to the database
  */
-const saveCategoriesToDB = async (categories, mainCategoryId = null) => {
+export const saveCategoriesToDB = async (categories, mainCategoryId = null) => {
     for (const cat of categories) {
         // 1. Save current category
         await pool.query(
             `INSERT INTO woohoo_categories 
-            (id, maincategory_id, name, url, description, image_url, thumbnail_url, color_code, offer_description) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) 
+            (woohoo_category_id, parent_id, name, url_slug, description, image_url, thumbnail_url, color_code, offer_description, subcategories_count) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
             ON DUPLICATE KEY UPDATE 
-            maincategory_id=VALUES(maincategory_id), name=VALUES(name), url=VALUES(url), 
+            parent_id=VALUES(parent_id), name=VALUES(name), url_slug=VALUES(url_slug), 
             description=VALUES(description), image_url=VALUES(image_url), 
             thumbnail_url=VALUES(thumbnail_url), color_code=VALUES(color_code), 
-            offer_description=VALUES(offer_description)`,
+            offer_description=VALUES(offer_description), subcategories_count=VALUES(subcategories_count)`,
             [
                 cat.id, mainCategoryId, cat.name, cat.url, cat.description, 
-                cat.images?.image, cat.images?.thumbnail, cat.colorCode, cat.offerDescription
+                cat.images?.image, cat.images?.thumbnail, cat.colorCode, cat.offerDescription,
+                cat.subcategories ? cat.subcategories.length : 0
             ]
         );
 
@@ -137,7 +138,7 @@ export const syncCategoriesWithWoohoo = async () => {
 export const syncProductsWithWoohoo = async () => {
     try {
         const token = await getWoohooToken();
-        const [categories] = await pool.query('SELECT id FROM woohoo_categories WHERE is_active = 1');
+        const [categories] = await pool.query('SELECT woohoo_category_id AS id FROM woohoo_categories WHERE is_active = 1');
         
         let totalSynced = 0;
         for (const cat of categories) {
