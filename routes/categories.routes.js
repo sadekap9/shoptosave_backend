@@ -1,19 +1,22 @@
 import express from 'express';
-import * as woohooController from '../controllers/categories/categories.controller.js';
+import { getCategories, getProductsByCategory, syncCategories, syncProducts, storeProduct } from '../controllers/categories/categories.controller.js';
 import authenticate from '../middlewares/auth.middleware.js';
 
 const router = express.Router();
 
 // Get all categories (Authenticated)
-router.get('/', authenticate, woohooController.getCategories);
+router.get('/', getCategories);
 
 // Get products by category (Authenticated)
-router.get('/:categoryId/products', authenticate, woohooController.getProductsByCategory);
+router.get('/:categoryId/products', authenticate, getProductsByCategory);
+
+// Store products in database (Authenticated)
+router.post('/products', authenticate, storeProduct);
 
 // Sync categories with Woohoo (Manual trigger)
-router.post('/sync', authenticate, woohooController.syncCategories);
+router.post('/sync', authenticate, syncCategories);
 
 // Sync products with Woohoo (Manual trigger)
-router.post('/products/sync', authenticate, woohooController.syncProducts);
+router.post('/products/sync', authenticate, syncProducts);
 
 export default router;

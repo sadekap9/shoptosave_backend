@@ -45,38 +45,13 @@ const buildWoohooTree = (categories, parentId = null) => {
  */
 export const getCategoriesFromDB = async () => {
     const [rows] = await pool.query(
-        'SELECT woohoo_category_id AS id, parent_id AS maincategory_id, name, url_slug AS url, description, image_url, thumbnail_url, color_code, offer_description FROM woohoo_categories WHERE is_active = 1'
+        'SELECT id, maincategory_id, name, url, description, image_url, thumbnail_url, color_code, offer_description FROM woohoo_categories WHERE is_active = 1'
     );
 
     return buildWoohooTree(rows, null);
 };
 
-export const getProductsByCategoryFromDB = async (categoryId) => {
-    const [rows] = await pool.query(
-        'SELECT sku, name, description, url, min_value as minPrice, max_value as maxPrice, currency_code, currency_symbol, currency_numeric_code, image_url as thumbnail, mobile_image as mobile, base_image as base, small_image as small FROM woohoo_products WHERE category_id = ? AND is_active = 1',
-        [categoryId]
-    );
 
-    // Format to match Woohoo structure
-    return rows.map(prod => ({
-        sku: prod.sku,
-        name: prod.name,
-        currency: {
-            code: prod.currency_code,
-            symbol: prod.currency_symbol,
-            numericCode: prod.currency_numeric_code
-        },
-        url: prod.url,
-        minPrice: prod.minPrice.toString(),
-        maxPrice: prod.maxPrice.toString(),
-        images: {
-            thumbnail: prod.thumbnail,
-            mobile: prod.mobile,
-            base: prod.base,
-            small: prod.small
-        }
-    }));
-};
 
 /**
  * Recursively saves categories and subcategories to the database
@@ -86,17 +61,16 @@ export const saveCategoriesToDB = async (categories, mainCategoryId = null) => {
         // 1. Save current category
         await pool.query(
             `INSERT INTO woohoo_categories 
-            (woohoo_category_id, parent_id, name, url_slug, description, image_url, thumbnail_url, color_code, offer_description, subcategories_count) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+            (id, maincategory_id, name, url, description, image_url, thumbnail_url, color_code, offer_description) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) 
             ON DUPLICATE KEY UPDATE 
-            parent_id=VALUES(parent_id), name=VALUES(name), url_slug=VALUES(url_slug), 
+            maincategory_id=VALUES(maincategory_id), name=VALUES(name), url=VALUES(url), 
             description=VALUES(description), image_url=VALUES(image_url), 
             thumbnail_url=VALUES(thumbnail_url), color_code=VALUES(color_code), 
-            offer_description=VALUES(offer_description), subcategories_count=VALUES(subcategories_count)`,
+            offer_description=VALUES(offer_description)`,
             [
                 cat.id, mainCategoryId, cat.name, cat.url, cat.description, 
-                cat.images?.image, cat.images?.thumbnail, cat.colorCode, cat.offerDescription,
-                cat.subcategories ? cat.subcategories.length : 0
+                cat.images?.image, cat.images?.thumbnail, cat.colorCode, cat.offerDescription
             ]
         );
 
@@ -106,6 +80,8 @@ export const saveCategoriesToDB = async (categories, mainCategoryId = null) => {
         }
     }
 };
+
+
 
 /**
  * Fetches categories from Woohoo API and syncs them to local DB
@@ -132,50 +108,9 @@ export const syncCategoriesWithWoohoo = async () => {
     }
 };
 
-/**
- * Fetches products for all categories and syncs them to local DB
- */
-export const syncProductsWithWoohoo = async () => {
-    try {
-        const token = await getWoohooToken();
-        const [categories] = await pool.query('SELECT woohoo_category_id AS id FROM woohoo_categories WHERE is_active = 1');
-        
-        let totalSynced = 0;
-        for (const cat of categories) {
-            const url = `${process.env.WOOHOO_API_BASE_URL}/v3/catalog/categories/${cat.id}/products`;
-            const headers = getWoohooHeaders('GET', url, null, token);
-            
-            try {
-                const response = await axios.get(url, { headers });
-                const products = response.data.products || [];
-                
-                for (const prod of products) {
-                    await pool.query(
-                         `INSERT INTO woohoo_products 
-                        (sku, name, category_id, url, min_value, max_value, currency_code, currency_symbol, currency_numeric_code, image_url, mobile_image, base_image, small_image) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
-                        ON DUPLICATE KEY UPDATE 
-                        name=VALUES(name), url=VALUES(url), min_value=VALUES(min_value), 
-                        max_value=VALUES(max_value), currency_code=VALUES(currency_code), 
-                        currency_symbol=VALUES(currency_symbol), currency_numeric_code=VALUES(currency_numeric_code), 
-                        image_url=VALUES(image_url), mobile_image=VALUES(mobile_image), 
-                        base_image=VALUES(base_image), small_image=VALUES(small_image)`,
-                        [
-                            prod.sku, prod.name, cat.id, prod.url, prod.minPrice, prod.maxPrice, 
-                            prod.currency?.code, prod.currency?.symbol, prod.currency?.numericCode, 
-                            prod.images?.thumbnail, prod.images?.mobile, prod.images?.base, prod.images?.small
-                        ]
-                    );
-                    totalSynced++;
-                }
-            } catch (err) {
-                logger.error(`Failed to sync products for category ${cat.id}`, { error: err.message });
-            }
-        }
-        
-        return { success: true, totalSynced };
-    } catch (error) {
-        logger.error('Product Sync Failed', { error: error.message });
-        throw error;
-    }
-};
+export {
+    getProductsByCategoryFromDB,
+    saveProductsToDB,
+    syncProductsWithWoohoo,
+    storeProductInDB
+} from '../products/products.service.js';

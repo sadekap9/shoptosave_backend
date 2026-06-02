@@ -22,27 +22,7 @@ export const getCategories = async (req, res) => {
     }
 };
 
-/**
- * Get products by category ID
- */
-export const getProductsByCategory = async (req, res) => {
-    try {
-        const { categoryId } = req.params;
-        const products = await woohooService.getProductsByCategoryFromDB(categoryId);
-        return res.status(200).json({
-            success: true,
-            message: 'Products fetched successfully',
-            result: products
-        });
-    } catch (error) {
-        logger.error('Error in getProductsByCategory', { error: error.message, stack: error.stack });
-        return res.status(500).json({
-            success: false,
-            message: 'Internal server error',
-            result: {}
-        });
-    }
-};
+
 
 /**
  * Manually trigger synchronization with Woohoo API (Categories)
@@ -65,23 +45,10 @@ export const syncCategories = async (req, res) => {
     }
 };
 
-/**
- * Manually trigger synchronization with Woohoo API (Products)
- */
-export const syncProducts = async (req, res) => {
-    try {
-        const result = await woohooService.syncProductsWithWoohoo();
-        return res.status(200).json({
-            success: true,
-            message: 'Products synchronized successfully with Woohoo',
-            result: result
-        });
-    } catch (error) {
-        logger.error('Error in syncProducts', { error: error.message, stack: error.stack });
-        return res.status(500).json({
-            success: false,
-            message: error.message || 'Product sync failed',
-            result: {}
-        });
-    }
-};
+
+
+export {
+    getProductsByCategory,
+    syncProducts,
+    storeProduct
+} from '../products/products.controller.js';

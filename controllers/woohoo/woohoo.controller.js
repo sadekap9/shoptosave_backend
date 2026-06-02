@@ -1,5 +1,5 @@
 import * as woohooService from '../../services/woohoo/woohoo.service.js';
-import { saveCategoriesToDB } from '../../services/categories/categories.service.js';
+import { saveCategoriesToDB, getCategoriesFromDB, saveProductsToDB } from '../../services/categories/categories.service.js';
 import pool from '../../utils/db.js';
 import logger from '../../utils/logger.js';
 
@@ -123,6 +123,28 @@ export const getCategories = async (req, res) => {
 };
 
 /**
+ * GET /api/v1/woohoo/catalog/db-categories or /api/v1/woohoo/catalog/categories/db
+ * Get all gift card categories from local database (does not query Woohoo)
+ */
+export const getDBCategories = async (req, res) => {
+    try {
+        const categories = await getCategoriesFromDB();
+        return res.status(200).json({
+            success: true,
+            message: 'Categories fetched from database successfully',
+            result: categories,
+        });
+    } catch (error) {
+        logger.error('Error in getDBCategories (woohoo)', { error: error.message, stack: error.stack });
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to fetch categories from database',
+            result: {},
+        });
+    }
+};
+
+/**
  * GET /api/v1/woohoo/catalog/categories/:categoryId/products
  * Get products in a category from Woohoo
  */
@@ -134,6 +156,14 @@ export const getProductsByCategory = async (req, res) => {
         }
         const { categoryId } = req.params;
         const result = await woohooService.getWoohooProductsByCategory(bearerToken, categoryId);
+        
+        // Save fetched products to database
+        if (result && result.products) {
+            const productsList = Array.isArray(result.products) ? result.products : [result.products];
+            await saveProductsToDB(productsList, categoryId);
+            logger.info(`Successfully saved products for category ${categoryId} to database`);
+        }
+
         return res.status(200).json({
             success: true,
             message: 'Products fetched successfully',

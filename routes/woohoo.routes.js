@@ -29,6 +29,18 @@ router.post('/auth/generate-token', woohooController.generateBearerToken);
 router.get('/catalog/categories', woohooController.getCategories);
 
 /**
+ * GET /api/v1/woohoo/catalog/db-categories
+ * Fetch all gift card categories from database
+ */
+router.get('/catalog/db-categories', woohooController.getDBCategories);
+
+/**
+ * GET /api/v1/woohoo/catalog/categories/db
+ * Fetch all gift card categories from database (alternative route)
+ */
+router.get('/catalog/categories/db', woohooController.getDBCategories);
+
+/**
  * GET /api/v1/woohoo/catalog/categories/:categoryId/products
  * Fetch products in a given category
  * Header: Authorization: Bearer <woohoo_bearer_token>
