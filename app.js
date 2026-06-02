@@ -7,6 +7,7 @@ import userRoutes from './routes/user.routes.js';
 import categoriesRoutes from './routes/categories.routes.js';
 import productsRoutes from './routes/products.routes.js';
 import woohooRoutes from './routes/woohoo.routes.js';
+import { getProductBySku } from './controllers/products/products.controller.js';
 import { apiLimiter } from './config/rateLimiter.js';
 import logger from './utils/logger.js';
 
@@ -29,6 +30,7 @@ v1Router.use('/user', userRoutes);
 v1Router.use('/categories', categoriesRoutes);
 v1Router.use('/catalog/categories', categoriesRoutes);
 v1Router.use('/products', productsRoutes);
+v1Router.get('/catalog/products/:sku', getProductBySku);
 v1Router.use('/woohoo', woohooRoutes);      // Woohoo v3 Client API Proxy
 
 app.use('/api/v1', apiLimiter, v1Router);

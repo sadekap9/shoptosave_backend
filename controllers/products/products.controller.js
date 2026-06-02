@@ -66,3 +66,32 @@ export const storeProduct = async (req, res) => {
         });
     }
 };
+
+/**
+ * Get product by SKU from database
+ */
+export const getProductBySku = async (req, res) => {
+    try {
+        const { sku } = req.params;
+        const product = await productsService.getProductBySkuFromDB(sku);
+        if (!product) {
+            return res.status(404).json({
+                success: false,
+                message: 'Product not found in database',
+                result: {}
+            });
+        }
+        return res.status(200).json({
+            success: true,
+            message: 'Product fetched from database successfully',
+            result: product
+        });
+    } catch (error) {
+        logger.error('Error in getProductBySku', { error: error.message, stack: error.stack });
+        return res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            result: {}
+        });
+    }
+};

@@ -9,9 +9,9 @@ import logger from '../../utils/logger.js';
  */
 const formatWoohooCategory = (category, subcategories = []) => {
     return {
-        id: category.id.toString(),
+        id: category.woohoo_category_id.toString(),
         name: category.name,
-        url: category.url,
+        url: category.url_slug,
         description: category.description,
         colorCode: category.color_code,
         offerDescription: category.offer_description,
@@ -30,9 +30,9 @@ const formatWoohooCategory = (category, subcategories = []) => {
 const buildWoohooTree = (categories, parentId = null) => {
     const tree = [];
     for (const category of categories) {
-        if (category.maincategory_id === parentId) {
-            // Find children
-            const childCategories = buildWoohooTree(categories, category.id);
+        if (category.parent_id === parentId) {
+            // Find children (match on woohoo_category_id)
+            const childCategories = buildWoohooTree(categories, category.woohoo_category_id);
             // Format this node exactly like Woohoo
             tree.push(formatWoohooCategory(category, childCategories));
         }
@@ -45,7 +45,7 @@ const buildWoohooTree = (categories, parentId = null) => {
  */
 export const getCategoriesFromDB = async () => {
     const [rows] = await pool.query(
-        'SELECT id, maincategory_id, name, url, description, image_url, thumbnail_url, color_code, offer_description FROM woohoo_categories WHERE is_active = 1'
+        'SELECT woohoo_category_id, parent_id, name, url_slug, description, image_url, thumbnail_url, color_code, offer_description FROM woohoo_categories WHERE is_active = 1'
     );
 
     return buildWoohooTree(rows, null);
@@ -61,10 +61,10 @@ export const saveCategoriesToDB = async (categories, mainCategoryId = null) => {
         // 1. Save current category
         await pool.query(
             `INSERT INTO woohoo_categories 
-            (id, maincategory_id, name, url, description, image_url, thumbnail_url, color_code, offer_description) 
+            (woohoo_category_id, parent_id, name, url_slug, description, image_url, thumbnail_url, color_code, offer_description) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) 
             ON DUPLICATE KEY UPDATE 
-            maincategory_id=VALUES(maincategory_id), name=VALUES(name), url=VALUES(url), 
+            parent_id=VALUES(parent_id), name=VALUES(name), url_slug=VALUES(url_slug), 
             description=VALUES(description), image_url=VALUES(image_url), 
             thumbnail_url=VALUES(thumbnail_url), color_code=VALUES(color_code), 
             offer_description=VALUES(offer_description)`,

@@ -159,3 +159,42 @@ export const storeProductInDB = async (productData) => {
     }
     return results;
 };
+
+/**
+ * Fetches a product by its SKU from the local database
+ */
+export const getProductBySkuFromDB = async (sku) => {
+    const [rows] = await pool.query(
+        'SELECT sku, name, description, url, min_value as minPrice, max_value as maxPrice, currency_code, currency_symbol, currency_numeric_code, image_url as thumbnail, mobile_image as mobile, base_image as base, small_image as small, category_id, is_active FROM woohoo_products WHERE sku = ?',
+        [sku]
+    );
+
+    if (rows.length === 0) {
+        return null;
+    }
+
+    const prod = rows[0];
+
+    // Format to match the Woohoo product structure
+    return {
+        sku: prod.sku,
+        name: prod.name,
+        description: prod.description,
+        currency: {
+            code: prod.currency_code,
+            symbol: prod.currency_symbol,
+            numericCode: prod.currency_numeric_code
+        },
+        url: prod.url,
+        minPrice: prod.minPrice ? prod.minPrice.toString() : null,
+        maxPrice: prod.maxPrice ? prod.maxPrice.toString() : null,
+        images: {
+            thumbnail: prod.thumbnail,
+            mobile: prod.mobile,
+            base: prod.base,
+            small: prod.small
+        },
+        category_id: prod.category_id,
+        is_active: prod.is_active
+    };
+};
