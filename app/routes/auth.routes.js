@@ -1,7 +1,7 @@
 import express from 'express';
-import * as authController from '../controllers/auth/auth.controller.js';
-import * as otpController from '../controllers/auth/otp.controller.js';
-import { validate } from '../middlewares/validation.middleware.js';
+import * as authController from '../controller/auth/auth.controller.js';
+import * as otpController from '../controller/auth/otp.controller.js';
+import { validate } from '../middlewares/validate.middleware.js';
 import { requestOTPSchema, verifyOTPSchema } from '../validations/auth.validation.js';
 import { otpLimiter, otpBlocker } from '../config/rateLimiter.js';
 

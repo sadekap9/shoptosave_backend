@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { syncCategoriesWithWoohoo, syncProductsWithWoohoo } from '../services/categories/categories.service.js';
-import logger from './logger.js';
+import logger from '../utils/logger.js';
 
 /**
  * Scheduled Tasks (Cron Jobs)

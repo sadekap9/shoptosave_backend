@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import logger from './logger.js';
+import logger from '../utils/logger.js';
 
 const sortObject = (obj) => {
     if (obj === null || typeof obj !== 'object') {

@@ -2,14 +2,15 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import authRoutes from './routes/auth.routes.js';
-import userRoutes from './routes/user.routes.js';
-import categoriesRoutes from './routes/categories.routes.js';
-import productsRoutes from './routes/products.routes.js';
-import woohooRoutes from './routes/woohoo.routes.js';
-import { getProductBySku } from './controllers/products/products.controller.js';
-import { apiLimiter } from './config/rateLimiter.js';
-import logger from './utils/logger.js';
+import authRoutes from './app/routes/auth.routes.js';
+import userRoutes from './app/routes/user.routes.js';
+import categoriesRoutes from './app/routes/categories.routes.js';
+import productsRoutes from './app/routes/products.routes.js';
+import woohooRoutes from './app/routes/woohoo.routes.js';
+import storeCategoriesRoutes from './app/routes/storeCategories.routes.js';
+import { getProductBySku } from './app/controller/products/products.controller.js';
+import { apiLimiter } from './app/config/rateLimiter.js';
+import logger from './app/utils/logger.js';
 
 const app = express();
 
@@ -30,6 +31,7 @@ v1Router.use('/user', userRoutes);
 v1Router.use('/categories', categoriesRoutes);
 v1Router.use('/catalog/categories', categoriesRoutes);
 v1Router.use('/products', productsRoutes);
+v1Router.use('/store-categories', storeCategoriesRoutes);
 v1Router.get('/catalog/products/:sku', getProductBySku);
 v1Router.use('/woohoo', woohooRoutes);      // Woohoo v3 Client API Proxy
 

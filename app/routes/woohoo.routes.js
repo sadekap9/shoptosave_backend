@@ -1,5 +1,5 @@
 import express from 'express';
-import * as woohooController from '../controllers/woohoo/woohoo.controller.js';
+import * as woohooController from '../controller/woohoo/woohoo.controller.js';
 
 const router = express.Router();
 

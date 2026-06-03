@@ -1,7 +1,7 @@
 import express from 'express';
-import * as profileController from '../controllers/user/profile.controller.js';
-import authMiddleware from '../middlewares/auth.middleware.js';
-import { validate } from '../middlewares/validation.middleware.js';
+import * as profileController from '../controller/user/profile.controller.js';
+import authMiddleware from '../middlewares/verifyMiddleware.js';
+import { validate } from '../middlewares/validate.middleware.js';
 import { updateProfileSchema } from '../validations/user.validation.js';
 
 const router = express.Router();

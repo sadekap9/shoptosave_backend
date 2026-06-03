@@ -1,5 +1,5 @@
 import twilio from 'twilio';
-import logger from './logger.js';
+import logger from '../utils/logger.js';
 
 // Retrieve credentials
 const accountSid = process.env.TWILIO_ACCOUNT_SID;

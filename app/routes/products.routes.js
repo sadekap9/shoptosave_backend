@@ -1,6 +1,6 @@
 import express from 'express';
-import { getProductsByCategory, syncProducts, storeProduct, getProductBySku } from '../controllers/products/products.controller.js';
-import authenticate from '../middlewares/auth.middleware.js';
+import { getProductsByCategory, syncProducts, storeProduct, getProductBySku } from '../controller/products/products.controller.js';
+import authenticate from '../middlewares/verifyMiddleware.js';
 
 const router = express.Router();
 

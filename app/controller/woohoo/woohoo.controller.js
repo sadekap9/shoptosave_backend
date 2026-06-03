@@ -1,6 +1,6 @@
 import * as woohooService from '../../services/woohoo/woohoo.service.js';
-import { saveCategoriesToDB, getCategoriesFromDB, saveProductsToDB } from '../../services/categories/categories.service.js';
-import pool from '../../utils/db.js';
+import { saveCategoriesToDB, getCategoriesFromDB } from '../../services/categories/categories.service.js';
+import pool from '../../config/dbConfig.js';
 import logger from '../../utils/logger.js';
 
 // ─── AUTHENTICATION ────────────────────────────────────────────────────────────
@@ -12,7 +12,7 @@ import logger from '../../utils/logger.js';
 export const generateAuthCode = async (req, res) => {
     try {
         const result = await woohooService.generateAuthorizationCode();
-        
+
         // Store authorizationCode in the database
         const authorizationCode = result.authorizationCode;
         if (authorizationCode) {
@@ -55,9 +55,9 @@ export const generateBearerToken = async (req, res) => {
                 result: {},
             });
         }
-        
+
         const result = await woohooService.generateBearerToken(authorizationCode);
-        
+
         // Store bearerToken in the database
         const token = result.token;
         if (token) {
@@ -99,7 +99,7 @@ export const getCategories = async (req, res) => {
             return res.status(401).json({ success: false, message: 'Woohoo Bearer token required', result: {} });
         }
         const result = await woohooService.getWoohooCategories(bearerToken);
-        
+
         // Save categories to database
         if (result) {
             const categoriesToSync = Array.isArray(result) ? result : [result];
@@ -156,14 +156,6 @@ export const getProductsByCategory = async (req, res) => {
         }
         const { categoryId } = req.params;
         const result = await woohooService.getWoohooProductsByCategory(bearerToken, categoryId);
-        
-        // Save fetched products to database
-        if (result && result.products) {
-            const productsList = Array.isArray(result.products) ? result.products : [result.products];
-            await saveProductsToDB(productsList, categoryId);
-            logger.info(`Successfully saved products for category ${categoryId} to database`);
-        }
-
         return res.status(200).json({
             success: true,
             message: 'Products fetched successfully',

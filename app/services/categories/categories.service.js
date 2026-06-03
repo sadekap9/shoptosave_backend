@@ -1,7 +1,7 @@
 import axios from 'axios';
-import pool from '../../utils/db.js';
+import pool from '../../config/dbConfig.js';
 import { getWoohooToken } from './woohooAuth.service.js';
-import { getWoohooHeaders } from '../../utils/woohoo.helper.js';
+import { getWoohooHeaders } from '../../helpers/woohoo.helper.js';
 import logger from '../../utils/logger.js';
 
 /**

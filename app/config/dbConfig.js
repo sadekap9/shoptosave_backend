@@ -1,6 +1,6 @@
 import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
-import logger from './logger.js';
+import logger from '../utils/logger.js';
 dotenv.config();
 
 const pool = mysql.createPool({

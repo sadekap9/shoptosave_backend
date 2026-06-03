@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { getWoohooHeaders } from '../../utils/woohoo.helper.js';
+import { getWoohooHeaders } from '../../helpers/woohoo.helper.js';
 import logger from '../../utils/logger.js';
 
 const BASE_URL = process.env.WOOHOO_API_BASE_URL; // e.g. https://sandbox.woohoo.in/rest
@@ -13,17 +13,17 @@ const TOKEN_URL = process.env.WOOHOO_TOKEN_URL;     // https://sandbox.woohoo.in
  */
 export const generateAuthorizationCode = async () => {
     const payload = {
-        clientId:  process.env.WOOHOO_CLIENT_ID,
-        username:  process.env.WOOHOO_USERNAME,
-        password:  process.env.WOOHOO_PASSWORD,
+        clientId: process.env.WOOHOO_CLIENT_ID,
+        username: process.env.WOOHOO_USERNAME,
+        password: process.env.WOOHOO_PASSWORD,
     };
-    
+
     console.log('\n[Woohoo API Config] generateAuthorizationCode called');
     console.log('[Woohoo API Config] URL:', AUTH_URL);
     console.log('[Woohoo API Config] Using Client ID:', payload.clientId);
     console.log('[Woohoo API Config] Using Username:', payload.username);
     console.log('[Woohoo API Config] Using Password:', payload.password);
-    
+
     const response = await axios.post(AUTH_URL, payload);
     return response.data;
 };
@@ -34,16 +34,16 @@ export const generateAuthorizationCode = async () => {
 export const generateBearerToken = async (authorizationCode) => {
     const payload = {
         authorizationCode,
-        clientId:     process.env.WOOHOO_CLIENT_ID,
+        clientId: process.env.WOOHOO_CLIENT_ID,
         clientSecret: process.env.WOOHOO_CLIENT_SECRET,
     };
-    
+
     console.log('\n[Woohoo API Config] generateBearerToken called');
     console.log('[Woohoo API Config] URL:', TOKEN_URL);
     console.log('[Woohoo API Config] Using Auth Code:', authorizationCode);
     console.log('[Woohoo API Config] Using Client ID:', payload.clientId);
     console.log('[Woohoo API Config] Using Client Secret:', payload.clientSecret);
-    
+
     const response = await axios.post(TOKEN_URL, payload);
     return response.data;
 };

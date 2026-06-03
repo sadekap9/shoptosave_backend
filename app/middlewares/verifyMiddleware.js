@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { executeQuery } from '../utils/db.js';
+import { executeQuery } from '../config/dbConfig.js';
 import logger from '../utils/logger.js';
 
 /**

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { getWoohooHeaders } from '../../utils/woohoo.helper.js';
+import { getWoohooHeaders } from '../../helpers/woohoo.helper.js';
 import logger from '../../utils/logger.js';
 
 /**

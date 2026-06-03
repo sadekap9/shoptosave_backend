@@ -1,6 +1,6 @@
 import express from 'express';
-import { getCategories, getProductsByCategory, syncCategories, syncProducts, storeProduct } from '../controllers/categories/categories.controller.js';
-import authenticate from '../middlewares/auth.middleware.js';
+import { getCategories, getProductsByCategory, syncCategories, syncProducts, storeProduct } from '../controller/categories/categories.controller.js';
+import authenticate from '../middlewares/verifyMiddleware.js';
 
 const router = express.Router();
 

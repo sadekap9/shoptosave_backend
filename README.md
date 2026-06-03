@@ -14,16 +14,19 @@ The robust and scalable backend API powering the **ShopToSave** application, a p
 
 ```text
 shoptosave_backend/
-├── config/         # Database and third-party API configurations
-├── constant/       # Status codes, constants, and action helpers
-├── controllers/    # Request handlers and business logic entry points
-├── middlewares/    # Auth and validation middlewares
-├── routes/         # Express API route definitions
-├── services/       # Service layer for database queries and core workflows
-├── utils/          # Helper utilities and shared functions
-├── validations/    # Request schema validation rules
-├── app.js          # Express app initialization
-└── server.js       # App entrypoint & server listener
+├── app/                  # Core application codebase
+│   ├── config/           # Database pools, rate limiters, and constants
+│   │   └── constant/     # Global constant definitions
+│   ├── controller/       # Express Controllers
+│   ├── cron/             # Background scheduler and automated jobs
+│   ├── helpers/          # Shared helpers and utility integrations
+│   ├── middlewares/      # Security, JWT check, and validation middlewares
+│   ├── routes/           # Route definitions with mounted controller actions
+│   ├── services/         # Business Logic Layer (SQL query construction)
+│   ├── utils/            # DB wrappers, logging, and other utilities
+│   └── validations/      # Request schema validations
+├── app.js                # Express application setup & middleware mounting
+└── server.js             # App entry point (loads env & starts server)
 ```
 
 ## Getting Started

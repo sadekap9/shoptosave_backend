@@ -1,4 +1,4 @@
-import { executeQuery } from '../../utils/db.js';
+import { executeQuery } from '../../config/dbConfig.js';
 
 /**
  * Update Profile Service

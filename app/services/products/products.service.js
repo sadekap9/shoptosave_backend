@@ -1,7 +1,7 @@
 import axios from 'axios';
-import pool from '../../utils/db.js';
+import pool from '../../config/dbConfig.js';
 import { getWoohooToken } from '../categories/woohooAuth.service.js';
-import { getWoohooHeaders } from '../../utils/woohoo.helper.js';
+import { getWoohooHeaders } from '../../helpers/woohoo.helper.js';
 import logger from '../../utils/logger.js';
 
 /**
@@ -9,7 +9,7 @@ import logger from '../../utils/logger.js';
  */
 export const getProductsByCategoryFromDB = async (categoryId) => {
     const [rows] = await pool.query(
-        'SELECT sku, name, description, url, min_value as minPrice, max_value as maxPrice, currency_code, currency_symbol, currency_numeric_code, image_url as thumbnail, mobile_image as mobile, base_image as base, small_image as small FROM woohoo_products WHERE category_id = ? AND is_active = 1',
+        'SELECT sku, name, description, url_key as url, min_price as minPrice, max_price as maxPrice, currency_code, currency_symbol, currency_numeric_code, image_thumbnail as thumbnail, image_mobile as mobile, image_base as base, image_small as small FROM woohoo_products WHERE category_id = ? AND is_active = 1',
         [categoryId]
     );
 
@@ -23,8 +23,8 @@ export const getProductsByCategoryFromDB = async (categoryId) => {
             numericCode: prod.currency_numeric_code
         },
         url: prod.url,
-        minPrice: prod.minPrice.toString(),
-        maxPrice: prod.maxPrice.toString(),
+        minPrice: prod.minPrice ? prod.minPrice.toString() : '0',
+        maxPrice: prod.maxPrice ? prod.maxPrice.toString() : '0',
         images: {
             thumbnail: prod.thumbnail,
             mobile: prod.mobile,
@@ -41,14 +41,14 @@ export const saveProductsToDB = async (products, categoryId) => {
     for (const prod of products) {
         await pool.query(
              `INSERT INTO woohoo_products 
-            (sku, name, category_id, url, min_value, max_value, currency_code, currency_symbol, currency_numeric_code, image_url, mobile_image, base_image, small_image) 
+            (sku, name, category_id, url_key, min_price, max_price, currency_code, currency_symbol, currency_numeric_code, image_thumbnail, image_mobile, image_base, image_small) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
             ON DUPLICATE KEY UPDATE 
-            name=VALUES(name), category_id=VALUES(category_id), url=VALUES(url), min_value=VALUES(min_value), 
-            max_value=VALUES(max_value), currency_code=VALUES(currency_code), 
+            name=VALUES(name), category_id=VALUES(category_id), url_key=VALUES(url_key), min_price=VALUES(min_price), 
+            max_price=VALUES(max_price), currency_code=VALUES(currency_code), 
             currency_symbol=VALUES(currency_symbol), currency_numeric_code=VALUES(currency_numeric_code), 
-            image_url=VALUES(image_url), mobile_image=VALUES(mobile_image), 
-            base_image=VALUES(base_image), small_image=VALUES(small_image)`,
+            image_thumbnail=VALUES(image_thumbnail), image_mobile=VALUES(image_mobile), 
+            image_base=VALUES(image_base), image_small=VALUES(image_small)`,
             [
                 prod.sku,
                 prod.name,
@@ -74,7 +74,7 @@ export const saveProductsToDB = async (products, categoryId) => {
 export const syncProductsWithWoohoo = async () => {
     try {
         const token = await getWoohooToken();
-        const [categories] = await pool.query('SELECT id FROM woohoo_categories WHERE is_active = 1');
+        const [categories] = await pool.query('SELECT woohoo_category_id AS id FROM woohoo_categories WHERE is_active = 1');
         
         let totalSynced = 0;
         for (const cat of categories) {
@@ -88,14 +88,14 @@ export const syncProductsWithWoohoo = async () => {
                 for (const prod of products) {
                     await pool.query(
                          `INSERT INTO woohoo_products 
-                        (sku, name, category_id, url, min_value, max_value, currency_code, currency_symbol, currency_numeric_code, image_url, mobile_image, base_image, small_image) 
+                        (sku, name, category_id, url_key, min_price, max_price, currency_code, currency_symbol, currency_numeric_code, image_thumbnail, image_mobile, image_base, image_small) 
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
                         ON DUPLICATE KEY UPDATE 
-                        name=VALUES(name), url=VALUES(url), min_value=VALUES(min_value), 
-                        max_value=VALUES(max_value), currency_code=VALUES(currency_code), 
+                        name=VALUES(name), url_key=VALUES(url_key), min_price=VALUES(min_price), 
+                        max_price=VALUES(max_price), currency_code=VALUES(currency_code), 
                         currency_symbol=VALUES(currency_symbol), currency_numeric_code=VALUES(currency_numeric_code), 
-                        image_url=VALUES(image_url), mobile_image=VALUES(mobile_image), 
-                        base_image=VALUES(base_image), small_image=VALUES(small_image)`,
+                        image_thumbnail=VALUES(image_thumbnail), image_mobile=VALUES(image_mobile), 
+                        image_base=VALUES(image_base), image_small=VALUES(image_small)`,
                         [
                             prod.sku, prod.name, cat.id, prod.url, prod.minPrice, prod.maxPrice, 
                             prod.currency?.code, prod.currency?.symbol, prod.currency?.numericCode, 
@@ -130,13 +130,13 @@ export const storeProductInDB = async (productData) => {
 
         await pool.query(
             `INSERT INTO woohoo_products 
-            (sku, name, category_id, description, min_value, max_value, currency_code, currency_symbol, currency_numeric_code, image_url, mobile_image, base_image, small_image, url, is_active) 
+            (sku, name, category_id, description, min_price, max_price, currency_code, currency_symbol, currency_numeric_code, image_thumbnail, image_mobile, image_base, image_small, url_key, is_active) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
             ON DUPLICATE KEY UPDATE 
-            name=VALUES(name), category_id=VALUES(category_id), description=VALUES(description), min_value=VALUES(min_value), 
-            max_value=VALUES(max_value), currency_code=VALUES(currency_code), currency_symbol=VALUES(currency_symbol), 
-            currency_numeric_code=VALUES(currency_numeric_code), image_url=VALUES(image_url), mobile_image=VALUES(mobile_image), 
-            base_image=VALUES(base_image), small_image=VALUES(small_image), url=VALUES(url), is_active=VALUES(is_active)`,
+            name=VALUES(name), category_id=VALUES(category_id), description=VALUES(description), min_price=VALUES(min_price), 
+            max_price=VALUES(max_price), currency_code=VALUES(currency_code), currency_symbol=VALUES(currency_symbol), 
+            currency_numeric_code=VALUES(currency_numeric_code), image_thumbnail=VALUES(image_thumbnail), image_mobile=VALUES(image_mobile), 
+            image_base=VALUES(image_base), image_small=VALUES(image_small), url_key=VALUES(url_key), is_active=VALUES(is_active)`,
             [
                 prod.sku,
                 prod.name,
@@ -165,7 +165,7 @@ export const storeProductInDB = async (productData) => {
  */
 export const getProductBySkuFromDB = async (sku) => {
     const [rows] = await pool.query(
-        'SELECT sku, name, description, url, min_value as minPrice, max_value as maxPrice, currency_code, currency_symbol, currency_numeric_code, image_url as thumbnail, mobile_image as mobile, base_image as base, small_image as small, category_id, is_active FROM woohoo_products WHERE sku = ?',
+        'SELECT sku, name, description, url_key as url, min_price as minPrice, max_price as maxPrice, currency_code, currency_symbol, currency_numeric_code, image_thumbnail as thumbnail, image_mobile as mobile, image_base as base, image_small as small, category_id, is_active FROM woohoo_products WHERE sku = ?',
         [sku]
     );
 

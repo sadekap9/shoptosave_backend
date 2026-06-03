@@ -1,8 +1,8 @@
 import jwt from 'jsonwebtoken';
-import { executeQuery } from '../../utils/db.js';
-import { sendSMS } from '../../utils/sms.helper.js';
+import { executeQuery } from '../../config/dbConfig.js';
+import { sendSMS } from '../../helpers/sms.helper.js';
 import logger from '../../utils/logger.js';
-import { DUMMY_USER } from '../../constant/constant.js';
+import { DUMMY_USER } from '../../config/constant/constant.js';
 
 /**
  * Normalize phone number
