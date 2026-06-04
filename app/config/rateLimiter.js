@@ -81,6 +81,9 @@ export const registerLimiter = createLimiter('register', 3, 15 * 60 * 1000, 6 * 
 export const otpBlocker = blockChecker('otp');
 export const otpLimiter = createLimiter('otp', 5, 15 * 60 * 1000, 6 * 60 * 60 * 1000);
 
+export const verifyOtpBlocker = blockChecker('verify-otp');
+export const verifyOtpLimiter = createLimiter('verify-otp', 5, 15 * 60 * 1000, 6 * 60 * 60 * 1000);
+
 /**
  * Utility to reset all rate limiters (e.g., for testing or admin cleanup)
  */

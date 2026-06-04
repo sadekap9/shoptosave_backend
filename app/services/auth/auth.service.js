@@ -6,6 +6,9 @@ import { sendSMS } from '../../helpers/sms.helper.js';
 import logger from '../../utils/logger.js';
 import { DUMMY_USER } from '../../config/constant/constant.js';
 
+// Secure In-Memory Cache to store OTP metadata (hash, attempts, expiry) without modifying DB schema
+const secureOtpCache = new Map();
+
 /**
  * Helper to hash OTP using SHA-256
  */
@@ -34,10 +37,33 @@ export const requestOTPService = async (data) => {
     const isDummy = normalizedPhone === DUMMY_USER.PHONE;
 
     try {
+        // Cooldown check in-memory (60 seconds)
+        const cachedOtp = secureOtpCache.get(normalizedPhone);
+        if (cachedOtp) {
+            const elapsed = (Date.now() - cachedOtp.createdAt) / 1000;
+            if (elapsed < 60) {
+                return {
+                    success: false,
+                    statusCode: 400,
+                    message: `Please wait ${Math.ceil(60 - elapsed)} seconds before requesting another OTP.`
+                };
+            }
+        }
+
         // Generate 6 digit OTP
         const otp = isDummy ? DUMMY_USER.OTP : Math.floor(100000 + Math.random() * 900000).toString();
+        const otpHashed = hashOTP(otp);
+        const expiresAt = Date.now() + 5 * 60 * 1000; // 5 mins expiry
 
-        // Check if user exists
+        // Store OTP details securely in-memory
+        secureOtpCache.set(normalizedPhone, {
+            otpHash: otpHashed,
+            expiresAt,
+            attempts: 0,
+            createdAt: Date.now()
+        });
+
+        // Check if user exists, create or update plain text OTP for backward compatibility (6 chars limit)
         const users = await executeQuery('SELECT id FROM user_master WHERE phone = ?', [normalizedPhone]);
         if (users.length === 0) {
             await executeQuery(
@@ -107,15 +133,6 @@ export const verifyOTPService = async (data, meta) => {
 
         const user = users[0];
 
-        // Verify OTP
-        if (!isDummy && (!user.otp || user.otp !== otp)) {
-            return {
-                success: false,
-                statusCode: 400,
-                message: 'Invalid or expired OTP'
-            };
-        }
-
         if (user.is_active === 0) {
             return {
                 success: false,
@@ -124,7 +141,55 @@ export const verifyOTPService = async (data, meta) => {
             };
         }
 
-        // Clear OTP in user_master after successful verification (only otp column, no expires_at)
+        // Fetch secure OTP configuration from in-memory cache
+        const cachedOtp = secureOtpCache.get(normalizedPhone);
+
+        if (!isDummy) {
+            // 1. Expiry Check
+            if (!cachedOtp || Date.now() > cachedOtp.expiresAt) {
+                secureOtpCache.delete(normalizedPhone);
+                return {
+                    success: false,
+                    statusCode: 400,
+                    message: 'OTP has expired. Please request a new one.'
+                };
+            }
+
+            // 2. Max attempts check
+            if (cachedOtp.attempts >= 3) {
+                secureOtpCache.delete(normalizedPhone);
+                return {
+                    success: false,
+                    statusCode: 400,
+                    message: 'Too many failed attempts. This OTP has been invalidated. Please request a new one.'
+                };
+            }
+
+            // 3. Match Verification Hash
+            const inputHash = hashOTP(otp);
+            if (cachedOtp.otpHash !== inputHash) {
+                cachedOtp.attempts += 1;
+                secureOtpCache.set(normalizedPhone, cachedOtp);
+
+                const remaining = 3 - cachedOtp.attempts;
+                if (remaining <= 0) {
+                    secureOtpCache.delete(normalizedPhone);
+                    return {
+                        success: false,
+                        statusCode: 400,
+                        message: 'Invalid OTP. This code has now been locked.'
+                    };
+                }
+                return {
+                    success: false,
+                    statusCode: 400,
+                    message: `Invalid OTP. You have ${remaining} attempts remaining.`
+                };
+            }
+        }
+
+        // Clean up OTP from cache and DB upon successful verification
+        secureOtpCache.delete(normalizedPhone);
         await executeQuery('UPDATE user_master SET otp = NULL WHERE id = ?', [user.id]);
 
         // Generate JWT Tokens
@@ -158,8 +223,6 @@ export const verifyOTPService = async (data, meta) => {
             ip_address,
             tokenExpiry
         ]);
-
-
 
         return {
             success: true,
