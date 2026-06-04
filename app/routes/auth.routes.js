@@ -17,8 +17,8 @@ router.post('/resend-otp', otpBlocker, otpLimiter, validate(requestOTPSchema), o
 // Verify OTP (Users) - Secured with rate limits
 router.post('/verify-otp', verifyOtpBlocker, verifyOtpLimiter, validate(verifyOTPSchema), otpController.verifyOTP);
 
-// Admin / Sub-Admin Register (Authenticated - Admin only)
-router.post('/admin/register', authMiddleware, authorizeRole([1]), validate(adminRegisterSchema), authController.adminRegister);
+// Admin / Sub-Admin Register
+router.post('/admin/register', validate(adminRegisterSchema), authController.adminRegister);
 
 // Admin / Sub-Admin Login
 router.post('/admin/login', validate(adminLoginSchema), authController.adminLogin);
