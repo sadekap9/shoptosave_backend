@@ -28,10 +28,7 @@ export const TRANSACTION_SOURCE = {
     CASHBACK: 3
 };
 
-export const USER_ROLE = {
-    ADMIN: 1,
-    USER: 2
-};
+export const roleMap = [1, 2, 3]; // 1 = Admin, 2 = Sub Admin, 3 = User
 
 export const ACCOUNT_STATUS = {
     ACTIVE: 1,

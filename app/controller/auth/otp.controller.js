@@ -40,8 +40,9 @@ export const verifyOTP = async (req, res) => {
         const payload = req.validatedData;
         const meta = {
             ip_address: req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip || '127.0.0.1',
-            device_token: req.headers['devicetoken'] || null,
-            platform: req.headers['platform'] || null
+            device_token: req.headers['devicetoken'] || req.query.device_token || payload.device_token || null,
+            platform: req.headers['platform'] || req.query.platform || payload.platform || 'w',
+            device_name: req.headers['devicename'] || req.query.device_name || payload.device_name || null
         };
         
         const response = await authService.verifyOTPService(payload, meta);

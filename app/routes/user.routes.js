@@ -7,6 +7,6 @@ import { updateProfileSchema } from '../validations/user.validation.js';
 const router = express.Router();
 
 // Protected route to update profile
-router.put('/profile', authMiddleware, validate(updateProfileSchema), profileController.updateProfile);
+router.patch('/profile', authMiddleware, validate(updateProfileSchema), profileController.updateProfile);
 
 export default router;
