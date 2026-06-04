@@ -14,7 +14,20 @@ export const getAdminStoreCategoriesService = async () => {
         data: rows
     };
 };
-
+/**
+ * Fetch active store categories - Public
+ */
+export const getPublicStoreCategoriesService = async () => {
+    const [rows] = await pool.query(
+        'SELECT id, category_name, logo, status FROM categories WHERE status = 1 ORDER BY id DESC'
+    );
+    return {
+        success: true,
+        statusCode: 200,
+        message: 'Store categories fetched successfully',
+        data: rows
+    };
+};
 
 
 /**

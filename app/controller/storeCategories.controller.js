@@ -25,7 +25,30 @@ export const getAdminStoreCategories = async (req, res) => {
         });
     }
 };
-
+/**
+ * Get all active store categories - Public
+ */
+export const getPublicStoreCategories = async (req, res) => {
+    try {
+        const response = await storeCategoriesService.getPublicStoreCategoriesService();
+        
+        return res.status(response.statusCode).json({
+            success: response.success,
+            errors: response.success ? [] : [{ message: response.message }],
+            result: {
+                message: response.message,
+                data: response.data
+            }
+        });
+    } catch (error) {
+        logger.error('Error in getPublicStoreCategories', { error: error.message });
+        return res.status(500).json({
+            success: false,
+            errors: [{ message: 'Internal server error' }],
+            result: {}
+        });
+    }
+};
 
 
 /**

@@ -1,6 +1,7 @@
 import express from 'express';
 import {
     getAdminStoreCategories,
+    getPublicStoreCategories,
     createStoreCategory,
     updateStoreCategory,
     deleteStoreCategory
@@ -12,7 +13,10 @@ import { createStoreCategorySchema, updateStoreCategorySchema } from '../validat
 
 const router = express.Router();
 
-// Get all store categories including inactive
+// Get active store categories (Public)
+router.get('/list', getPublicStoreCategories);
+
+// Get all store categories including inactive (Admin)
 router.get('/admin/list', getAdminStoreCategories);
 
 // Create store category (Authenticated/Admin/Sub-Admin/User, parses logo image upload)
