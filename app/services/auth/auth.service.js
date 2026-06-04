@@ -493,45 +493,11 @@ export const adminRegisterService = async (data, meta) => {
             [name || null, normalizedEmail, normalizedPhone, hashedPassword, targetRole]
         );
         const userId = result.insertId;
-
-        // Generate JWT Tokens
-        const accessToken = jwt.sign(
-            { id: userId, phone: normalizedPhone, role: targetRole, email: normalizedEmail },
-            process.env.JWT_SECRET,
-            { expiresIn: '15m' }
-        );
-
-        const refreshToken = jwt.sign(
-            { id: userId, phone: normalizedPhone, role: targetRole, email: normalizedEmail },
-            process.env.JWT_REFRESH_SECRET || 'refresh_secret',
-            { expiresIn: '7d' }
-        );
-
-        const tokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
-        // Create Session
-        await executeQuery(
-            `INSERT INTO session_master (user_id, access_token, refresh_token, device_token, device_name, platform, ip_address, is_revoked, expires_at) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-            [userId, accessToken, refreshToken, device_token || null, device_name || null, platform || 'w', ip_address, tokenExpiry]
-        );
-
-        // Register Device
-        if (device_token) {
-            await executeQuery(
-                `INSERT INTO user_devices (user_id, device_token, device_name, platform) VALUES (?, ?, ?, ?)
-                 ON DUPLICATE KEY UPDATE device_name = VALUES(device_name), platform = VALUES(platform), last_active_at = NOW()`,
-                [userId, device_token, device_name || null, platform || 'w']
-            );
-        }
-
         return {
             success: true,
             statusCode: 200,
             message: 'Registration successful',
             data: {
-                access_token: accessToken,
-                refresh_token: refreshToken,
                 user: {
                     id: userId,
                     name: name || '',
