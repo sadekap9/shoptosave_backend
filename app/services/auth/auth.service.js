@@ -159,15 +159,7 @@ export const verifyOTPService = async (data, meta) => {
             tokenExpiry
         ]);
 
-        // Register Device
-        if (device_token) {
-            const deviceQuery = `
-                INSERT INTO user_devices (user_id, device_token, device_name, platform) 
-                VALUES (?, ?, ?, ?)
-                ON DUPLICATE KEY UPDATE device_name = VALUES(device_name), platform = VALUES(platform), last_active_at = NOW()
-            `;
-            await executeQuery(deviceQuery, [user.id, device_token, device_name || null, platform || 'w']);
-        }
+
 
         return {
             success: true,
@@ -480,14 +472,7 @@ export const adminLoginService = async (data, meta) => {
             [user.id, accessToken, refreshToken, device_token || null, device_name || null, platform || 'w', ip_address, tokenExpiry]
         );
 
-        // Register Device
-        if (device_token) {
-            await executeQuery(
-                `INSERT INTO user_devices (user_id, device_token, device_name, platform) VALUES (?, ?, ?, ?)
-                 ON DUPLICATE KEY UPDATE device_name = VALUES(device_name), platform = VALUES(platform), last_active_at = NOW()`,
-                [user.id, device_token, device_name || null, platform || 'w']
-            );
-        }
+
 
         return {
             success: true,
