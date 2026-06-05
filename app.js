@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import multer from 'multer';
 import authRoutes from './app/routes/auth.routes.js';
 import userRoutes from './app/routes/user.routes.js';
 import categoriesRoutes from './app/routes/categories.routes.js';
@@ -9,6 +10,7 @@ import productsRoutes from './app/routes/products.routes.js';
 import woohooRoutes from './app/routes/woohoo.routes.js';
 import storeCategoriesRoutes from './app/routes/storeCategories.routes.js';
 import subAdminRoutes from './app/routes/subAdmin.routes.js';
+import storesRoutes from './app/routes/stores.routes.js';
 import { getProductBySku } from './app/controller/products/products.controller.js';
 import { apiLimiter } from './app/config/rateLimiter.js';
 import logger from './app/utils/logger.js';
@@ -37,6 +39,7 @@ v1Router.use('/catalog/categories', categoriesRoutes);
 v1Router.use('/products', productsRoutes);
 v1Router.use('/store-categories', storeCategoriesRoutes);
 v1Router.use('/sub-admin', subAdminRoutes);
+v1Router.use('/stores', storesRoutes);
 v1Router.get('/catalog/products/:sku', getProductBySku);
 v1Router.use('/woohoo', woohooRoutes);      // Woohoo v3 Client API Proxy
 
@@ -49,6 +52,28 @@ app.get('/', (req, res) => {
 
 // Global Error Handler
 app.use((err, req, res, next) => {
+    // Handle Multer specific errors
+    if (err instanceof multer.MulterError) {
+        let errorMessage = err.message;
+        if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+            errorMessage = `Unexpected file field. Please upload the file using the field name 'logo'.`;
+        }
+        return res.status(400).json({
+            success: false,
+            errors: [{ message: errorMessage }],
+            result: {}
+        });
+    }
+
+    // Handle custom file filter errors from Multer
+    if (err.message && (err.message.includes('Only image') || err.message.includes('allowed'))) {
+        return res.status(400).json({
+            success: false,
+            errors: [{ message: err.message }],
+            result: {}
+        });
+    }
+
     logger.error('Internal Server Error', { stack: err.stack });
     res.status(500).json({
         success: false,

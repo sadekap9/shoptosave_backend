@@ -1,0 +1,193 @@
+import pool from '../../config/dbConfig.js';
+
+/**
+ * Fetch all stores (with optional category information)
+ */
+export const getStoresService = async () => {
+    try {
+        const [rows] = await pool.query(`
+            SELECT s.id, s.store_name, s.logo, s.category_id, c.category_name, s.status, s.created_at, s.updated_at 
+            FROM stores s 
+            LEFT JOIN categories c ON s.category_id = c.id 
+            ORDER BY s.id ASC
+        `);
+        return {
+            success: true,
+            statusCode: 200,
+            message: 'Stores fetched successfully',
+            data: rows
+        };
+    } catch (error) {
+        throw error;
+    }
+};
+
+/**
+ * Create a new store
+ */
+export const createStoreService = async (data) => {
+    const { store_name, logo, category_id, status } = data;
+    const storeStatus = status !== undefined ? parseInt(status) : 1;
+
+    // Check if store name already exists (case-insensitive duplicate check)
+    const [[existingStore]] = await pool.query(
+        'SELECT id FROM stores WHERE LOWER(store_name) = ?',
+        [store_name.trim().toLowerCase()]
+    );
+    if (existingStore) {
+        return {
+            success: false,
+            statusCode: 400,
+            message: 'Store name already exists'
+        };
+    }
+
+    // Check if category exists if category_id is provided
+    if (category_id !== undefined && category_id !== null) {
+        const [[existingCategory]] = await pool.query(
+            'SELECT id FROM categories WHERE id = ?',
+            [category_id]
+        );
+        if (!existingCategory) {
+            return {
+                success: false,
+                statusCode: 400,
+                message: 'Category not found'
+            };
+        }
+    }
+
+    try {
+        const [result] = await pool.query(
+            'INSERT INTO stores (store_name, logo, category_id, status) VALUES (?, ?, ?, ?)',
+            [
+                store_name.trim(), 
+                logo ? logo.trim() : null, 
+                category_id !== undefined ? category_id : null, 
+                storeStatus
+            ]
+        );
+
+        return {
+            success: true,
+            statusCode: 200,
+            message: 'Store created successfully',
+            data: {
+                id: result.insertId
+            }
+        };
+    } catch (error) {
+        throw error;
+    }
+};
+
+/**
+ * Update an existing store
+ */
+export const updateStoreService = async (id, body) => {
+    const { ...updateFields } = body;
+
+    // Step 1: Check if store exists
+    const [[store]] = await pool.query('SELECT id FROM stores WHERE id = ?', [id]);
+    if (!store) {
+        return {
+            success: false,
+            statusCode: 404,
+            message: 'Store not found'
+        };
+    }
+
+    // Step 2: Define allowed fields
+    const allowedFields = ['store_name', 'logo', 'category_id', 'status'];
+
+    // Step 3: Filter keys
+    const keys = Object.keys(updateFields).filter(
+        key => allowedFields.includes(key) && updateFields[key] !== undefined
+    );
+
+    if (keys.length === 0) {
+        return { success: false, statusCode: 400, message: "No valid fields provided to update." };
+    }
+
+    // Step 4: Handle validations
+    if (keys.includes('store_name')) {
+        const nameToValidate = updateFields.store_name.trim();
+        const [[existingStore]] = await pool.query(
+            'SELECT id FROM stores WHERE LOWER(store_name) = ? AND id != ?',
+            [nameToValidate.toLowerCase(), id]
+        );
+        if (existingStore) {
+            return {
+                success: false,
+                statusCode: 400,
+                message: 'Store name already exists'
+            };
+        }
+        updateFields.store_name = nameToValidate;
+    }
+
+    if (keys.includes('category_id')) {
+        const catId = updateFields.category_id;
+        if (catId !== null) {
+            const [[existingCategory]] = await pool.query(
+                'SELECT id FROM categories WHERE id = ?',
+                [catId]
+            );
+            if (!existingCategory) {
+                return {
+                    success: false,
+                    statusCode: 400,
+                    message: 'Category not found'
+                };
+            }
+        }
+    }
+
+    if (keys.includes('logo') && updateFields.logo) {
+        updateFields.logo = updateFields.logo.trim();
+    }
+
+    if (keys.includes('status')) {
+        updateFields.status = parseInt(updateFields.status);
+    }
+
+    // Step 5: Dynamically construct SET clause
+    const setClause = keys.map(field => `${field} = ?`).join(', ');
+    const values = keys.map(field => updateFields[field]);
+    const updateQuery = `UPDATE stores SET ${setClause} WHERE id = ?`;
+    values.push(id);
+
+    // Step 6: Execute UPDATE
+    await pool.query(updateQuery, values);
+
+    return {
+        success: true,
+        statusCode: 200,
+        message: "Store updated successfully",
+        data: { id: parseInt(id), ...updateFields }
+    };
+};
+
+/**
+ * Delete a store
+ */
+export const deleteStoreService = async (id) => {
+    // Check if store exists
+    const [[store]] = await pool.query('SELECT id FROM stores WHERE id = ?', [id]);
+    if (!store) {
+        return {
+            success: false,
+            statusCode: 404,
+            message: 'Store not found'
+        };
+    }
+
+    await pool.query('DELETE FROM stores WHERE id = ?', [id]);
+
+    return {
+        success: true,
+        statusCode: 200,
+        message: 'Store deleted successfully',
+        data: { id: parseInt(id) }
+    };
+};
