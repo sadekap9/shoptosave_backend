@@ -17,7 +17,7 @@ router.post('/add', validate(createSubAdminSchema), subAdminController.addSubAdm
 router.patch('/update/:id', validate(updateSubAdminSchema), subAdminController.updateSubAdmin);
 
 // Delete Sub-Admin
-router.patch('/delete/:id', subAdminController.deleteSubAdmin);
+router.delete('/delete/:id', subAdminController.deleteSubAdmin);
 
 // List Sub-Admins
 router.get('/list', subAdminController.listSubAdmins);

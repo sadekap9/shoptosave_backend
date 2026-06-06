@@ -19,18 +19,12 @@ router.use(authorizeRole([1, 2]));
 
 // List all gift cards
 router.get('/list', getGiftCards);
-router.get('/', getGiftCards);
 
 // Get single gift card details by ID
 router.get('/:id', getGiftCardById);
 
 // Create new gift card (allows up to 20 image uploads each for mobile/desktop fields)
 router.post('/add', 
-    giftCardUploadFields, 
-    validate(createGiftCardSchema), 
-    createGiftCard
-);
-router.post('/', 
     giftCardUploadFields, 
     validate(createGiftCardSchema), 
     createGiftCard
@@ -42,14 +36,8 @@ router.patch('/update/:id',
     validate(updateGiftCardSchema), 
     updateGiftCard
 );
-router.patch('/:id', 
-    giftCardUploadFields, 
-    validate(updateGiftCardSchema), 
-    updateGiftCard
-);
 
 // Delete gift card
 router.delete('/delete/:id', deleteGiftCard);
-router.delete('/:id', deleteGiftCard);
 
 export default router;
