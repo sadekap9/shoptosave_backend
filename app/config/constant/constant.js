@@ -64,4 +64,11 @@ export const uploadFolders = Object.freeze({
     DESKTOP_URL_PREFIX: '/uploads/giftcards/desktop'
 });
 
-export const UsageType = [1, 0]; // 1 = online, 0 = offline
+export const USAGE_TYPE = Object.freeze({
+    ONLINE: 1,
+    OFFLINE: 2,
+    BOTH: 3
+});
+
+export const UsageType = [1, 2, 3]; // 1 = online, 2 = offline, 3 = both
+

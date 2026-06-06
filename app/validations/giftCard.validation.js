@@ -36,9 +36,9 @@ export const createGiftCardSchema = Joi.object({
     redeem_steps: Joi.string().allow('', null).optional(),
     usage_type: Joi.alternatives().try(
         Joi.number().integer().valid(...UsageType),
-        Joi.string().valid('ONLINE', 'OFFLINE')
+        Joi.string().valid('ONLINE', 'OFFLINE', 'BOTH')
     ).default(1).optional().messages({
-        'any.only': 'Usage type must be 1 (ONLINE) or 0 (OFFLINE)'
+        'any.only': 'Usage type must be 1 (ONLINE), 2 (OFFLINE) or 3 (BOTH)'
     }),
     validity: Joi.string().trim().max(100).allow('', null).optional().messages({
         'string.max': 'Validity text cannot exceed 100 characters'
@@ -120,9 +120,9 @@ export const updateGiftCardSchema = Joi.object({
     redeem_steps: Joi.string().allow('', null).optional(),
     usage_type: Joi.alternatives().try(
         Joi.number().integer().valid(...UsageType),
-        Joi.string().valid('ONLINE', 'OFFLINE')
+        Joi.string().valid('ONLINE', 'OFFLINE', 'BOTH')
     ).optional().messages({
-        'any.only': 'Usage type must be 1 (ONLINE) or 0 (OFFLINE)'
+        'any.only': 'Usage type must be 1 (ONLINE), 2 (OFFLINE) or 3 (BOTH)'
     }),
     validity: Joi.string().trim().max(100).allow('', null).optional().messages({
         'string.max': 'Validity text cannot exceed 100 characters'

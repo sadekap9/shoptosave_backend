@@ -3,15 +3,15 @@ import fs from 'fs';
 import { giftCardImageType, uploadFolders } from '../../config/constant/constant.js';
 
 const toDbUsageType = (val) => {
-    if (val === 1 || val === '1' || val === 'ONLINE') return 'ONLINE';
-    if (val === 0 || val === '0' || val === 'OFFLINE') return 'OFFLINE';
-    return 'ONLINE';
+    if (val === 1 || val === '1' || val === 'ONLINE') return 1;
+    if (val === 2 || val === '2' || val === 'OFFLINE') return 2;
+    if (val === 3 || val === '3' || val === 'BOTH') return 3;
+    return 1;
 };
 
 const toApiUsageType = (val) => {
-    if (val === 'ONLINE') return 1;
-    if (val === 'OFFLINE') return 0;
-    if (val === 'BOTH') return 1; // Fallback both to online
+    const intVal = parseInt(val);
+    if (intVal === 1 || intVal === 2 || intVal === 3) return intVal;
     return 1;
 };
 
