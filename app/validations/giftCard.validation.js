@@ -8,7 +8,11 @@ export const createGiftCardSchema = Joi.object({
         'number.positive': 'Store ID must be positive',
         'any.required': 'Store ID is required'
     }),
-    gift_card_name: Joi.string().trim().required().max(255).messages({
+    gift_card_name: Joi.string().trim().max(255).when('woohoo_product_id', {
+        is: Joi.exist().not(null),
+        then: Joi.optional().allow('', null),
+        otherwise: Joi.required()
+    }).messages({
         'string.empty': 'Gift card name is required',
         'any.required': 'Gift card name is required',
         'string.max': 'Gift card name cannot exceed 255 characters'
@@ -77,6 +81,11 @@ export const createGiftCardSchema = Joi.object({
         Joi.boolean()
     ).default(1).optional().messages({
         'any.only': 'Status must be 0, 1, true or false'
+    }),
+    woohoo_product_id: Joi.number().integer().positive().allow(null).optional().messages({
+        'number.base': 'Woohoo product ID must be a number',
+        'number.integer': 'Woohoo product ID must be an integer',
+        'number.positive': 'Woohoo product ID must be positive'
     }),
     mobile_images: Joi.any().optional(),
     desktop_images: Joi.any().optional()
@@ -157,6 +166,12 @@ export const updateGiftCardSchema = Joi.object({
     ).optional().messages({
         'any.only': 'Status must be 0, 1, true or false'
     }),
+    woohoo_product_id: Joi.number().integer().positive().allow(null).optional().messages({
+        'number.base': 'Woohoo product ID must be a number',
+        'number.integer': 'Woohoo product ID must be an integer',
+        'number.positive': 'Woohoo product ID must be positive'
+    }),
+    refresh_prefill: Joi.boolean().optional(),
     mobile_images: Joi.any().optional(),
     desktop_images: Joi.any().optional(),
     deleted_image_ids: Joi.any().optional()

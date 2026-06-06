@@ -376,3 +376,69 @@ export const resendCards = async (req, res) => {
         });
     }
 };
+
+/**
+ * GET /api/v1/woohoo/products
+ * Get list of synced Woohoo products for dropdown selection (only id, name, sku)
+ */
+export const getSyncedProductsList = async (req, res) => {
+    try {
+        const [products] = await pool.query(
+            'SELECT id, name, sku FROM woohoo_products WHERE is_active = 1 ORDER BY name ASC'
+        );
+
+        return res.status(200).json({
+            success: true,
+            errors: [],
+            result: {
+                message: 'Synced products fetched successfully',
+                data: products
+            }
+        });
+    } catch (error) {
+        logger.error('Error in getSyncedProductsList', { error: error.message, stack: error.stack });
+        return res.status(500).json({
+            success: false,
+            errors: [{ message: 'Internal server error' }],
+            result: {}
+        });
+    }
+};
+
+/**
+ * GET /api/v1/woohoo/products/:id
+ * Get complete details of a synced Woohoo product by ID
+ */
+export const getSyncedProductDetails = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [[product]] = await pool.query(
+            'SELECT * FROM woohoo_products WHERE id = ?',
+            [id]
+        );
+
+        if (!product) {
+            return res.status(404).json({
+                success: false,
+                errors: [{ message: 'Woohoo product not found' }],
+                result: {}
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            errors: [],
+            result: {
+                message: 'Synced product details fetched successfully',
+                data: product
+            }
+        });
+    } catch (error) {
+        logger.error('Error in getSyncedProductDetails', { error: error.message, stack: error.stack });
+        return res.status(500).json({
+            success: false,
+            errors: [{ message: 'Internal server error' }],
+            result: {}
+        });
+    }
+};

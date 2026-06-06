@@ -37,3 +37,81 @@ export const updateProfile = async (req, res) => {
         });
     }
 };
+
+/**
+ * List Users Controller
+ */
+export const listUsers = async (req, res) => {
+    try {
+        const response = await profileService.listUsersService();
+
+        if (!response.success) {
+            return res.status(response.statusCode).json({
+                success: false,
+                errors: [{ message: response.message }],
+                result: {}
+            });
+        }
+
+        return res.status(response.statusCode).json({
+            success: true,
+            errors: [],
+            result: {
+                message: response.message,
+                data: response.data
+            }
+        });
+
+    } catch (error) {
+        logger.error('ListUsers Error', { error: error.message, stack: error.stack });
+        return res.status(500).json({
+            success: false,
+            errors: [{ message: 'Internal server error' }],
+            result: {}
+        });
+    }
+};
+
+/**
+ * Get User By ID Controller
+ */
+export const getUserById = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        if (!id) {
+            return res.status(400).json({
+                success: false,
+                errors: [{ message: 'User ID is required' }],
+                result: {}
+            });
+        }
+
+        const response = await profileService.getUserByIdService(id);
+
+        if (!response.success) {
+            return res.status(response.statusCode).json({
+                success: false,
+                errors: [{ message: response.message }],
+                result: {}
+            });
+        }
+
+        return res.status(response.statusCode).json({
+            success: true,
+            errors: [],
+            result: {
+                message: response.message,
+                data: response.data
+            }
+        });
+
+    } catch (error) {
+        logger.error('GetUserById Error', { error: error.message, stack: error.stack });
+        return res.status(500).json({
+            success: false,
+            errors: [{ message: 'Internal server error' }],
+            result: {}
+        });
+    }
+};

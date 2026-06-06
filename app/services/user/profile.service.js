@@ -118,3 +118,60 @@ export const updateProfileService = async (userId, profileData) => {
         data: updatedUsers[0]
     };
 };
+
+/**
+ * List Users Service (returns customers only, role = 3)
+ */
+export const listUsersService = async () => {
+    try {
+        const users = await executeQuery(
+            'SELECT id, name, email, phone, dob, profile_image, is_active, createdAt, modifiedAt FROM user_master WHERE role = 3 ORDER BY id DESC'
+        );
+
+        return {
+            success: true,
+            statusCode: 200,
+            message: 'Users retrieved successfully',
+            data: users
+        };
+    } catch (error) {
+        return {
+            success: false,
+            statusCode: 500,
+            message: 'Error listing users'
+        };
+    }
+};
+
+/**
+ * Get User By ID Service (returns customer details, role = 3)
+ */
+export const getUserByIdService = async (userId) => {
+    try {
+        const users = await executeQuery(
+            'SELECT id, name, email, phone, dob, profile_image, is_active, createdAt, modifiedAt FROM user_master WHERE id = ? AND role = 3',
+            [userId]
+        );
+
+        if (users.length === 0) {
+            return {
+                success: false,
+                statusCode: 404,
+                message: 'User not found'
+            };
+        }
+
+        return {
+            success: true,
+            statusCode: 200,
+            message: 'User retrieved successfully',
+            data: users[0]
+        };
+    } catch (error) {
+        return {
+            success: false,
+            statusCode: 500,
+            message: 'Error retrieving user'
+        };
+    }
+};

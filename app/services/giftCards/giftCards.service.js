@@ -1,6 +1,6 @@
 import pool from '../../config/dbConfig.js';
 import fs from 'fs';
-import { giftCardImageType, uploadFolders, UsageType } from '../../config/constant/constant.js';
+import { giftCardImageType, uploadFolders } from '../../config/constant/constant.js';
 
 const toDbUsageType = (val) => {
     if (val === 1 || val === '1' || val === 'ONLINE') return 'ONLINE';
@@ -80,7 +80,64 @@ export const getGiftCardsService = async () => {
 };
 
 /**
- * Create a new gift card
+ * Fetch a single gift card details by ID (grouped images)
+ */
+export const getGiftCardByIdService = async (id) => {
+    try {
+        const [[giftCard]] = await pool.query(`
+            SELECT gc.*, s.store_name 
+            FROM gift_cards gc
+            LEFT JOIN stores s ON gc.store_id = s.id
+            WHERE gc.id = ?
+        `, [id]);
+
+        if (!giftCard) {
+            return {
+                success: false,
+                statusCode: 404,
+                message: 'Gift card not found'
+            };
+        }
+
+        const [images] = await pool.query(`
+            SELECT * FROM gift_card_images WHERE gift_card_id = ?
+        `, [id]);
+
+        const mobile_images = [];
+        const desktop_images = [];
+
+        images.forEach(img => {
+            const imgData = {
+                id: img.id,
+                image_url: img.image_url,
+                created_at: img.created_at,
+                updated_at: img.updated_at
+            };
+
+            if (img.image_type === giftCardImageType.MOBILE) {
+                mobile_images.push(imgData);
+            } else if (img.image_type === giftCardImageType.DESKTOP) {
+                desktop_images.push(imgData);
+            }
+        });
+
+        giftCard.mobile_images = mobile_images;
+        giftCard.desktop_images = desktop_images;
+        giftCard.usage_type = toApiUsageType(giftCard.usage_type);
+
+        return {
+            success: true,
+            statusCode: 200,
+            message: 'Gift card details fetched successfully',
+            data: giftCard
+        };
+    } catch (error) {
+        throw error;
+    }
+};
+
+/**
+ * Create a new gift card with Woohoo prefilling and image population
  */
 export const createGiftCardService = async (data, files) => {
     const {
@@ -88,31 +145,21 @@ export const createGiftCardService = async (data, files) => {
         things_to_note, redeem_steps, usage_type, validity,
         partial_redemption, multiple_gift_cards_allowed, monthly_purchase_limit,
         discount_percentage, cashback_percentage, resell_allowed, resell_margin,
-        status, mobile_images, desktop_images
+        status, mobile_images, desktop_images, woohoo_product_id
     } = data;
 
-    if (min_denomination !== undefined && max_denomination !== undefined && min_denomination !== null && max_denomination !== null && min_denomination !== '' && max_denomination !== '') {
-        if (parseFloat(min_denomination) > parseFloat(max_denomination)) {
-            return {
-                success: false,
-                statusCode: 400,
-                message: 'Min denomination cannot be greater than max denomination'
-            };
-        }
-    }
-
-    // Check if store exists
+    // Verify Store exists
     const [[store]] = await pool.query('SELECT id FROM stores WHERE id = ?', [store_id]);
     if (!store) {
         return {
             success: false,
-            statusCode: 400,
+            statusCode: 404,
             message: 'Store not found'
         };
     }
 
-    // Check if a gift card already exists for this store
-    const [[existingGiftCard]] = await pool.query('SELECT id FROM gift_cards WHERE id = ?', [store_id]);
+    // Verify Gift Card doesn't already exist for this store
+    const [[existingGiftCard]] = await pool.query('SELECT id FROM gift_cards WHERE store_id = ?', [store_id]);
     if (existingGiftCard) {
         return {
             success: false,
@@ -121,9 +168,65 @@ export const createGiftCardService = async (data, files) => {
         };
     }
 
-    // Check if SKU is unique (if provided)
-    if (sku) {
-        const [[existingSku]] = await pool.query('SELECT id FROM gift_cards WHERE sku = ?', [sku.trim()]);
+    let finalGiftCardName = gift_card_name;
+    let finalSku = sku;
+    let finalMin = min_denomination;
+    let finalMax = max_denomination;
+    let finalValidity = validity;
+    let finalThingsToNote = things_to_note;
+    let finalRedeemSteps = redeem_steps;
+
+    let woohooProduct = null;
+
+    // Verify Woohoo product exists and retrieve fields if provided
+    if (woohoo_product_id) {
+        const [[prod]] = await pool.query('SELECT * FROM woohoo_products WHERE id = ?', [woohoo_product_id]);
+        if (!prod) {
+            return {
+                success: false,
+                statusCode: 400,
+                message: 'Selected Woohoo product not found'
+            };
+        }
+        woohooProduct = prod;
+
+        // Prefill missing / empty values
+        if (!finalGiftCardName || finalGiftCardName.trim() === '') {
+            finalGiftCardName = woohooProduct.name;
+        }
+        if (!finalSku || finalSku.trim() === '') {
+            finalSku = woohooProduct.sku;
+        }
+        if (finalMin === undefined || finalMin === null || finalMin === '') {
+            finalMin = woohooProduct.min_price;
+        }
+        if (finalMax === undefined || finalMax === null || finalMax === '') {
+            finalMax = woohooProduct.max_price;
+        }
+        if (!finalValidity || finalValidity.trim() === '') {
+            finalValidity = woohooProduct.expiry_info;
+        }
+        if (!finalThingsToNote || finalThingsToNote.trim() === '') {
+            finalThingsToNote = woohooProduct.special_instruction;
+        }
+        if (!finalRedeemSteps || finalRedeemSteps.trim() === '') {
+            finalRedeemSteps = woohooProduct.balance_enquiry_instruction;
+        }
+    }
+
+    if (finalMin !== undefined && finalMax !== undefined && finalMin !== null && finalMax !== null && finalMin !== '' && finalMax !== '') {
+        if (parseFloat(finalMin) > parseFloat(finalMax)) {
+            return {
+                success: false,
+                statusCode: 400,
+                message: 'Min denomination cannot be greater than max denomination'
+            };
+        }
+    }
+
+    // Verify SKU uniqueness
+    if (finalSku) {
+        const [[existingSku]] = await pool.query('SELECT id FROM gift_cards WHERE sku = ?', [finalSku.trim()]);
         if (existingSku) {
             return {
                 success: false,
@@ -137,25 +240,25 @@ export const createGiftCardService = async (data, files) => {
     await connection.beginTransaction();
 
     try {
-        // Since primary key 'id' references 'stores(id)', we must explicitly insert id = store_id
-        await connection.query(
+        // Let the primary key 'id' auto-increment
+        const [result] = await connection.query(
             `INSERT INTO gift_cards (
-                id, store_id, gift_card_name, sku, min_denomination, max_denomination,
+                store_id, gift_card_name, sku, min_denomination, max_denomination,
                 things_to_note, redeem_steps, usage_type, validity,
                 partial_redemption, multiple_gift_cards_allowed, monthly_purchase_limit,
-                discount_percentage, cashback_percentage, resell_allowed, resell_margin, status
+                discount_percentage, cashback_percentage, resell_allowed, resell_margin, status,
+                woohoo_product_id
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 store_id,
-                store_id,
-                gift_card_name.trim(),
-                sku ? sku.trim() : null,
-                min_denomination !== undefined && min_denomination !== '' && min_denomination !== null ? parseFloat(min_denomination) : null,
-                max_denomination !== undefined && max_denomination !== '' && max_denomination !== null ? parseFloat(max_denomination) : null,
-                things_to_note || null,
-                redeem_steps || null,
+                finalGiftCardName.trim(),
+                finalSku ? finalSku.trim() : null,
+                finalMin !== undefined && finalMin !== '' && finalMin !== null ? parseFloat(finalMin) : null,
+                finalMax !== undefined && finalMax !== '' && finalMax !== null ? parseFloat(finalMax) : null,
+                finalThingsToNote || null,
+                finalRedeemSteps || null,
                 toDbUsageType(usage_type),
-                validity ? validity.trim() : null,
+                finalValidity ? finalValidity.trim() : null,
                 toTinyInt(partial_redemption),
                 toTinyInt(multiple_gift_cards_allowed),
                 monthly_purchase_limit !== undefined && monthly_purchase_limit !== '' && monthly_purchase_limit !== null ? parseInt(monthly_purchase_limit) : null,
@@ -163,36 +266,53 @@ export const createGiftCardService = async (data, files) => {
                 cashback_percentage !== undefined && cashback_percentage !== '' && cashback_percentage !== null ? parseFloat(cashback_percentage) : null,
                 toTinyInt(resell_allowed),
                 resell_margin !== undefined && resell_margin !== '' && resell_margin !== null ? parseFloat(resell_margin) : 0.00,
-                status !== undefined ? toTinyInt(status) : 1
+                status !== undefined ? toTinyInt(status) : 1,
+                woohoo_product_id ? parseInt(woohoo_product_id) : null
             ]
         );
 
-        // Process images
-        const imageInsertions = [];
+        const giftCardId = result.insertId;
 
-        // 1. Process files from multer fields
+        // Gather and filter target image URLs (duplicate check)
+        const imageInsertions = [];
+        const insertedUrls = new Set();
+
+        const addImage = (type, url) => {
+            if (!url || typeof url !== 'string') return;
+            const trimmedUrl = url.trim();
+            if (trimmedUrl && !insertedUrls.has(trimmedUrl)) {
+                insertedUrls.add(trimmedUrl);
+                imageInsertions.push({
+                    gift_card_id: giftCardId,
+                    image_type: type,
+                    image_url: trimmedUrl
+                });
+            }
+        };
+
+        // 1. Process Woohoo images if linked
+        if (woohooProduct) {
+            addImage(giftCardImageType.MOBILE, woohooProduct.image_mobile);
+            addImage(giftCardImageType.DESKTOP, woohooProduct.image_base);
+            addImage(giftCardImageType.DESKTOP, woohooProduct.image_small);
+            addImage(giftCardImageType.DESKTOP, woohooProduct.image_thumbnail);
+        }
+
+        // 2. Process newly uploaded files via multer
         if (files) {
             if (files.mobile_images && files.mobile_images.length > 0) {
                 files.mobile_images.forEach(file => {
-                    imageInsertions.push({
-                        gift_card_id: store_id,
-                        image_type: giftCardImageType.MOBILE,
-                        image_url: `${uploadFolders.MOBILE_URL_PREFIX}/${file.filename}`
-                    });
+                    addImage(giftCardImageType.MOBILE, `${uploadFolders.MOBILE_URL_PREFIX}/${file.filename}`);
                 });
             }
             if (files.desktop_images && files.desktop_images.length > 0) {
                 files.desktop_images.forEach(file => {
-                    imageInsertions.push({
-                        gift_card_id: store_id,
-                        image_type: giftCardImageType.DESKTOP,
-                        image_url: `${uploadFolders.DESKTOP_URL_PREFIX}/${file.filename}`
-                    });
+                    addImage(giftCardImageType.DESKTOP, `${uploadFolders.DESKTOP_URL_PREFIX}/${file.filename}`);
                 });
             }
         }
 
-        // 2. Process image URLs from request body (JSON)
+        // 3. Process custom image URLs from JSON body
         const parseUrls = (imgField, type) => {
             if (!imgField) return;
             let list = [];
@@ -215,20 +335,14 @@ export const createGiftCardService = async (data, files) => {
                 } else if (urlObj && typeof urlObj === 'object') {
                     url = urlObj.image_url || urlObj.url || '';
                 }
-                if (url) {
-                    imageInsertions.push({
-                        gift_card_id: store_id,
-                        image_type: type,
-                        image_url: url.trim()
-                    });
-                }
+                addImage(type, url);
             });
         };
 
         parseUrls(mobile_images, giftCardImageType.MOBILE);
         parseUrls(desktop_images, giftCardImageType.DESKTOP);
 
-        // Execute image insertions
+        // Execute insertions in DB
         for (const img of imageInsertions) {
             await connection.query(
                 `INSERT INTO gift_card_images (gift_card_id, image_type, image_url) VALUES (?, ?, ?)`,
@@ -242,7 +356,7 @@ export const createGiftCardService = async (data, files) => {
             success: true,
             statusCode: 200,
             message: 'Gift card created successfully',
-            data: { id: store_id }
+            data: { id: giftCardId }
         };
     } catch (error) {
         await connection.rollback();
@@ -253,19 +367,61 @@ export const createGiftCardService = async (data, files) => {
 };
 
 /**
- * Update an existing gift card
+ * Update an existing gift card supporting changing Woohoo selection and deleting/uploading images
  */
 export const updateGiftCardService = async (id, body, files) => {
-    const { mobile_images, desktop_images, deleted_image_ids, ...updateFields } = body;
+    const { mobile_images, desktop_images, deleted_image_ids, refresh_prefill, ...updateFields } = body;
 
     // Check if gift card exists
-    const [[giftCard]] = await pool.query('SELECT id, min_denomination, max_denomination FROM gift_cards WHERE id = ?', [id]);
+    const [[giftCard]] = await pool.query(
+        'SELECT id, min_denomination, max_denomination, gift_card_name, sku, validity, things_to_note, redeem_steps, woohoo_product_id FROM gift_cards WHERE id = ?', 
+        [id]
+    );
     if (!giftCard) {
         return {
             success: false,
             statusCode: 404,
             message: 'Gift card not found'
         };
+    }
+
+    // Handle changing Woohoo product selection
+    const woohooChanged = updateFields.woohoo_product_id !== undefined && 
+        (updateFields.woohoo_product_id === null || updateFields.woohoo_product_id === '' 
+            ? null 
+            : parseInt(updateFields.woohoo_product_id)) !== (giftCard.woohoo_product_id ? parseInt(giftCard.woohoo_product_id) : null);
+
+    let woohooProduct = null;
+    if (updateFields.woohoo_product_id) {
+        const [[prod]] = await pool.query('SELECT * FROM woohoo_products WHERE id = ?', [updateFields.woohoo_product_id]);
+        if (!prod) {
+            return {
+                success: false,
+                statusCode: 400,
+                message: 'Selected Woohoo product not found'
+            };
+        }
+        woohooProduct = prod;
+
+        // Populate new values based on refresh_prefill configuration
+        if (refresh_prefill === true || refresh_prefill === 'true') {
+            if (updateFields.gift_card_name === undefined) updateFields.gift_card_name = woohooProduct.name;
+            if (updateFields.sku === undefined) updateFields.sku = woohooProduct.sku;
+            if (updateFields.min_denomination === undefined) updateFields.min_denomination = woohooProduct.min_price;
+            if (updateFields.max_denomination === undefined) updateFields.max_denomination = woohooProduct.max_price;
+            if (updateFields.validity === undefined) updateFields.validity = woohooProduct.expiry_info;
+            if (updateFields.things_to_note === undefined) updateFields.things_to_note = woohooProduct.special_instruction;
+            if (updateFields.redeem_steps === undefined) updateFields.redeem_steps = woohooProduct.balance_enquiry_instruction;
+        } else {
+            // Only populate currently empty fields
+            if (updateFields.gift_card_name === undefined && !giftCard.gift_card_name) updateFields.gift_card_name = woohooProduct.name;
+            if (updateFields.sku === undefined && !giftCard.sku) updateFields.sku = woohooProduct.sku;
+            if (updateFields.min_denomination === undefined && giftCard.min_denomination === null) updateFields.min_denomination = woohooProduct.min_price;
+            if (updateFields.max_denomination === undefined && giftCard.max_denomination === null) updateFields.max_denomination = woohooProduct.max_price;
+            if (updateFields.validity === undefined && !giftCard.validity) updateFields.validity = woohooProduct.expiry_info;
+            if (updateFields.things_to_note === undefined && !giftCard.things_to_note) updateFields.things_to_note = woohooProduct.special_instruction;
+            if (updateFields.redeem_steps === undefined && !giftCard.redeem_steps) updateFields.redeem_steps = woohooProduct.balance_enquiry_instruction;
+        }
     }
 
     const finalMin = updateFields.min_denomination !== undefined ? updateFields.min_denomination : giftCard.min_denomination;
@@ -281,42 +437,8 @@ export const updateGiftCardService = async (id, body, files) => {
         }
     }
 
-    // Define allowed fields
-    const allowedFields = [
-        'store_id', 'gift_card_name', 'sku', 'min_denomination', 'max_denomination',
-        'things_to_note', 'redeem_steps', 'usage_type', 'validity',
-        'partial_redemption', 'multiple_gift_cards_allowed', 'monthly_purchase_limit',
-        'discount_percentage', 'cashback_percentage', 'resell_allowed', 'resell_margin',
-        'status'
-    ];
-
-    // Filter keys
-    const keys = Object.keys(updateFields).filter(
-        key => allowedFields.includes(key) && updateFields[key] !== undefined
-    );
-
-    // If store_id is updated, verify it
-    if (keys.includes('store_id')) {
-        const newStoreId = updateFields.store_id;
-        const [[store]] = await pool.query('SELECT id FROM stores WHERE id = ?', [newStoreId]);
-        if (!store) {
-            return {
-                success: false,
-                statusCode: 400,
-                message: 'Store not found'
-            };
-        }
-        if (parseInt(newStoreId) !== parseInt(id)) {
-            return {
-                success: false,
-                statusCode: 400,
-                message: 'Changing store_id is not allowed. Please delete and recreate the gift card.'
-            };
-        }
-    }
-
-    // Check SKU uniqueness
-    if (keys.includes('sku') && updateFields.sku) {
+    // Verify SKU uniqueness
+    if (updateFields.sku !== undefined && updateFields.sku !== null && updateFields.sku !== '') {
         const skuVal = updateFields.sku.trim();
         const [[existingSku]] = await pool.query(
             'SELECT id FROM gift_cards WHERE sku = ? AND id != ?',
@@ -332,10 +454,24 @@ export const updateGiftCardService = async (id, body, files) => {
         updateFields.sku = skuVal;
     }
 
+    // Define allowed update keys
+    const allowedFields = [
+        'gift_card_name', 'sku', 'min_denomination', 'max_denomination',
+        'things_to_note', 'redeem_steps', 'usage_type', 'validity',
+        'partial_redemption', 'multiple_gift_cards_allowed', 'monthly_purchase_limit',
+        'discount_percentage', 'cashback_percentage', 'resell_allowed', 'resell_margin',
+        'status', 'woohoo_product_id'
+    ];
+
+    const keys = Object.keys(updateFields).filter(
+        key => allowedFields.includes(key) && updateFields[key] !== undefined
+    );
+
     const connection = await pool.getConnection();
     await connection.beginTransaction();
 
     try {
+        // Execute main fields update
         if (keys.length > 0) {
             const setClause = keys.map(field => `${field} = ?`).join(', ');
             const values = keys.map(field => {
@@ -355,7 +491,8 @@ export const updateGiftCardService = async (id, body, files) => {
             await connection.query(updateQuery, values);
         }
 
-        // 1. Handle image deletions (if list of specific deleted image IDs is passed)
+        // Process image updates
+        // 1. Delete selected custom image records
         if (deleted_image_ids) {
             let idsToDelete = [];
             if (typeof deleted_image_ids === 'string') {
@@ -371,21 +508,19 @@ export const updateGiftCardService = async (id, body, files) => {
             }
 
             if (idsToDelete.length > 0) {
-                // Fetch image URLs first to delete physical files
                 const [imagesToDelete] = await connection.query(
                     'SELECT image_url FROM gift_card_images WHERE gift_card_id = ? AND id IN (?)',
                     [id, idsToDelete]
                 );
 
-                // Delete from DB
                 await connection.query(
                     'DELETE FROM gift_card_images WHERE gift_card_id = ? AND id IN (?)',
                     [id, idsToDelete]
                 );
 
-                // Delete physical files
+                // Delete physical uploaded files
                 imagesToDelete.forEach(img => {
-                    if (img.image_url) {
+                    if (img.image_url && !img.image_url.startsWith('http')) {
                         const filePath = img.image_url.startsWith('/') ? `.${img.image_url}` : img.image_url;
                         try {
                             if (fs.existsSync(filePath)) {
@@ -399,31 +534,76 @@ export const updateGiftCardService = async (id, body, files) => {
             }
         }
 
-        const imageInsertions = [];
+        // 2. If Woohoo selection changed, refresh/replace remote image links
+        if (woohooChanged) {
+            // Delete old remote URLs
+            await connection.query(
+                "DELETE FROM gift_card_images WHERE gift_card_id = ? AND (image_url LIKE 'http://%' OR image_url LIKE 'https://%')",
+                [id]
+            );
 
-        // 2. Process newly uploaded files from fields
+            // Populate new remote URLs
+            if (woohooProduct) {
+                const newWoohooImages = [];
+                const insertedUrls = new Set();
+
+                const addWoohooUrl = (type, url) => {
+                    if (!url || typeof url !== 'string') return;
+                    const trimmed = url.trim();
+                    if (trimmed && !insertedUrls.has(trimmed)) {
+                        insertedUrls.add(trimmed);
+                        newWoohooImages.push({
+                            gift_card_id: id,
+                            image_type: type,
+                            image_url: trimmed
+                        });
+                    }
+                };
+
+                addWoohooUrl(giftCardImageType.MOBILE, woohooProduct.image_mobile);
+                addWoohooUrl(giftCardImageType.DESKTOP, woohooProduct.image_base);
+                addWoohooUrl(giftCardImageType.DESKTOP, woohooProduct.image_small);
+                addWoohooUrl(giftCardImageType.DESKTOP, woohooProduct.image_thumbnail);
+
+                for (const img of newWoohooImages) {
+                    await connection.query(
+                        `INSERT INTO gift_card_images (gift_card_id, image_type, image_url) VALUES (?, ?, ?)`,
+                        [img.gift_card_id, img.image_type, img.image_url]
+                    );
+                }
+            }
+        }
+
+        // 3. Process and append newly uploaded custom images
+        const imageInsertions = [];
+        const insertedUrls = new Set();
+
+        const addImage = (type, url) => {
+            if (!url || typeof url !== 'string') return;
+            const trimmed = url.trim();
+            if (trimmed && !insertedUrls.has(trimmed)) {
+                insertedUrls.add(trimmed);
+                imageInsertions.push({
+                    gift_card_id: id,
+                    image_type: type,
+                    image_url: trimmed
+                });
+            }
+        };
+
         if (files) {
             if (files.mobile_images && files.mobile_images.length > 0) {
                 files.mobile_images.forEach(file => {
-                    imageInsertions.push({
-                        gift_card_id: id,
-                        image_type: giftCardImageType.MOBILE,
-                        image_url: `${uploadFolders.MOBILE_URL_PREFIX}/${file.filename}`
-                    });
+                    addImage(giftCardImageType.MOBILE, `${uploadFolders.MOBILE_URL_PREFIX}/${file.filename}`);
                 });
             }
             if (files.desktop_images && files.desktop_images.length > 0) {
                 files.desktop_images.forEach(file => {
-                    imageInsertions.push({
-                        gift_card_id: id,
-                        image_type: giftCardImageType.DESKTOP,
-                        image_url: `${uploadFolders.DESKTOP_URL_PREFIX}/${file.filename}`
-                    });
+                    addImage(giftCardImageType.DESKTOP, `${uploadFolders.DESKTOP_URL_PREFIX}/${file.filename}`);
                 });
             }
         }
 
-        // 3. Process image URLs from request body (JSON)
         const parseUrls = (imgField, type) => {
             if (!imgField) return;
             let list = [];
@@ -446,20 +626,13 @@ export const updateGiftCardService = async (id, body, files) => {
                 } else if (urlObj && typeof urlObj === 'object') {
                     url = urlObj.image_url || urlObj.url || '';
                 }
-                if (url) {
-                    imageInsertions.push({
-                        gift_card_id: id,
-                        image_type: type,
-                        image_url: url.trim()
-                    });
-                }
+                addImage(type, url);
             });
         };
 
         parseUrls(mobile_images, giftCardImageType.MOBILE);
         parseUrls(desktop_images, giftCardImageType.DESKTOP);
 
-        // Insert new images
         for (const img of imageInsertions) {
             await connection.query(
                 `INSERT INTO gift_card_images (gift_card_id, image_type, image_url) VALUES (?, ?, ?)`,
@@ -512,7 +685,7 @@ export const deleteGiftCardService = async (id) => {
 
         // Delete physical image files after transaction commit is completed
         images.forEach(img => {
-            if (img.image_url) {
+            if (img.image_url && !img.image_url.startsWith('http')) {
                 const filePath = img.image_url.startsWith('/') ? `.${img.image_url}` : img.image_url;
                 try {
                     if (fs.existsSync(filePath)) {

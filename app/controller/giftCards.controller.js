@@ -126,3 +126,37 @@ export const deleteGiftCard = async (req, res) => {
         });
     }
 };
+
+/**
+ * Get single gift card details by ID
+ */
+export const getGiftCardById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const response = await giftCardsService.getGiftCardByIdService(id);
+        
+        if (!response.success) {
+            return res.status(response.statusCode).json({
+                success: false,
+                errors: [{ message: response.message }],
+                result: {}
+            });
+        }
+        
+        return res.status(response.statusCode).json({
+            success: true,
+            errors: [],
+            result: {
+                message: response.message,
+                data: response.data
+            }
+        });
+    } catch (error) {
+        logger.error('Error in getGiftCardById', { error: error.message, stack: error.stack });
+        return res.status(500).json({
+            success: false,
+            errors: [{ message: 'Internal server error' }],
+            result: {}
+        });
+    }
+};
