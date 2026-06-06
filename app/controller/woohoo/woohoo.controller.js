@@ -2,6 +2,7 @@ import * as woohooService from '../../services/woohoo/woohoo.service.js';
 import { saveCategoriesToDB, getCategoriesFromDB } from '../../services/categories/categories.service.js';
 import pool from '../../config/dbConfig.js';
 import logger from '../../utils/logger.js';
+import { saveProductsToDB } from '../../services/products/products.service.js';
 
 // ─── AUTHENTICATION ────────────────────────────────────────────────────────────
 
@@ -156,6 +157,29 @@ export const getProductsByCategory = async (req, res) => {
         }
         const { categoryId } = req.params;
         const result = await woohooService.getWoohooProductsByCategory(bearerToken, categoryId);
+
+        // Auto-save/sync fetched products in woohoo_products table
+        if (result && result.products && result.products.length > 0) {
+            // Get local category ID
+            let [[localCategory]] = await pool.query(
+                'SELECT id FROM woohoo_categories WHERE woohoo_category_id = ?',
+                [categoryId]
+            );
+
+            // If it doesn't exist locally, insert a stub category to satisfy foreign key constraints
+            if (!localCategory) {
+                const [insertCat] = await pool.query(
+                    'INSERT INTO woohoo_categories (woohoo_category_id, name, is_active) VALUES (?, ?, 1)',
+                    [categoryId, `Category ${categoryId}`]
+                );
+                localCategory = { id: insertCat.insertId };
+            }
+
+            // Save products
+            await saveProductsToDB(result.products, localCategory.id);
+            logger.info(`Auto-saved ${result.products.length} products for category ${categoryId} to DB`);
+        }
+
         return res.status(200).json({
             success: true,
             message: 'Products fetched successfully',
