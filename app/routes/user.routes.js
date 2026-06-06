@@ -13,6 +13,6 @@ router.patch('/profile', authMiddleware, validate(updateProfileSchema), profileC
 router.get('/get-all', authMiddleware, authorizeRole([1, 2]), profileController.listUsers);
 
 // Protected route to get user by ID (restricted to Admin/Sub-Admin only)
-router.get('/:id', authMiddleware, authorizeRole([1, 2]), profileController.getUserById);
+router.get('/:id', authMiddleware, authorizeRole([1,2,3]), profileController.getUserById);
 
 export default router;
