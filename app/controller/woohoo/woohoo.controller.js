@@ -445,6 +445,44 @@ export const getSyncedProductsList = async (req, res) => {
 };
 
 /**
+ * GET /api/v1/woohoo/products/sku/:sku
+ * Get complete details of a synced Woohoo product by SKU
+ */
+export const getSyncedProductBySku = async (req, res) => {
+    try {
+        const { sku } = req.params;
+        const [[product]] = await pool.query(
+            'SELECT * FROM woohoo_products WHERE sku = ?',
+            [sku]
+        );
+
+        if (!product) {
+            return res.status(404).json({
+                success: false,
+                errors: [{ message: 'Woohoo product not found' }],
+                result: {}
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            errors: [],
+            result: {
+                message: 'Synced product details fetched successfully',
+                data: product
+            }
+        });
+    } catch (error) {
+        logger.error('Error in getSyncedProductBySku', { error: error.message, stack: error.stack });
+        return res.status(500).json({
+            success: false,
+            errors: [{ message: 'Internal server error' }],
+            result: {}
+        });
+    }
+};
+
+/**
  * GET /api/v1/woohoo/products/:id
  * Get complete details of a synced Woohoo product by ID
  */

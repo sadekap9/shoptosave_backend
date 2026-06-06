@@ -11,7 +11,11 @@ export const createGiftCardSchema = Joi.object({
     gift_card_name: Joi.string().trim().max(255).when('woohoo_product_id', {
         is: Joi.exist().not(null),
         then: Joi.optional().allow('', null),
-        otherwise: Joi.required()
+        otherwise: Joi.when('sku', {
+            is: Joi.string().trim().min(1).required(),
+            then: Joi.optional().allow('', null),
+            otherwise: Joi.required()
+        })
     }).messages({
         'string.empty': 'Gift card name is required',
         'any.required': 'Gift card name is required',

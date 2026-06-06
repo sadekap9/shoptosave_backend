@@ -18,11 +18,7 @@ export const generateAuthorizationCode = async () => {
         password: process.env.WOOHOO_PASSWORD,
     };
 
-    console.log('\n[Woohoo API Config] generateAuthorizationCode called');
-    console.log('[Woohoo API Config] URL:', AUTH_URL);
-    console.log('[Woohoo API Config] Using Client ID:', payload.clientId);
-    console.log('[Woohoo API Config] Using Username:', payload.username);
-    console.log('[Woohoo API Config] Using Password:', payload.password);
+    logger.info(`[Woohoo API Call] generateAuthorizationCode called on ${AUTH_URL}`);
 
     const response = await axios.post(AUTH_URL, payload);
     return response.data;
@@ -38,11 +34,7 @@ export const generateBearerToken = async (authorizationCode) => {
         clientSecret: process.env.WOOHOO_CLIENT_SECRET,
     };
 
-    console.log('\n[Woohoo API Config] generateBearerToken called');
-    console.log('[Woohoo API Config] URL:', TOKEN_URL);
-    console.log('[Woohoo API Config] Using Auth Code:', authorizationCode);
-    console.log('[Woohoo API Config] Using Client ID:', payload.clientId);
-    console.log('[Woohoo API Config] Using Client Secret:', payload.clientSecret);
+    logger.info(`[Woohoo API Call] generateBearerToken called on ${TOKEN_URL}`);
 
     const response = await axios.post(TOKEN_URL, payload);
     return response.data;

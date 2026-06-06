@@ -5,79 +5,162 @@ import { getWoohooHeaders } from '../../helpers/woohoo.helper.js';
 import logger from '../../utils/logger.js';
 
 /**
- * Fetches products by category ID from DB
- */
-export const getProductsByCategoryFromDB = async (categoryId) => {
-    const [rows] = await pool.query(
-        'SELECT sku, name, description, url_key as url, min_price as minPrice, max_price as maxPrice, currency_code, currency_symbol, currency_numeric_code, image_thumbnail as thumbnail, image_mobile as mobile, image_base as base, image_small as small FROM woohoo_products WHERE category_id = ? AND is_active = 1',
-        [categoryId]
-    );
-
-    // Format to match Woohoo structure
-    return rows.map(prod => ({
-        sku: prod.sku,
-        name: prod.name,
-        currency: {
-            code: prod.currency_code,
-            symbol: prod.currency_symbol,
-            numericCode: prod.currency_numeric_code
-        },
-        url: prod.url,
-        minPrice: prod.minPrice ? prod.minPrice.toString() : '0',
-        maxPrice: prod.maxPrice ? prod.maxPrice.toString() : '0',
-        images: {
-            thumbnail: prod.thumbnail,
-            mobile: prod.mobile,
-            base: prod.base,
-            small: prod.small
-        }
-    }));
-};
-
-/**
- * Saves products of a given category to the database
+ * Saves a list of products fetched from Woohoo or input manually into local DB
  */
 export const saveProductsToDB = async (products, categoryId) => {
-    for (const prod of products) {
-        await pool.query(
-             `INSERT INTO woohoo_products 
-            (sku, name, category_id, url_key, min_price, max_price, currency_code, currency_symbol, currency_numeric_code, image_thumbnail, image_mobile, image_base, image_small, description, expiry_info, special_instruction, balance_enquiry_instruction, is_active) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
-            ON DUPLICATE KEY UPDATE 
-            name=VALUES(name), category_id=VALUES(category_id), url_key=VALUES(url_key), min_price=VALUES(min_price), 
-            max_price=VALUES(max_price), currency_code=VALUES(currency_code), 
-            currency_symbol=VALUES(currency_symbol), currency_numeric_code=VALUES(currency_numeric_code), 
-            image_thumbnail=VALUES(image_thumbnail), image_mobile=VALUES(image_mobile), 
-            image_base=VALUES(image_base), image_small=VALUES(image_small),
-            description=VALUES(description), expiry_info=VALUES(expiry_info),
-            special_instruction=VALUES(special_instruction), balance_enquiry_instruction=VALUES(balance_enquiry_instruction),
-            is_active=VALUES(is_active)`,
-            [
-                prod.sku,
-                prod.name,
-                categoryId,
-                prod.url || prod.url_key || null,
-                prod.minPrice || prod.min_price || null,
-                prod.maxPrice || prod.max_price || null,
-                prod.currency?.code || prod.currency_code || 'INR',
-                prod.currency?.symbol || prod.currency_symbol || '₹',
-                prod.currency?.numericCode || prod.currency_numeric_code || '356',
-                prod.images?.thumbnail || prod.image_thumbnail || null,
-                prod.images?.mobile || prod.image_mobile || null,
-                prod.images?.base || prod.image_base || null,
-                prod.images?.small || prod.image_small || null,
-                prod.description || null,
-                prod.expiryInfo || prod.expiry_info || null,
-                prod.specialInstructions || prod.special_instruction || null,
-                prod.balanceEnquiryInstruction || prod.balance_enquiry_instruction || null,
-                prod.is_active !== undefined ? (prod.is_active ? 1 : 0) : 1
-            ]
-        );
+    const productsArray = Array.isArray(products) ? products : [products];
+    
+    for (const prod of productsArray) {
+        const sku = prod.sku;
+        const name = prod.name;
+        if (!sku || !name) continue;
+
+        const description = prod.description || null;
+        const product_type = prod.productType || prod.product_type || null;
+        
+        let price_type = null;
+        let min_price = null;
+        let max_price = null;
+        let denominations = null;
+        let currency_code = null;
+        let currency_symbol = null;
+        let currency_numeric_code = null;
+
+        if (prod.price) {
+            price_type = prod.price.type || prod.price.price_type || null;
+            min_price = prod.price.min !== undefined ? prod.price.min : (prod.price.min_price !== undefined ? prod.price.min_price : null);
+            max_price = prod.price.max !== undefined ? prod.price.max : (prod.price.max_price !== undefined ? prod.price.max_price : null);
+            
+            if (Array.isArray(prod.price.denominations)) {
+                denominations = prod.price.denominations.join(',');
+            } else if (prod.price.denominations) {
+                denominations = prod.price.denominations.toString();
+            }
+            
+            if (prod.price.currency) {
+                currency_code = prod.price.currency.code || prod.price.currency.currency_code || null;
+                currency_symbol = prod.price.currency.symbol || prod.price.currency.currency_symbol || null;
+                currency_numeric_code = prod.price.currency.numericCode || prod.price.currency.currency_numeric_code || null;
+            }
+        }
+
+        const url_key = prod.urlKey || prod.url_key || null;
+        const offer_short_desc = prod.offerShortDesc || prod.offer_short_desc || null;
+        
+        const toTinyInt = (val) => {
+            if (val === true || val === 'true' || val === 1 || val === '1') return 1;
+            return 0;
+        };
+
+        const promo_available = toTinyInt(prod.promoAvailable !== undefined ? prod.promoAvailable : prod.promo_available);
+        const designs_available = toTinyInt(prod.designsAvailable !== undefined ? prod.designsAvailable : prod.designs_available);
+        const related_available = toTinyInt(prod.relatedAvailable !== undefined ? prod.relatedAvailable : prod.related_available);
+
+        let image_thumbnail = null;
+        let image_mobile = null;
+        let image_base = null;
+        let image_small = null;
+
+        if (prod.images) {
+            image_thumbnail = prod.images.thumbnail || prod.images.image_thumbnail || null;
+            image_mobile = prod.images.mobile || prod.images.image_mobile || null;
+            image_base = prod.images.base || prod.images.image_base || null;
+            image_small = prod.images.small || prod.images.image_small || null;
+        }
+
+        const brand_logo = prod.brandLogo || prod.brand_logo || null;
+        const emi_applicable = toTinyInt(prod.emiApplicable !== undefined ? prod.emiApplicable : prod.emi_applicable);
+
+        let tnc_link = null;
+        let tnc_content = null;
+        if (prod.tnc) {
+            tnc_link = prod.tnc.link || prod.tnc.tnc_link || null;
+            tnc_content = prod.tnc.content || prod.tnc.tnc_content || null;
+        }
+
+        const expiry_info = prod.expiryInfo || prod.expiry_info || null;
+        const kyc_enabled = toTinyInt(prod.kycEnabled !== undefined ? prod.kycEnabled : prod.kyc_enabled);
+        const balance_enquiry_instruction = prod.balanceEnquiryInstruction || prod.balance_enquiry_instruction || null;
+        const special_instruction = prod.specialInstruction || prod.special_instruction || null;
+        const reload_card_number = toTinyInt(prod.reloadCardNumber !== undefined ? prod.reloadCardNumber : prod.reload_card_number);
+        const is_active = toTinyInt(prod.isActive !== undefined ? prod.isActive : (prod.is_active !== undefined ? prod.is_active : true));
+        const is_3pd = toTinyInt(prod.is3pd !== undefined ? prod.is3pd : prod.is_3pd);
+
+        // Check SKU uniqueness in DB manually due to missing database level unique index
+        const [[existing]] = await pool.query('SELECT id FROM woohoo_products WHERE sku = ?', [sku.trim()]);
+
+        if (existing) {
+            await pool.query(
+                `UPDATE woohoo_products SET
+                    category_id = ?, name = ?, description = ?, product_type = ?, price_type = ?,
+                    min_price = ?, max_price = ?, denominations = ?, currency_code = ?,
+                    currency_symbol = ?, currency_numeric_code = ?, url_key = ?, offer_short_desc = ?,
+                    promo_available = ?, designs_available = ?, related_available = ?,
+                    image_thumbnail = ?, image_mobile = ?, image_base = ?, image_small = ?,
+                    brand_logo = ?, emi_applicable = ?, tnc_link = ?, tnc_content = ?,
+                    expiry_info = ?, kyc_enabled = ?, balance_enquiry_instruction = ?,
+                    special_instruction = ?, reload_card_number = ?, is_active = ?, is_3pd = ?,
+                    synced_at = CURRENT_TIMESTAMP
+                WHERE id = ?`,
+                [
+                    categoryId, name, description, product_type, price_type,
+                    min_price, max_price, denominations, currency_code,
+                    currency_symbol, currency_numeric_code, url_key, offer_short_desc,
+                    promo_available, designs_available, related_available,
+                    image_thumbnail, image_mobile, image_base, image_small,
+                    brand_logo, emi_applicable, tnc_link, tnc_content,
+                    expiry_info, kyc_enabled, balance_enquiry_instruction,
+                    special_instruction, reload_card_number, is_active, is_3pd,
+                    existing.id
+                ]
+            );
+        } else {
+            await pool.query(
+                `INSERT INTO woohoo_products (
+                    category_id, sku, name, description, product_type, price_type, min_price, max_price, 
+                    denominations, currency_code, currency_symbol, currency_numeric_code, url_key, 
+                    offer_short_desc, promo_available, designs_available, related_available, 
+                    image_thumbnail, image_mobile, image_base, image_small, brand_logo, 
+                    emi_applicable, tnc_link, tnc_content, expiry_info, kyc_enabled, 
+                    balance_enquiry_instruction, special_instruction, reload_card_number, is_active, is_3pd
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    categoryId, sku.trim(), name, description, product_type, price_type, min_price, max_price,
+                    denominations, currency_code, currency_symbol, currency_numeric_code, url_key,
+                    offer_short_desc, promo_available, designs_available, related_available,
+                    image_thumbnail, image_mobile, image_base, image_small, brand_logo,
+                    emi_applicable, tnc_link, tnc_content, expiry_info, kyc_enabled,
+                    balance_enquiry_instruction, special_instruction, reload_card_number, is_active, is_3pd
+                ]
+            );
+        }
     }
 };
 
 /**
- * Fetches products for all categories and syncs them to local DB
+ * Get active products for a category
+ */
+export const getProductsByCategoryFromDB = async (categoryId) => {
+    const [rows] = await pool.query(
+        'SELECT * FROM woohoo_products WHERE category_id = ? AND is_active = 1 ORDER BY name ASC',
+        [categoryId]
+    );
+    return rows;
+};
+
+/**
+ * Get product details by SKU
+ */
+export const getProductBySkuFromDB = async (sku) => {
+    const [[row]] = await pool.query(
+        'SELECT * FROM woohoo_products WHERE sku = ?',
+        [sku]
+    );
+    return row || null;
+};
+
+/**
+ * Manually trigger product synchronization from Woohoo categories
  */
 export const syncProductsWithWoohoo = async () => {
     try {
@@ -91,18 +174,17 @@ export const syncProductsWithWoohoo = async () => {
             
             try {
                 const response = await axios.get(url, { headers });
-                const products = response.data.products || [];
-                
-                if (products.length > 0) {
+                const products = response.data.products || (Array.isArray(response.data) ? response.data : []);
+                if (products && products.length > 0) {
                     await saveProductsToDB(products, cat.id);
                     totalSynced += products.length;
                 }
             } catch (err) {
-                logger.error(`Failed to sync products for category ${cat.woohoo_category_id} (ID: ${cat.id})`, { error: err.message });
+                logger.error(`Failed to sync products for category ${cat.woohoo_category_id}`, { error: err.message });
             }
         }
         
-        return { success: true, totalSynced };
+        return { success: true, count: totalSynced };
     } catch (error) {
         logger.error('Product Sync Failed', { error: error.message });
         throw error;
@@ -110,84 +192,34 @@ export const syncProductsWithWoohoo = async () => {
 };
 
 /**
- * Stores one or more products in the database
+ * Bulk or single manual store of products in database
  */
-export const storeProductInDB = async (productData) => {
-    const products = Array.isArray(productData) ? productData : [productData];
-    const results = [];
-
+export const storeProductInDB = async (data) => {
+    const products = Array.isArray(data) ? data : [data];
+    const storedSkus = [];
+    
     for (const prod of products) {
-        if (!prod.sku || !prod.name || !prod.category_id) {
-            throw new Error('sku, name, and category_id are required fields for each product');
+        let categoryId = prod.category_id;
+        if (!categoryId && prod.woohoo_category_id) {
+            const [[cat]] = await pool.query('SELECT id FROM woohoo_categories WHERE woohoo_category_id = ?', [prod.woohoo_category_id]);
+            if (cat) categoryId = cat.id;
+        }
+        
+        if (!categoryId) {
+            // Find or insert default category
+            const [[stubCat]] = await pool.query("SELECT id FROM woohoo_categories LIMIT 1");
+            if (stubCat) {
+                categoryId = stubCat.id;
+            } else {
+                const [insCat] = await pool.query("INSERT INTO woohoo_categories (woohoo_category_id, name, is_active) VALUES ('default-cat', 'Default Category', 1)");
+                categoryId = insCat.insertId;
+            }
         }
 
-        await pool.query(
-            `INSERT INTO woohoo_products 
-            (sku, name, category_id, description, min_price, max_price, currency_code, currency_symbol, currency_numeric_code, image_thumbnail, image_mobile, image_base, image_small, url_key, is_active) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
-            ON DUPLICATE KEY UPDATE 
-            name=VALUES(name), category_id=VALUES(category_id), description=VALUES(description), min_price=VALUES(min_price), 
-            max_price=VALUES(max_price), currency_code=VALUES(currency_code), currency_symbol=VALUES(currency_symbol), 
-            currency_numeric_code=VALUES(currency_numeric_code), image_thumbnail=VALUES(image_thumbnail), image_mobile=VALUES(image_mobile), 
-            image_base=VALUES(image_base), image_small=VALUES(image_small), url_key=VALUES(url_key), is_active=VALUES(is_active)`,
-            [
-                prod.sku,
-                prod.name,
-                prod.category_id,
-                prod.description || null,
-                prod.min_value || prod.minPrice || null,
-                prod.max_value || prod.maxPrice || null,
-                prod.currency_code || prod.currency?.code || 'INR',
-                prod.currency_symbol || prod.currency?.symbol || '₹',
-                prod.currency_numeric_code || prod.currency?.numericCode || '356',
-                prod.image_url || prod.images?.thumbnail || null,
-                prod.mobile_image || prod.images?.mobile || null,
-                prod.base_image || prod.images?.base || null,
-                prod.small_image || prod.images?.small || null,
-                prod.url || null,
-                prod.is_active !== undefined ? prod.is_active : 1
-            ]
-        );
-        results.push(prod.sku);
+        await saveProductsToDB([prod], categoryId);
+        if (prod.sku) {
+            storedSkus.push(prod.sku);
+        }
     }
-    return results;
-};
-
-/**
- * Fetches a product by its SKU from the local database
- */
-export const getProductBySkuFromDB = async (sku) => {
-    const [rows] = await pool.query(
-        'SELECT sku, name, description, url_key as url, min_price as minPrice, max_price as maxPrice, currency_code, currency_symbol, currency_numeric_code, image_thumbnail as thumbnail, image_mobile as mobile, image_base as base, image_small as small, category_id, is_active FROM woohoo_products WHERE sku = ?',
-        [sku]
-    );
-
-    if (rows.length === 0) {
-        return null;
-    }
-
-    const prod = rows[0];
-
-    // Format to match the Woohoo product structure
-    return {
-        sku: prod.sku,
-        name: prod.name,
-        description: prod.description,
-        currency: {
-            code: prod.currency_code,
-            symbol: prod.currency_symbol,
-            numericCode: prod.currency_numeric_code
-        },
-        url: prod.url,
-        minPrice: prod.minPrice ? prod.minPrice.toString() : null,
-        maxPrice: prod.maxPrice ? prod.maxPrice.toString() : null,
-        images: {
-            thumbnail: prod.thumbnail,
-            mobile: prod.mobile,
-            base: prod.base,
-            small: prod.small
-        },
-        category_id: prod.category_id,
-        is_active: prod.is_active
-    };
+    return storedSkus;
 };

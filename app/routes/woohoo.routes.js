@@ -109,6 +109,7 @@ router.post('/orders/:orderId/resend', woohooController.resendCards);
 
 // Synced Woohoo products endpoints (restricted to admin/subadmin)
 router.get('/products', authMiddleware, authorizeRole([1, 2]), woohooController.getSyncedProductsList);
+router.get('/products/sku/:sku', authMiddleware, authorizeRole([1, 2]), woohooController.getSyncedProductBySku);
 router.get('/products/:id', authMiddleware, authorizeRole([1, 2]), woohooController.getSyncedProductDetails);
 
 export default router;

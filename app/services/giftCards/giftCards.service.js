@@ -176,11 +176,18 @@ export const createGiftCardService = async (data, files) => {
     let finalThingsToNote = things_to_note;
     let finalRedeemSteps = redeem_steps;
 
+    let resolvedWoohooProductId = woohoo_product_id ? parseInt(woohoo_product_id) : null;
     let woohooProduct = null;
 
-    // Verify Woohoo product exists and retrieve fields if provided
-    if (woohoo_product_id) {
-        const [[prod]] = await pool.query('SELECT * FROM woohoo_products WHERE id = ?', [woohoo_product_id]);
+    // Verify Woohoo product exists and retrieve fields if provided (either via woohoo_product_id or matched via sku)
+    if (!resolvedWoohooProductId && sku && sku.trim() !== '') {
+        const [[prod]] = await pool.query('SELECT * FROM woohoo_products WHERE sku = ?', [sku.trim()]);
+        if (prod) {
+            woohooProduct = prod;
+            resolvedWoohooProductId = prod.id;
+        }
+    } else if (resolvedWoohooProductId) {
+        const [[prod]] = await pool.query('SELECT * FROM woohoo_products WHERE id = ?', [resolvedWoohooProductId]);
         if (!prod) {
             return {
                 success: false,
@@ -189,7 +196,9 @@ export const createGiftCardService = async (data, files) => {
             };
         }
         woohooProduct = prod;
+    }
 
+    if (woohooProduct) {
         // Prefill missing / empty values
         if (!finalGiftCardName || finalGiftCardName.trim() === '') {
             finalGiftCardName = woohooProduct.name;
@@ -267,7 +276,7 @@ export const createGiftCardService = async (data, files) => {
                 toTinyInt(resell_allowed),
                 resell_margin !== undefined && resell_margin !== '' && resell_margin !== null ? parseFloat(resell_margin) : 0.00,
                 status !== undefined ? toTinyInt(status) : 1,
-                woohoo_product_id ? parseInt(woohoo_product_id) : null
+                resolvedWoohooProductId
             ]
         );
 
@@ -385,15 +394,33 @@ export const updateGiftCardService = async (id, body, files) => {
         };
     }
 
-    // Handle changing Woohoo product selection
-    const woohooChanged = updateFields.woohoo_product_id !== undefined && 
-        (updateFields.woohoo_product_id === null || updateFields.woohoo_product_id === '' 
-            ? null 
-            : parseInt(updateFields.woohoo_product_id)) !== (giftCard.woohoo_product_id ? parseInt(giftCard.woohoo_product_id) : null);
-
+    // Handle changing Woohoo product selection (either via woohoo_product_id or matched via sku)
+    let resolvedWoohooProductId = undefined;
     let woohooProduct = null;
-    if (updateFields.woohoo_product_id) {
-        const [[prod]] = await pool.query('SELECT * FROM woohoo_products WHERE id = ?', [updateFields.woohoo_product_id]);
+
+    if (updateFields.woohoo_product_id !== undefined) {
+        if (updateFields.woohoo_product_id === null || updateFields.woohoo_product_id === '' || updateFields.woohoo_product_id === 'null') {
+            resolvedWoohooProductId = null;
+        } else {
+            resolvedWoohooProductId = parseInt(updateFields.woohoo_product_id);
+        }
+    } else if (updateFields.sku !== undefined) {
+        if (updateFields.sku === null || updateFields.sku === '' || updateFields.sku === 'null') {
+            resolvedWoohooProductId = null;
+        } else {
+            // Look up by SKU
+            const [[prod]] = await pool.query('SELECT * FROM woohoo_products WHERE sku = ?', [updateFields.sku.trim()]);
+            if (prod) {
+                woohooProduct = prod;
+                resolvedWoohooProductId = prod.id;
+            } else {
+                resolvedWoohooProductId = null;
+            }
+        }
+    }
+
+    if (resolvedWoohooProductId && !woohooProduct) {
+        const [[prod]] = await pool.query('SELECT * FROM woohoo_products WHERE id = ?', [resolvedWoohooProductId]);
         if (!prod) {
             return {
                 success: false,
@@ -402,7 +429,17 @@ export const updateGiftCardService = async (id, body, files) => {
             };
         }
         woohooProduct = prod;
+    }
 
+    const currentWoohooProductId = giftCard.woohoo_product_id ? parseInt(giftCard.woohoo_product_id) : null;
+    const targetWoohooProductId = resolvedWoohooProductId !== undefined ? resolvedWoohooProductId : currentWoohooProductId;
+    const woohooChanged = resolvedWoohooProductId !== undefined && targetWoohooProductId !== currentWoohooProductId;
+
+    if (resolvedWoohooProductId !== undefined) {
+        updateFields.woohoo_product_id = resolvedWoohooProductId;
+    }
+
+    if (woohooProduct) {
         // Populate new values based on refresh_prefill configuration
         if (refresh_prefill === true || refresh_prefill === 'true') {
             if (updateFields.gift_card_name === undefined) updateFields.gift_card_name = woohooProduct.name;

@@ -68,11 +68,7 @@ export const getWoohooHeaders = (method, url, body = null, token = null) => {
     const dateAtClient = new Date().toISOString();
     const clientSecret = process.env.WOOHOO_CLIENT_SECRET;
     
-    console.log(`\n[Woohoo API Call] ${method} ${url}`);
-    console.log(`[Woohoo API Config] Using Client Secret:`, clientSecret);
-    if (body) {
-        console.log(`[Woohoo API Payload]:`, JSON.stringify(body));
-    }
+    logger.info(`[Woohoo API Call] ${method} ${url}`);
     
     const signature = generateSignature(method, url, body, clientSecret);
 
@@ -85,8 +81,6 @@ export const getWoohooHeaders = (method, url, body = null, token = null) => {
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;
     }
-    
-    console.log(`[Woohoo API Headers]:`, headers);
 
     return headers;
 };
