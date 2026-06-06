@@ -11,15 +11,15 @@ router.use(authMiddleware);
 router.use(authorizeRole([1]));
 
 // Add Sub-Admin
-router.post('/', validate(createSubAdminSchema), subAdminController.addSubAdmin);
+router.post('/add', validate(createSubAdminSchema), subAdminController.addSubAdmin);
 
 // Update Sub-Admin
-router.patch('/:id', validate(updateSubAdminSchema), subAdminController.updateSubAdmin);
+router.patch('/update/:id', validate(updateSubAdminSchema), subAdminController.updateSubAdmin);
 
 // Delete Sub-Admin
-router.delete('/:id', subAdminController.deleteSubAdmin);
+router.patch('/delete/:id', subAdminController.deleteSubAdmin);
 
 // List Sub-Admins
-router.get('/', subAdminController.listSubAdmins);
+router.get('/list', subAdminController.listSubAdmins);
 
 export default router;
