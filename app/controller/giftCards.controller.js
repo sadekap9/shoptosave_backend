@@ -31,7 +31,7 @@ export const getGiftCards = async (req, res) => {
  */
 export const createGiftCard = async (req, res) => {
     try {
-        const response = await giftCardsService.createGiftCardService(req.body, req.files);
+        const response = await giftCardsService.createGiftCardService(req.body);
         
         if (!response.success) {
             return res.status(response.statusCode).json({
@@ -65,7 +65,7 @@ export const createGiftCard = async (req, res) => {
 export const updateGiftCard = async (req, res) => {
     try {
         const { id } = req.params;
-        const response = await giftCardsService.updateGiftCardService(id, req.body, req.files);
+        const response = await giftCardsService.updateGiftCardService(id, req.body);
         
         if (!response.success) {
             return res.status(response.statusCode).json({
