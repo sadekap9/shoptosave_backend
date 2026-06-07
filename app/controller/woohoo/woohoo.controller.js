@@ -159,42 +159,6 @@ export const getProductsByCategory = async (req, res) => {
         const { categoryId } = req.params;
         const result = await woohooService.getWoohooProductsByCategory(bearerToken, categoryId);
 
-        // Debug log to scratch/woohoo_result.json
-        try {
-            if (!fs.existsSync('scratch')) {
-                fs.mkdirSync('scratch', { recursive: true });
-            }
-            fs.writeFileSync('scratch/woohoo_result.json', JSON.stringify(result, null, 2));
-            logger.info('Dumped live category products response to scratch/woohoo_result.json');
-        } catch (err) {
-            logger.error('Failed to dump debug log', { error: err.message });
-        }
-
-        // Auto-save/sync fetched products in woohoo_products table
-        const productsToSave = result.products || (Array.isArray(result) ? result : []);
-        logger.info(`Checking products to save. Result is array: ${Array.isArray(result)}. Result.products exists: ${!!result.products}. Products count: ${productsToSave.length}`);
-
-        if (productsToSave && productsToSave.length > 0) {
-            // Get local category ID
-            let [[localCategory]] = await pool.query(
-                'SELECT id FROM woohoo_categories WHERE woohoo_category_id = ?',
-                [categoryId]
-            );
-
-            // If it doesn't exist locally, insert a stub category to satisfy foreign key constraints
-            if (!localCategory) {
-                const [insertCat] = await pool.query(
-                    'INSERT INTO woohoo_categories (woohoo_category_id, name, is_active) VALUES (?, ?, 1)',
-                    [categoryId, `Category ${categoryId}`]
-                );
-                localCategory = { id: insertCat.insertId };
-            }
-
-            // Save products
-            await saveProductsToDB(productsToSave, localCategory.id);
-            logger.info(`Auto-saved ${productsToSave.length} products for category ${categoryId} to DB`);
-        }
-
         return res.status(200).json({
             success: true,
             message: 'Products fetched successfully',

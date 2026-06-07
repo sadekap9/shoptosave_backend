@@ -5,18 +5,7 @@ import { getWoohooToken } from '../categories/woohooAuth.service.js';
 import { getWoohooProduct } from '../woohoo/woohoo.service.js';
 import { saveProductsToDB } from '../products/products.service.js';
 
-const toDbUsageType = (val) => {
-    if (val === 1 || val === '1' || val === 'ONLINE') return 1;
-    if (val === 2 || val === '2' || val === 'OFFLINE') return 2;
-    if (val === 3 || val === '3' || val === 'BOTH') return 3;
-    return 1;
-};
 
-const toApiUsageType = (val) => {
-    const intVal = parseInt(val);
-    if (intVal === 1 || intVal === 2 || intVal === 3) return intVal;
-    return 1;
-};
 
 const toTinyInt = (val) => {
     if (val === undefined || val === null) return 0;
@@ -79,7 +68,6 @@ export const getGiftCardsService = async () => {
             const grouped = imageMap[gc.id] || { mobile_images: [], desktop_images: [] };
             gc.mobile_images = grouped.mobile_images;
             gc.desktop_images = grouped.desktop_images;
-            gc.usage_type = toApiUsageType(gc.usage_type);
         });
 
         return {
@@ -137,7 +125,6 @@ export const getGiftCardByIdService = async (id) => {
 
         giftCard.mobile_images = mobile_images;
         giftCard.desktop_images = desktop_images;
-        giftCard.usage_type = toApiUsageType(giftCard.usage_type);
 
         return {
             success: true,
@@ -315,6 +302,8 @@ export const createGiftCardService = async (data) => {
     const validity = liveProd.expiry || null;
     const brand_logo = liveProd.brandLogo || null;
     const categories = liveProd.categories ? JSON.stringify(liveProd.categories) : null;
+    const discounts = liveProd.discounts ? JSON.stringify(liveProd.discounts) : null;
+    const corporate_discounts = liveProd.corporateDiscounts ? JSON.stringify(liveProd.corporateDiscounts) : null;
     const product_type = liveProd.type || null;
     const payout_enabled = liveProd.payout?.enabled ? 1 : 0;
     const currency_code = liveProd.price?.currency?.code || 'INR';
@@ -322,6 +311,7 @@ export const createGiftCardService = async (data) => {
     const tnc_link = liveProd.tnc?.link || null;
     const woohoo_created_at = toMySqlDateTime(liveProd.createdAt);
     const woohoo_updated_at = toMySqlDateTime(liveProd.updatedAt);
+    const sync_response = JSON.stringify(liveProd);
 
     const connection = await pool.getConnection();
     await connection.beginTransaction();
@@ -332,10 +322,9 @@ export const createGiftCardService = async (data) => {
                 store_id, sku, woohoo_product_id, gift_card_name, brand_name, brand_code,
                 product_type, description, short_description, things_to_note, redeem_steps,
                 min_denomination, max_denomination, currency_code, currency_symbol, validity,
-                tnc_link, brand_logo, categories, payout_enabled, woohoo_created_at, woohoo_updated_at,
-                status, featured, sort_order, home_page_visibility, commission_percentage,
-                platform_discount, cashback_percentage, resell_margin
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                tnc_link, brand_logo, categories, discounts, corporate_discounts, payout_enabled,
+                woohoo_created_at, woohoo_updated_at, sync_response, status, featured
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 store_id,
                 sku.trim(),
@@ -356,17 +345,14 @@ export const createGiftCardService = async (data) => {
                 tnc_link,
                 brand_logo,
                 categories,
+                discounts,
+                corporate_discounts,
                 payout_enabled,
                 woohoo_created_at,
                 woohoo_updated_at,
+                sync_response,
                 status !== undefined ? toTinyInt(status) : 1,
-                featured !== undefined ? toTinyInt(featured) : 0,
-                sort_order !== undefined ? parseInt(sort_order) : 0,
-                home_page_visibility !== undefined ? toTinyInt(home_page_visibility) : 1,
-                commission_percentage !== undefined ? parseFloat(commission_percentage) : 0.00,
-                platform_discount !== undefined ? parseFloat(platform_discount) : 0.00,
-                cashback_percentage !== undefined ? parseFloat(cashback_percentage) : 0.00,
-                resell_margin !== undefined ? parseFloat(resell_margin) : 0.00
+                featured !== undefined ? toTinyInt(featured) : 0
             ]
         );
 
@@ -511,7 +497,6 @@ export const getClientGiftCardsService = async (filters = {}) => {
             store_id,
             category_id,
             search,
-            usage_type,
             limit = 20,
             offset = 0,
             sort_by = 'id',
@@ -531,11 +516,6 @@ export const getClientGiftCardsService = async (filters = {}) => {
             params.push(parseInt(category_id));
         }
 
-        if (usage_type) {
-            whereClauses.push('gc.usage_type = ?');
-            params.push(toDbUsageType(usage_type));
-        }
-
         if (search) {
             whereClauses.push('(gc.gift_card_name LIKE ? OR gc.sku LIKE ? OR s.store_name LIKE ?)');
             const searchPattern = `%${search}%`;
@@ -545,7 +525,7 @@ export const getClientGiftCardsService = async (filters = {}) => {
         const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
         // Whitelist sorting parameters to avoid SQL injection
-        const allowedSortFields = ['id', 'gift_card_name', 'discount_percentage', 'cashback_percentage', 'created_at'];
+        const allowedSortFields = ['id', 'gift_card_name', 'created_at'];
         const targetSortField = allowedSortFields.includes(sort_by) ? `gc.${sort_by}` : 'gc.id';
         const targetSortOrder = ['ASC', 'DESC'].includes(sort_order.toUpperCase()) ? sort_order.toUpperCase() : 'DESC';
 
@@ -623,7 +603,6 @@ export const getClientGiftCardsService = async (filters = {}) => {
             const grouped = imageMap[gc.id] || { mobile_images: [], desktop_images: [] };
             gc.mobile_images = grouped.mobile_images;
             gc.desktop_images = grouped.desktop_images;
-            gc.usage_type = toApiUsageType(gc.usage_type);
         });
 
         return {
@@ -688,7 +667,6 @@ export const getClientGiftCardByIdService = async (id) => {
 
         giftCard.mobile_images = mobile_images;
         giftCard.desktop_images = desktop_images;
-        giftCard.usage_type = toApiUsageType(giftCard.usage_type);
 
         return {
             success: true,
