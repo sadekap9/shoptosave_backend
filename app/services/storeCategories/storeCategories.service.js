@@ -155,12 +155,28 @@ export const deleteStoreCategoryService = async (id) => {
         };
     }
 
-    await pool.query('DELETE FROM categories WHERE id = ?', [id]);
+    const connection = await pool.getConnection();
+    await connection.beginTransaction();
 
-    return {
-        success: true,
-        statusCode: 200,
-        message: 'Category deleted successfully',
-        data: { id: parseInt(id) }
-    };
+    try {
+        // Reassign stores of this category to NULL to satisfy foreign key constraint
+        await connection.query('UPDATE stores SET category_id = NULL WHERE category_id = ?', [id]);
+
+        // Delete the category
+        await connection.query('DELETE FROM categories WHERE id = ?', [id]);
+
+        await connection.commit();
+
+        return {
+            success: true,
+            statusCode: 200,
+            message: 'Category deleted successfully',
+            data: { id: parseInt(id) }
+        };
+    } catch (error) {
+        await connection.rollback();
+        throw error;
+    } finally {
+        connection.release();
+    }
 };

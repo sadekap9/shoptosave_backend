@@ -18,18 +18,37 @@ const toTinyInt = (val) => {
 /**
  * Fetch all gift cards (with store and grouped image details)
  */
-export const getGiftCardsService = async () => {
+export const getGiftCardsService = async (filters = {}) => {
     try {
-        const [giftCards] = await pool.query(`
+        const { store_id } = filters;
+        let querySql = `
             SELECT gc.*, s.store_name 
             FROM gift_cards gc
             LEFT JOIN stores s ON gc.store_id = s.id
-            ORDER BY gc.id DESC
-        `);
+        `;
+        const params = [];
+        if (store_id) {
+            querySql += ` WHERE gc.store_id = ?`;
+            params.push(parseInt(store_id));
+        }
+        querySql += ` ORDER BY gc.id DESC`;
 
-        const [images] = await pool.query(`
-            SELECT * FROM gift_card_images
-        `);
+        const [giftCards] = await pool.query(querySql, params);
+
+        if (giftCards.length === 0) {
+            return {
+                success: true,
+                statusCode: 200,
+                message: 'No gift cards found',
+                data: []
+            };
+        }
+
+        const activeGiftCardIds = giftCards.map(gc => gc.id);
+        const [images] = await pool.query(
+            'SELECT * FROM gift_card_images WHERE gift_card_id IN (?)',
+            [activeGiftCardIds]
+        );
 
         // Map images to their respective gift cards, grouped by image_type
         const imageMap = {};

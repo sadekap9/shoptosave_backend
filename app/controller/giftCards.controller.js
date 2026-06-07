@@ -2,11 +2,11 @@ import * as giftCardsService from '../services/giftCards/giftCards.service.js';
 import logger from '../utils/logger.js';
 
 /**
- * Get all gift cards - Admin / Sub-Admin
+ * Get all gift cards - Admin / Sub-Admin (Optional filter ?store_id=12)
  */
 export const getGiftCards = async (req, res) => {
     try {
-        const response = await giftCardsService.getGiftCardsService();
+        const response = await giftCardsService.getGiftCardsService(req.query);
         
         return res.status(response.statusCode).json({
             success: response.success,
@@ -18,6 +18,32 @@ export const getGiftCards = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in getGiftCards', { error: error.message, stack: error.stack });
+        return res.status(500).json({
+            success: false,
+            errors: [{ message: 'Internal server error' }],
+            result: {}
+        });
+    }
+};
+
+/**
+ * Get gift cards by store ID - Admin / Sub-Admin
+ */
+export const getGiftCardsByStore = async (req, res) => {
+    try {
+        const { storeId } = req.params;
+        const response = await giftCardsService.getGiftCardsService({ store_id: storeId });
+        
+        return res.status(response.statusCode).json({
+            success: response.success,
+            errors: response.success ? [] : [{ message: response.message }],
+            result: {
+                message: response.message,
+                data: response.data
+            }
+        });
+    } catch (error) {
+        logger.error('Error in getGiftCardsByStore', { error: error.message, stack: error.stack });
         return res.status(500).json({
             success: false,
             errors: [{ message: 'Internal server error' }],

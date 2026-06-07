@@ -6,7 +6,8 @@ import {
     updateGiftCard,
     deleteGiftCard,
     getClientGiftCards,
-    getClientGiftCardById
+    getClientGiftCardById,
+    getGiftCardsByStore
 } from '../controller/giftCards.controller.js';
 
 import authenticate, { authorizeRole } from '../middlewares/verifyMiddleware.js';
@@ -33,6 +34,14 @@ router.get(
     authenticate,
     authorizeRole([1, 2]),
     getGiftCards
+);
+
+// Get gift cards by store ID
+router.get(
+    '/store/:storeId',
+    authenticate,
+    authorizeRole([1, 2]),
+    getGiftCardsByStore
 );
 
 // Get gift card details by ID
