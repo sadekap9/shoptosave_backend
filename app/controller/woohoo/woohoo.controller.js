@@ -463,7 +463,7 @@ export const resendCards = async (req, res) => {
 export const getSyncedProductsList = async (req, res) => {
     try {
         const [products] = await pool.query(
-            'SELECT id, name, sku FROM woohoo_products WHERE is_active = 1 ORDER BY name ASC'
+            'SELECT id, product_name AS name, sku FROM woohoo_products WHERE status = 1 ORDER BY product_name ASC'
         );
 
         return res.status(200).json({
