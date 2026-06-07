@@ -160,3 +160,73 @@ export const getGiftCardById = async (req, res) => {
         });
     }
 };
+
+/**
+ * Get active gift cards - Public/Customer API
+ */
+export const getClientGiftCards = async (req, res) => {
+    try {
+        const filters = {
+            store_id: req.query.store_id,
+            category_id: req.query.category_id,
+            search: req.query.search,
+            usage_type: req.query.usage_type,
+            limit: req.query.limit,
+            offset: req.query.offset,
+            sort_by: req.query.sort_by,
+            sort_order: req.query.sort_order
+        };
+
+        const response = await giftCardsService.getClientGiftCardsService(filters);
+
+        return res.status(response.statusCode).json({
+            success: response.success,
+            errors: response.success ? [] : [{ message: response.message }],
+            result: {
+                message: response.message,
+                data: response.data
+            }
+        });
+    } catch (error) {
+        logger.error('Error in getClientGiftCards', { error: error.message, stack: error.stack });
+        return res.status(500).json({
+            success: false,
+            errors: [{ message: 'Internal server error' }],
+            result: {}
+        });
+    }
+};
+
+/**
+ * Get active gift card details by ID - Public/Customer API
+ */
+export const getClientGiftCardById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const response = await giftCardsService.getClientGiftCardByIdService(id);
+
+        if (!response.success) {
+            return res.status(response.statusCode).json({
+                success: false,
+                errors: [{ message: response.message }],
+                result: {}
+            });
+        }
+
+        return res.status(response.statusCode).json({
+            success: true,
+            errors: [],
+            result: {
+                message: response.message,
+                data: response.data
+            }
+        });
+    } catch (error) {
+        logger.error('Error in getClientGiftCardById', { error: error.message, stack: error.stack });
+        return res.status(500).json({
+            success: false,
+            errors: [{ message: 'Internal server error' }],
+            result: {}
+        });
+    }
+};

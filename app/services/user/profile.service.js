@@ -175,3 +175,78 @@ export const getUserByIdService = async (userId) => {
         };
     }
 };
+
+/**
+ * Delete Profile Service
+ */
+export const deleteProfileService = async (userId) => {
+    try {
+        // Check if user exists
+        const users = await executeQuery('SELECT id FROM user_master WHERE id = ?', [userId]);
+        if (users.length === 0) {
+            return {
+                success: false,
+                statusCode: 404,
+                message: 'User not found'
+            };
+        }
+
+        // Delete user (associated sessions are cascade deleted via foreign key constraint)
+        await executeQuery('DELETE FROM user_master WHERE id = ?', [userId]);
+
+        return {
+            success: true,
+            statusCode: 200,
+            message: 'User profile deleted successfully'
+        };
+    } catch (error) {
+        return {
+            success: false,
+            statusCode: 500,
+            message: 'Error deleting user profile'
+        };
+    }
+};
+
+/**
+ * Update User Status Service (Admin/Sub-Admin operation)
+ */
+export const updateUserStatusService = async (targetUserId, isActiveVal) => {
+    try {
+        const isActive = (isActiveVal === true || isActiveVal === 'true' || isActiveVal === 1 || isActiveVal === '1') ? 1 : 0;
+
+        // Check if user exists
+        const users = await executeQuery('SELECT id FROM user_master WHERE id = ?', [targetUserId]);
+        if (users.length === 0) {
+            return {
+                success: false,
+                statusCode: 404,
+                message: 'User not found'
+            };
+        }
+
+        // Update status
+        await executeQuery('UPDATE user_master SET is_active = ? WHERE id = ?', [isActive, targetUserId]);
+
+        // If inactive, revoke all active sessions for the user to force log them out
+        if (isActive === 0) {
+            await executeQuery('UPDATE session_master SET is_revoked = 1 WHERE user_id = ?', [targetUserId]);
+        }
+
+        return {
+            success: true,
+            statusCode: 200,
+            message: `User status updated successfully to ${isActive === 1 ? 'Active' : 'Inactive'}`,
+            data: {
+                id: parseInt(targetUserId),
+                is_active: isActive
+            }
+        };
+    } catch (error) {
+        return {
+            success: false,
+            statusCode: 500,
+            message: 'Error updating user status'
+        };
+    }
+};

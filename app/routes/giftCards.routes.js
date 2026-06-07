@@ -4,40 +4,71 @@ import {
     getGiftCardById,
     createGiftCard,
     updateGiftCard,
-    deleteGiftCard
+    deleteGiftCard,
+    getClientGiftCards,
+    getClientGiftCardById
 } from '../controller/giftCards.controller.js';
+
 import authenticate, { authorizeRole } from '../middlewares/verifyMiddleware.js';
 import { giftCardUploadFields } from '../middlewares/giftCardUpload.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
-import { createGiftCardSchema, updateGiftCardSchema } from '../validations/giftCard.validation.js';
+import {
+    createGiftCardSchema,
+    updateGiftCardSchema
+} from '../validations/giftCard.validation.js';
 
 const router = express.Router();
 
-// Apply authentication and role authorization (Role 1 and 2 only)
-router.use(authenticate);
-router.use(authorizeRole([1, 2]));
 
-// List all gift cards
-router.get('/list', getGiftCards);
+// Get all active gift cards for customers
+router.get('/lists', getClientGiftCards);
 
-// Get single gift card details by ID
-router.get('/:id', getGiftCardById);
+// Get gift card details for customers
+router.get('/lists/:id', getClientGiftCardById);
 
-// Create new gift card (allows up to 20 image uploads each for mobile/desktop fields)
-router.post('/add', 
-    giftCardUploadFields, 
-    validate(createGiftCardSchema), 
+
+// Get all gift cards
+router.get(
+    '/list',
+    authenticate,
+    authorizeRole([1, 2]),
+    getGiftCards
+);
+
+// Get gift card details by ID
+router.get(
+    '/:id',
+    authenticate,
+    authorizeRole([1, 2]),
+    getGiftCardById
+);
+
+// Create gift card
+router.post(
+    '/add',
+    authenticate,
+    authorizeRole([1,2]), // Super Admin only
+    giftCardUploadFields,
+    validate(createGiftCardSchema),
     createGiftCard
 );
 
-// Update gift card (allows up to 20 image uploads each for mobile/desktop fields)
-router.patch('/update/:id', 
-    giftCardUploadFields, 
-    validate(updateGiftCardSchema), 
+// Update gift card
+router.patch(
+    '/update/:id',
+    authenticate,
+    authorizeRole([1,2]), // Super Admin only
+    giftCardUploadFields,
+    validate(updateGiftCardSchema),
     updateGiftCard
 );
 
 // Delete gift card
-router.delete('/delete/:id', deleteGiftCard);
+router.delete(
+    '/delete/:id',
+    authenticate,
+    authorizeRole([1]), // Super Admin only
+    deleteGiftCard
+);
 
 export default router;

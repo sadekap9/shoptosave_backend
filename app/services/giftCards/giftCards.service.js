@@ -747,3 +747,202 @@ export const deleteGiftCardService = async (id) => {
         connection.release();
     }
 };
+
+/**
+ * Fetch active gift cards - Public/Customer API
+ */
+export const getClientGiftCardsService = async (filters = {}) => {
+    try {
+        const {
+            store_id,
+            category_id,
+            search,
+            usage_type,
+            limit = 20,
+            offset = 0,
+            sort_by = 'id',
+            sort_order = 'DESC'
+        } = filters;
+
+        const params = [];
+        let whereClauses = ['gc.status = 1', 's.status = 1'];
+
+        if (store_id) {
+            whereClauses.push('gc.store_id = ?');
+            params.push(parseInt(store_id));
+        }
+
+        if (category_id) {
+            whereClauses.push('s.category_id = ?');
+            params.push(parseInt(category_id));
+        }
+
+        if (usage_type) {
+            whereClauses.push('gc.usage_type = ?');
+            params.push(toDbUsageType(usage_type));
+        }
+
+        if (search) {
+            whereClauses.push('(gc.gift_card_name LIKE ? OR gc.sku LIKE ? OR s.store_name LIKE ?)');
+            const searchPattern = `%${search}%`;
+            params.push(searchPattern, searchPattern, searchPattern);
+        }
+
+        const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+        // Whitelist sorting parameters to avoid SQL injection
+        const allowedSortFields = ['id', 'gift_card_name', 'discount_percentage', 'cashback_percentage', 'created_at'];
+        const targetSortField = allowedSortFields.includes(sort_by) ? `gc.${sort_by}` : 'gc.id';
+        const targetSortOrder = ['ASC', 'DESC'].includes(sort_order.toUpperCase()) ? sort_order.toUpperCase() : 'DESC';
+
+        // Fetch paginated gift cards
+        const querySql = `
+            SELECT gc.*, s.store_name, s.logo as store_logo
+            FROM gift_cards gc
+            LEFT JOIN stores s ON gc.store_id = s.id
+            ${whereSql}
+            ORDER BY ${targetSortField} ${targetSortOrder}
+            LIMIT ? OFFSET ?
+        `;
+        params.push(parseInt(limit), parseInt(offset));
+
+        const [giftCards] = await pool.query(querySql, params);
+
+        // Fetch total count for pagination metadata
+        const countSql = `
+            SELECT COUNT(*) as total
+            FROM gift_cards gc
+            LEFT JOIN stores s ON gc.store_id = s.id
+            ${whereSql}
+        `;
+        const countParams = params.slice(0, -2); // exclude limit and offset
+        const [[{ total }]] = await pool.query(countSql, countParams);
+
+        if (giftCards.length === 0) {
+            return {
+                success: true,
+                statusCode: 200,
+                message: 'No gift cards found',
+                data: {
+                    giftCards: [],
+                    pagination: {
+                        total,
+                        limit: parseInt(limit),
+                        offset: parseInt(offset)
+                    }
+                }
+            };
+        }
+
+        // Fetch images for the active gift cards
+        const activeGiftCardIds = giftCards.map(gc => gc.id);
+        const [images] = await pool.query(
+            'SELECT * FROM gift_card_images WHERE gift_card_id IN (?)',
+            [activeGiftCardIds]
+        );
+
+        // Map images to their respective gift cards, grouped by image_type
+        const imageMap = {};
+        images.forEach(img => {
+            if (!imageMap[img.gift_card_id]) {
+                imageMap[img.gift_card_id] = {
+                    mobile_images: [],
+                    desktop_images: []
+                };
+            }
+
+            const imgData = {
+                id: img.id,
+                image_url: img.image_url,
+                created_at: img.created_at,
+                updated_at: img.updated_at
+            };
+
+            if (img.image_type === giftCardImageType.MOBILE) {
+                imageMap[img.gift_card_id].mobile_images.push(imgData);
+            } else if (img.image_type === giftCardImageType.DESKTOP) {
+                imageMap[img.gift_card_id].desktop_images.push(imgData);
+            }
+        });
+
+        giftCards.forEach(gc => {
+            const grouped = imageMap[gc.id] || { mobile_images: [], desktop_images: [] };
+            gc.mobile_images = grouped.mobile_images;
+            gc.desktop_images = grouped.desktop_images;
+            gc.usage_type = toApiUsageType(gc.usage_type);
+        });
+
+        return {
+            success: true,
+            statusCode: 200,
+            message: 'Gift cards fetched successfully',
+            data: {
+                giftCards,
+                pagination: {
+                    total,
+                    limit: parseInt(limit),
+                    offset: parseInt(offset)
+                }
+            }
+        };
+    } catch (error) {
+        throw error;
+    }
+};
+
+/**
+ * Fetch a single active gift card by ID - Public/Customer API
+ */
+export const getClientGiftCardByIdService = async (id) => {
+    try {
+        const [[giftCard]] = await pool.query(`
+            SELECT gc.*, s.store_name, s.logo as store_logo
+            FROM gift_cards gc
+            LEFT JOIN stores s ON gc.store_id = s.id
+            WHERE gc.id = ? AND gc.status = 1 AND s.status = 1
+        `, [id]);
+
+        if (!giftCard) {
+            return {
+                success: false,
+                statusCode: 404,
+                message: 'Gift card not found or is inactive'
+            };
+        }
+
+        const [images] = await pool.query(`
+            SELECT * FROM gift_card_images WHERE gift_card_id = ?
+        `, [id]);
+
+        const mobile_images = [];
+        const desktop_images = [];
+
+        images.forEach(img => {
+            const imgData = {
+                id: img.id,
+                image_url: img.image_url,
+                created_at: img.created_at,
+                updated_at: img.updated_at
+            };
+
+            if (img.image_type === giftCardImageType.MOBILE) {
+                mobile_images.push(imgData);
+            } else if (img.image_type === giftCardImageType.DESKTOP) {
+                desktop_images.push(imgData);
+            }
+        });
+
+        giftCard.mobile_images = mobile_images;
+        giftCard.desktop_images = desktop_images;
+        giftCard.usage_type = toApiUsageType(giftCard.usage_type);
+
+        return {
+            success: true,
+            statusCode: 200,
+            message: 'Gift card details fetched successfully',
+            data: giftCard
+        };
+    } catch (error) {
+        throw error;
+    }
+};
