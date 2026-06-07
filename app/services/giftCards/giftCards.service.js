@@ -155,15 +155,7 @@ export const createGiftCardService = async (data) => {
         };
     }
 
-    // Verify Gift Card doesn't already exist for this store
-    const [[existingGiftCard]] = await pool.query('SELECT id FROM gift_cards WHERE store_id = ?', [store_id]);
-    if (existingGiftCard) {
-        return {
-            success: false,
-            statusCode: 400,
-            message: 'A gift card already exists for this store'
-        };
-    }
+
 
     // Verify SKU uniqueness
     if (sku) {
