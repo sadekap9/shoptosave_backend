@@ -13,16 +13,7 @@ const toTinyInt = (val) => {
     return 0;
 };
 
-const toMySqlDateTime = (isoStr) => {
-    if (!isoStr) return null;
-    try {
-        const d = new Date(isoStr);
-        if (isNaN(d.getTime())) return null;
-        return d.toISOString().slice(0, 19).replace('T', ' ');
-    } catch (e) {
-        return null;
-    }
-};
+
 
 /**
  * Fetch all gift cards (with store and grouped image details)
@@ -309,51 +300,52 @@ export const createGiftCardService = async (data) => {
     const currency_code = liveProd.price?.currency?.code || 'INR';
     const currency_symbol = liveProd.price?.currency?.symbol || '₹';
     const tnc_link = liveProd.tnc?.link || null;
-    const woohoo_created_at = toMySqlDateTime(liveProd.createdAt);
-    const woohoo_updated_at = toMySqlDateTime(liveProd.updatedAt);
     const sync_response = JSON.stringify(liveProd);
 
     const connection = await pool.getConnection();
     await connection.beginTransaction();
 
     try {
+        const [columns] = await connection.query('DESCRIBE gift_cards');
+        const dbColumns = columns.map(c => c.Field);
+
+        const insertData = {
+            store_id,
+            sku: sku.trim(),
+            woohoo_product_id,
+            gift_card_name,
+            brand_name,
+            brand_code,
+            product_type,
+            description,
+            short_description,
+            things_to_note,
+            redeem_steps,
+            min_denomination,
+            max_denomination,
+            currency_code,
+            currency_symbol,
+            validity,
+            tnc_link,
+            brand_logo,
+            categories,
+            discounts,
+            corporate_discounts,
+            payout_enabled,
+            sync_response,
+            status: status !== undefined ? toTinyInt(status) : 1,
+            featured: featured !== undefined ? toTinyInt(featured) : 0
+        };
+
+        const keysToInsert = Object.keys(insertData).filter(key => dbColumns.includes(key));
+        const valuesToInsert = keysToInsert.map(key => insertData[key]);
+
+        const columnSql = keysToInsert.join(', ');
+        const placeholderSql = keysToInsert.map(() => '?').join(', ');
+
         const [result] = await connection.query(
-            `INSERT INTO gift_cards (
-                store_id, sku, woohoo_product_id, gift_card_name, brand_name, brand_code,
-                product_type, description, short_description, things_to_note, redeem_steps,
-                min_denomination, max_denomination, currency_code, currency_symbol, validity,
-                tnc_link, brand_logo, categories, discounts, corporate_discounts, payout_enabled,
-                woohoo_created_at, woohoo_updated_at, sync_response, status, featured
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                store_id,
-                sku.trim(),
-                woohoo_product_id,
-                gift_card_name,
-                brand_name,
-                brand_code,
-                product_type,
-                description,
-                short_description,
-                things_to_note,
-                redeem_steps,
-                min_denomination,
-                max_denomination,
-                currency_code,
-                currency_symbol,
-                validity,
-                tnc_link,
-                brand_logo,
-                categories,
-                discounts,
-                corporate_discounts,
-                payout_enabled,
-                woohoo_created_at,
-                woohoo_updated_at,
-                sync_response,
-                status !== undefined ? toTinyInt(status) : 1,
-                featured !== undefined ? toTinyInt(featured) : 0
-            ]
+            `INSERT INTO gift_cards (${columnSql}) VALUES (${placeholderSql})`,
+            valuesToInsert
         );
 
         const giftCardId = result.insertId;
