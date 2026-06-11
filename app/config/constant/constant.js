@@ -72,3 +72,21 @@ export const USAGE_TYPE = Object.freeze({
 
 export const UsageType = [1, 2, 3]; // 1 = online, 2 = offline, 3 = both
 
+export const BANNER_TYPE = Object.freeze({
+    HERO: 1,
+    PROMOTIONAL: 2,
+    CATEGORY: 3,
+    OFFER: 4
+});
+
+export const BannerTypeValues = [1, 2, 3, 4]; // 1 = Hero, 2 = Promotional, 3 = Category, 4 = Offer
+
+export const REDIRECT_TYPE = Object.freeze({
+    URL: 1,
+    PRODUCT: 2,
+    CATEGORY: 3,
+    STORE: 4
+});
+
+export const RedirectTypeValues = [1, 2, 3, 4]; // 1 = URL, 2 = Product, 3 = Category, 4 = Store
+

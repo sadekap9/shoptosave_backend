@@ -12,6 +12,7 @@ import storeCategoriesRoutes from './app/routes/storeCategories.routes.js';
 import subAdminRoutes from './app/routes/subAdmin.routes.js';
 import storesRoutes from './app/routes/stores.routes.js';
 import giftCardsRoutes from './app/routes/giftCards.routes.js';
+import bannersRoutes from './app/routes/banners.routes.js';
 import { getProductBySku } from './app/controller/products/products.controller.js';
 import { apiLimiter } from './app/config/rateLimiter.js';
 import logger from './app/utils/logger.js';
@@ -42,6 +43,7 @@ v1Router.use('/store-categories', storeCategoriesRoutes);
 v1Router.use('/sub-admin', subAdminRoutes);
 v1Router.use('/stores', storesRoutes);
 v1Router.use('/gift-cards', giftCardsRoutes);
+v1Router.use('/banners', bannersRoutes);
 v1Router.get('/catalog/products/:sku', getProductBySku);
 v1Router.use('/woohoo', woohooRoutes);      // Woohoo v3 Client API Proxy
 
