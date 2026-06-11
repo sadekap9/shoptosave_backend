@@ -281,7 +281,7 @@ export const getProductsByCategoryFromDB = async (categoryId) => {
     // 2. Array of objects: [{"id": 54}]
     // 3. String array of IDs: ["54"]
     const [rows] = await pool.query(
-        `SELECT * FROM woohoo_products 
+        `SELECT id, sku, product_name, brand_name, thumbnail_image FROM woohoo_products 
          WHERE (
             JSON_CONTAINS(categories, CAST(? AS JSON)) OR 
             JSON_CONTAINS(categories, CAST(? AS JSON)) OR

@@ -56,8 +56,8 @@ export const getPublicStoreCategories = async (req, res) => {
  */
 export const createStoreCategory = async (req, res) => {
     try {
-        const { category_name, status } = req.body;
-        let logo = req.body.logo;
+        const { category_name, status } = req.validatedData;
+        let logo = req.validatedData.logo;
 
         if (req.file) {
             logo = `/uploads/${req.file.filename}`;
@@ -101,8 +101,8 @@ export const createStoreCategory = async (req, res) => {
 export const updateStoreCategory = async (req, res) => {
     try {
         const { id } = req.params;
-        const { category_name, status } = req.body;
-        let logo = req.body.logo;
+        const { category_name, status } = req.validatedData;
+        let logo = req.validatedData.logo;
 
         if (req.file) {
             logo = `/uploads/${req.file.filename}`;

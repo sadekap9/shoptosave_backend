@@ -58,7 +58,7 @@ app.use((err, req, res, next) => {
     if (err instanceof multer.MulterError) {
         let errorMessage = err.message;
         if (err.code === 'LIMIT_UNEXPECTED_FILE') {
-            errorMessage = `Unexpected file field. Please upload the file using the field name 'logo'.`;
+            errorMessage = `Unexpected file field. Please upload the file using the correct field name (e.g., 'logo' or 'profile_image').`;
         }
         return res.status(400).json({
             success: false,

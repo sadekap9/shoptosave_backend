@@ -31,8 +31,8 @@ export const getStores = async (req, res) => {
  */
 export const createStore = async (req, res) => {
     try {
-        const { store_name, category_id, status } = req.body;
-        let logo = req.body.logo;
+        const { store_name, category_id, status } = req.validatedData;
+        let logo = req.validatedData.logo;
 
         if (req.file) {
             logo = `/uploads/${req.file.filename}`;
@@ -77,8 +77,8 @@ export const createStore = async (req, res) => {
 export const updateStore = async (req, res) => {
     try {
         const { id } = req.params;
-        const { store_name, category_id, status } = req.body;
-        let logo = req.body.logo;
+        const { store_name, category_id, status } = req.validatedData;
+        let logo = req.validatedData.logo;
 
         if (req.file) {
             logo = `/uploads/${req.file.filename}`;

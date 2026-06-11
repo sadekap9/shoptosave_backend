@@ -3,7 +3,7 @@ import * as authController from '../controller/auth/auth.controller.js';
 import * as otpController from '../controller/auth/otp.controller.js';
 import { validate } from '../middlewares/validate.middleware.js';
 import { requestOTPSchema, verifyOTPSchema, adminRegisterSchema, adminLoginSchema } from '../validations/auth.validation.js';
-import { otpLimiter, otpBlocker, verifyOtpLimiter, verifyOtpBlocker } from '../config/rateLimiter.js';
+import { otpLimiter, otpBlocker, verifyOtpLimiter, verifyOtpBlocker, loginBlocker, loginLimiter } from '../config/rateLimiter.js';
 import authMiddleware, { authorizeRole } from '../middlewares/verifyMiddleware.js';
 
 const router = express.Router();
@@ -21,7 +21,7 @@ router.post('/verify-otp', verifyOtpBlocker, verifyOtpLimiter, validate(verifyOT
 router.post('/admin/register', validate(adminRegisterSchema), authController.adminRegister);
 
 // Admin / Sub-Admin Login
-router.post('/admin/login', validate(adminLoginSchema), authController.adminLogin);
+router.post('/admin/login', loginBlocker, loginLimiter, validate(adminLoginSchema), authController.adminLogin);
 
 // Logout (Authenticated)
 router.post('/logout', authMiddleware, authController.logOut);

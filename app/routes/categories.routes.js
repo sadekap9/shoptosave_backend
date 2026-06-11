@@ -1,6 +1,6 @@
 import express from 'express';
 import { getCategories, getProductsByCategory, syncCategories, syncProducts, storeProduct } from '../controller/categories/categories.controller.js';
-import authenticate from '../middlewares/verifyMiddleware.js';
+import authenticate, { authorizeRole } from '../middlewares/verifyMiddleware.js';
 
 const router = express.Router();
 
@@ -14,9 +14,9 @@ router.get('/:categoryId/products', authenticate, getProductsByCategory);
 router.post('/products', authenticate, storeProduct);
 
 // Sync categories with Woohoo (Manual trigger)
-router.post('/sync', authenticate, syncCategories);
+router.post('/sync', authenticate, authorizeRole([1, 2]), syncCategories);
 
 // Sync products with Woohoo (Manual trigger)
-router.post('/products/sync', authenticate, syncProducts);
+router.post('/products/sync', authenticate, authorizeRole([1, 2]), syncProducts);
 
 export default router;

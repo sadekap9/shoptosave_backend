@@ -9,6 +9,10 @@ export const updateProfile = async (req, res) => {
         const userId = req.user.id;
         const profileData = req.validatedData;
 
+        if (req.file) {
+            profileData.profile_image = `/uploads/${req.file.filename}`;
+        }
+
         const response = await profileService.updateProfileService(userId, profileData);
 
         if (!response.success) {
@@ -83,6 +87,15 @@ export const getUserById = async (req, res) => {
             return res.status(400).json({
                 success: false,
                 errors: [{ message: 'User ID is required' }],
+                result: {}
+            });
+        }
+
+        // BOLA Check: Customers (role 3) can only access their own user profile details
+        if (req.user.role === 3 && req.user.id !== parseInt(id)) {
+            return res.status(403).json({
+                success: false,
+                errors: [{ message: 'Forbidden' }],
                 result: {}
             });
         }

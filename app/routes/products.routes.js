@@ -1,14 +1,11 @@
 import express from 'express';
-import { getProductsByCategory, syncProducts, storeProduct, getProductBySku } from '../controller/products/products.controller.js';
-import authenticate from '../middlewares/verifyMiddleware.js';
+import { getProductsByCategory, storeProduct, getProductBySku } from '../controller/products/products.controller.js';
+import authenticate, { authorizeRole } from '../middlewares/verifyMiddleware.js';
 
 const router = express.Router();
 
-// Store products in database (Authenticated)
-router.post('/', authenticate, storeProduct);
-
-// Sync products with Woohoo (Manual trigger) (Authenticated)
-router.post('/sync', authenticate, syncProducts);
+// Store products in database (Admin/Sub-Admin only)
+router.post('/', authenticate, authorizeRole([1, 2]), storeProduct);
 
 // Get products by category (Authenticated)
 router.get('/category/:categoryId', authenticate, getProductsByCategory);

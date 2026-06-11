@@ -7,12 +7,7 @@ const blockedIPs = new Map();
  * Get client IP address accurately
  */
 const getClientIp = (req) => {
-  const forwarded = req.headers['x-forwarded-for'];
-  const ip = forwarded 
-    ? forwarded.split(',')[0].trim()
-    : req.socket.remoteAddress || req.ip || '127.0.0.1';
-  
-  return ip;
+  return req.ip || req.socket.remoteAddress || '127.0.0.1';
 };
 
 /**

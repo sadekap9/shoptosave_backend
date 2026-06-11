@@ -17,7 +17,7 @@ const router = express.Router();
 router.get('/list', getPublicStoreCategories);
 
 // Get all store categories including inactive (Admin)
-router.get('/admin/list', getAdminStoreCategories);
+router.get('/admin/list', authenticate, authorizeRole([1, 2]), getAdminStoreCategories);
 
 // Create store category (Authenticated/Admin/Sub-Admin/User, parses logo image upload)
 router.post('/add', authenticate, authorizeRole([1, 2]), // authorizeMenu('categories'),
