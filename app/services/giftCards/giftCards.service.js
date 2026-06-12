@@ -606,6 +606,23 @@ export const getClientGiftCardsService = async (filters = {}) => {
             const grouped = imageMap[gc.id] || { mobile_images: [], desktop_images: [] };
             gc.mobile_images = grouped.mobile_images;
             gc.desktop_images = grouped.desktop_images;
+
+            // Parse discount percentage
+            let pct = 0;
+            if (gc.discounts) {
+                try {
+                    const parsed = typeof gc.discounts === 'string' ? JSON.parse(gc.discounts) : gc.discounts;
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        const firstVal = parsed[0].value || parsed[0].discount || parsed[0].percentage;
+                        if (firstVal !== undefined) {
+                            pct = parseFloat(firstVal) || 0;
+                        }
+                    }
+                } catch (e) {
+                    // ignore
+                }
+            }
+            gc.discount_percentage = pct;
         });
 
         return {
@@ -646,6 +663,10 @@ export const getClientGiftCardByIdService = async (id) => {
             };
         }
 
+        // Increment total_views in background or await it
+        await pool.query('UPDATE gift_cards SET total_views = total_views + 1 WHERE id = ?', [id]);
+        giftCard.total_views = (giftCard.total_views || 0) + 1;
+
         const [images] = await pool.query(`
             SELECT * FROM gift_card_images WHERE gift_card_id = ?
         `, [id]);
@@ -670,6 +691,23 @@ export const getClientGiftCardByIdService = async (id) => {
 
         giftCard.mobile_images = mobile_images;
         giftCard.desktop_images = desktop_images;
+
+        // Parse discount percentage
+        let pct = 0;
+        if (giftCard.discounts) {
+            try {
+                const parsed = typeof giftCard.discounts === 'string' ? JSON.parse(giftCard.discounts) : giftCard.discounts;
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    const firstVal = parsed[0].value || parsed[0].discount || parsed[0].percentage;
+                    if (firstVal !== undefined) {
+                        pct = parseFloat(firstVal) || 0;
+                    }
+                }
+            } catch (e) {
+                // ignore
+            }
+        }
+        giftCard.discount_percentage = pct;
 
         return {
             success: true,

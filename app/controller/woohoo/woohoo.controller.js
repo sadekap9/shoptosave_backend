@@ -1,5 +1,6 @@
 import * as woohooService from '../../services/woohoo/woohoo.service.js';
 import { saveCategoriesToDB, getCategoriesFromDB } from '../../services/categories/categories.service.js';
+import { saveProductsToDB } from '../../services/products/products.service.js';
 import pool from '../../config/dbConfig.js';
 import logger from '../../utils/logger.js';
 
