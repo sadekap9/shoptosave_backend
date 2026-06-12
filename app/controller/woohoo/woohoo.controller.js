@@ -2,8 +2,6 @@ import * as woohooService from '../../services/woohoo/woohoo.service.js';
 import { saveCategoriesToDB, getCategoriesFromDB } from '../../services/categories/categories.service.js';
 import pool from '../../config/dbConfig.js';
 import logger from '../../utils/logger.js';
-import { saveProductsToDB } from '../../services/products/products.service.js';
-import fs from 'fs';
 
 // ─── AUTHENTICATION ────────────────────────────────────────────────────────────
 
@@ -158,26 +156,6 @@ export const getProductsByCategory = async (req, res) => {
         }
         const { categoryId } = req.params;
         const result = await woohooService.getWoohooProductsByCategory(bearerToken, categoryId);
-
-        // Auto-save/sync fetched products details in woohoo_products table (as required by original behavior)
-        if (result) {
-            const products = result.products || (Array.isArray(result) ? result : []);
-            if (products.length > 0) {
-                let categoryDbId = null;
-                const [[cat]] = await pool.query('SELECT id FROM woohoo_categories WHERE woohoo_category_id = ?', [categoryId]);
-                if (cat) {
-                    categoryDbId = cat.id;
-                } else {
-                    const [insCat] = await pool.query(
-                        'INSERT INTO woohoo_categories (woohoo_category_id, name, is_active) VALUES (?, ?, 1)',
-                        [categoryId, `Category ${categoryId}`]
-                    );
-                    categoryDbId = insCat.insertId;
-                }
-                await saveProductsToDB(products, categoryDbId);
-                logger.info(`Auto-saved synced products list for Category ID: ${categoryId}`);
-            }
-        }
 
         return res.status(200).json({
             success: true,

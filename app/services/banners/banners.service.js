@@ -3,17 +3,76 @@ import pool from '../../config/dbConfig.js';
 /**
  * Fetch all banners
  */
-export const getBannersService = async () => {
+export const getBannersService = async (userRole = null) => {
     try {
-        const [rows] = await pool.query(
-            'SELECT * FROM banners ORDER BY display_order ASC, id DESC'
-        );
+        let query = 'SELECT * FROM banners';
+        if (userRole === 3) {
+            query += ' WHERE status = 1 AND (start_date IS NULL OR start_date <= NOW()) AND (end_date IS NULL OR end_date >= NOW())';
+        }
+        query += ' ORDER BY display_order ASC, id DESC';
+
+        const [rows] = await pool.query(query);
         return {
             success: true,
             statusCode: 200,
             message: 'Banners fetched successfully',
             data: rows
         };
+    } catch (error) {
+        throw error;
+    }
+};
+
+/**
+ * Fetch single banner or list of banners by ID(s)
+ */
+export const getBannerByIdService = async (idStr, userRole = null) => {
+    try {
+        const ids = idStr.split(',').map(item => parseInt(item.trim())).filter(num => !isNaN(num));
+        if (ids.length === 0) {
+            return {
+                success: false,
+                statusCode: 400,
+                message: 'Invalid banner ID(s)'
+            };
+        }
+
+        const isMultiple = idStr.includes(',') || ids.length > 1;
+
+        let query = 'SELECT * FROM banners WHERE id IN (?)';
+        const params = [ids];
+
+        // Public or role 3 (Customer) should only see active and scheduled banners
+        if (userRole === null || userRole === 3) {
+            query += ' AND status = 1 AND (start_date IS NULL OR start_date <= NOW()) AND (end_date IS NULL OR end_date >= NOW())';
+        }
+
+        query += ' ORDER BY display_order ASC, id DESC';
+
+        const [rows] = await pool.query(query, params);
+
+        if (isMultiple) {
+            return {
+                success: true,
+                statusCode: 200,
+                message: 'Banners fetched successfully',
+                data: rows
+            };
+        } else {
+            if (rows.length === 0) {
+                return {
+                    success: false,
+                    statusCode: 404,
+                    message: 'Banner not found'
+                };
+            }
+            return {
+                success: true,
+                statusCode: 200,
+                message: 'Banner fetched successfully',
+                data: rows[0]
+            };
+        }
     } catch (error) {
         throw error;
     }
@@ -30,6 +89,21 @@ export const createBannerService = async (data) => {
         redirect_value, display_order, start_date, end_date, status
     } = data;
 
+    // Only check for duplicate banner name if one is provided
+    if (banner_name && banner_name.trim()) {
+        const [[existingBanner]] = await pool.query(
+            'SELECT id FROM banners WHERE LOWER(banner_name) = ?',
+            [banner_name.trim().toLowerCase()]
+        );
+        if (existingBanner) {
+            return {
+                success: false,
+                statusCode: 400,
+                message: 'Banner name already exists'
+            };
+        }
+    }
+
     try {
         const [result] = await pool.query(
             `INSERT INTO banners 
@@ -39,8 +113,8 @@ export const createBannerService = async (data) => {
              redirect_value, display_order, start_date, end_date, status) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
-                banner_name.trim(),
-                title.trim(),
+                banner_name ? banner_name.trim() : null,
+                title ? title.trim() : null,
                 highlighted_text || null,
                 subtitle || null,
                 offer_text || null,
@@ -50,8 +124,8 @@ export const createBannerService = async (data) => {
                 primary_button_link || null,
                 secondary_button_text || null,
                 secondary_button_link || null,
-                banner_type,
-                redirect_type,
+                banner_type !== undefined ? banner_type : null,
+                redirect_type !== undefined ? redirect_type : null,
                 redirect_value || null,
                 display_order !== undefined ? display_order : 0,
                 start_date || null,
@@ -107,9 +181,26 @@ export const updateBannerService = async (id, body) => {
         return { success: false, statusCode: 400, message: 'No valid fields provided to update.' };
     }
 
+    // Check banner_name uniqueness if updated
+    if (keys.includes('banner_name')) {
+        const nameToValidate = updateFields.banner_name.trim();
+        const [[existingBanner]] = await pool.query(
+            'SELECT id FROM banners WHERE LOWER(banner_name) = ? AND id != ?',
+            [nameToValidate.toLowerCase(), id]
+        );
+        if (existingBanner) {
+            return {
+                success: false,
+                statusCode: 400,
+                message: 'Banner name already exists'
+            };
+        }
+        updateFields.banner_name = nameToValidate;
+    }
+
     // Trim string fields
     const stringFields = [
-        'banner_name', 'title', 'highlighted_text', 'subtitle', 'offer_text',
+        'title', 'highlighted_text', 'subtitle', 'offer_text',
         'banner_image', 'background_color', 'primary_button_text', 'primary_button_link',
         'secondary_button_text', 'secondary_button_link', 'redirect_value'
     ];
@@ -161,3 +252,4 @@ export const deleteBannerService = async (id) => {
         data: { id: parseInt(id) }
     };
 };
+

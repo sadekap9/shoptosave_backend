@@ -195,8 +195,7 @@ export const saveProductsToDB = async (products, categoryId) => {
                     validation_amount = ?, edit_beneficiary = ?, convenience_charge = ?,
                     vpa_penny_drop_required = ?, handling_charges = ?, convenience_charges = ?,
                     travel_pass = ?, order_modes = ?, reload_card_number = ?, custom_themes_available = ?,
-                    store_locator_url = ?, eta_message = ?, status = ?, sync_response = ?,
-                    updated_at = CURRENT_TIMESTAMP
+                    store_locator_url = ?, eta_message = ?, status = ?, sync_response = ?
                 WHERE id = ?`,
                 [
                     woohoo_product_id, product_name, brand_name, brand_code, slug,

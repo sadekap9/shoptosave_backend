@@ -1,6 +1,7 @@
 import express from 'express';
 import {
     getBanners,
+    getBannerById,
     createBanner,
     updateBanner,
     deleteBanner
@@ -12,10 +13,13 @@ import { createBannerSchema, updateBannerSchema } from '../validations/banner.va
 
 const router = express.Router();
 
-// List all banners (Authorized for Role 1 and 2)
+// List all banners (Authorized for Admin, Sub-Admin, and Customer/User)
 router.get('/list', authenticate, authorizeRole([1, 2]), getBanners);
 
-// Create new banner (Authorized for Role 1 and 2)
+// Get a single banner or list of banners by ID(s) (Public endpoint)
+router.get('/list/:id', getBannerById);
+
+// Create new banner (Authorized for Role 1 and 2 only)
 router.post('/add',
     authenticate,
     authorizeRole([1, 2]),
@@ -24,7 +28,7 @@ router.post('/add',
     createBanner
 );
 
-// Update banner (Authorized for Role 1 and 2)
+// Update banner (Authorized for Role 1 and 2 only)
 router.patch('/update/:id',
     authenticate,
     authorizeRole([1, 2]),
@@ -33,7 +37,7 @@ router.patch('/update/:id',
     updateBanner
 );
 
-// Delete banner (Authorized for Role 1 and 2)
+// Delete banner (Authorized for Role 1 and 2 only)
 router.delete('/delete/:id',
     authenticate,
     authorizeRole([1, 2]),
@@ -41,3 +45,4 @@ router.delete('/delete/:id',
 );
 
 export default router;
+

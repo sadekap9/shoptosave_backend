@@ -2,11 +2,12 @@ import * as bannersService from '../services/banners/banners.service.js';
 import logger from '../utils/logger.js';
 
 /**
- * Get all banners - Admin / Sub-Admin
+ * Get all banners
  */
 export const getBanners = async (req, res) => {
     try {
-        const response = await bannersService.getBannersService();
+        const userRole = req.user ? req.user.role : null;
+        const response = await bannersService.getBannersService(userRole);
 
         return res.status(response.statusCode).json({
             success: response.success,
@@ -18,6 +19,41 @@ export const getBanners = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in getBanners', { error: error.message });
+        return res.status(500).json({
+            success: false,
+            errors: [{ message: 'Internal server error' }],
+            result: {}
+        });
+    }
+};
+
+/**
+ * Get a single banner by ID
+ */
+export const getBannerById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const userRole = req.user ? req.user.role : null;
+        const response = await bannersService.getBannerByIdService(id, userRole);
+
+        if (!response.success) {
+            return res.status(response.statusCode).json({
+                success: false,
+                errors: [{ message: response.message }],
+                result: {}
+            });
+        }
+
+        return res.status(response.statusCode).json({
+            success: true,
+            errors: [],
+            result: {
+                message: response.message,
+                data: response.data
+            }
+        });
+    } catch (error) {
+        logger.error('Error in getBannerById', { error: error.message });
         return res.status(500).json({
             success: false,
             errors: [{ message: 'Internal server error' }],
@@ -138,3 +174,4 @@ export const deleteBanner = async (req, res) => {
         });
     }
 };
+
