@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { executeQuery } from '../../config/dbConfig.js';
 import { normalizePhone } from '../auth/auth.service.js';
+import { sanitizePaginationParams, buildPagination } from '../../helpers/pagination.helper.js';
 
 /**
  * Update Profile Service
@@ -119,20 +120,24 @@ export const updateProfileService = async (userId, profileData) => {
     };
 };
 
-/**
- * List Users Service (returns customers only, role = 3)
- */
-export const listUsersService = async () => {
+export const listUsersService = async (page, limit) => {
     try {
+        const countResult = await executeQuery('SELECT COUNT(*) AS total FROM user_master WHERE role = 3');
+        const total = countResult[0]?.total || 0;
+
+        const sanitized = sanitizePaginationParams(page, limit);
+
         const users = await executeQuery(
-            'SELECT id, name, email, phone, dob, profile_image, is_active, createdAt, modifiedAt FROM user_master WHERE role = 3 ORDER BY id DESC'
+            'SELECT id, name, email, phone, dob, profile_image, is_active, createdAt, modifiedAt FROM user_master WHERE role = 3 ORDER BY id DESC LIMIT ? OFFSET ?',
+            [sanitized.limit, sanitized.offset]
         );
 
         return {
             success: true,
             statusCode: 200,
             message: 'Users retrieved successfully',
-            data: users
+            data: users,
+            pagination: buildPagination(total, sanitized.page, sanitized.limit)
         };
     } catch (error) {
         return {

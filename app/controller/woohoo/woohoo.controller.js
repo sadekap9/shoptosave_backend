@@ -3,6 +3,7 @@ import { saveCategoriesToDB, getCategoriesFromDB } from '../../services/categori
 import { saveProductsToDB } from '../../services/products/products.service.js';
 import pool from '../../config/dbConfig.js';
 import logger from '../../utils/logger.js';
+import { sanitizePaginationParams, buildPagination } from '../../helpers/pagination.helper.js';
 
 // ─── AUTHENTICATION ────────────────────────────────────────────────────────────
 
@@ -425,8 +426,13 @@ export const resendCards = async (req, res) => {
  */
 export const getSyncedProductsList = async (req, res) => {
     try {
+        const { page, limit } = req.query;
+        const [[{ total }]] = await pool.query('SELECT COUNT(*) AS total FROM woohoo_products WHERE status = 1');
+        const sanitized = sanitizePaginationParams(page, limit);
+
         const [products] = await pool.query(
-            'SELECT id, product_name AS name, sku FROM woohoo_products WHERE status = 1 ORDER BY product_name ASC'
+            'SELECT id, product_name AS name, sku FROM woohoo_products WHERE status = 1 ORDER BY product_name ASC LIMIT ? OFFSET ?',
+            [sanitized.limit, sanitized.offset]
         );
 
         return res.status(200).json({
@@ -434,7 +440,8 @@ export const getSyncedProductsList = async (req, res) => {
             errors: [],
             result: {
                 message: 'Synced products fetched successfully',
-                data: products
+                data: products,
+                pagination: buildPagination(total, sanitized.page, sanitized.limit)
             }
         });
     } catch (error) {

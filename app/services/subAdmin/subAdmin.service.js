@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import { executeQuery } from '../../config/dbConfig.js';
 import { normalizePhone } from '../auth/auth.service.js';
 import logger from '../../utils/logger.js';
+import { sanitizePaginationParams, buildPagination } from '../../helpers/pagination.helper.js';
 
 /**
  * Add Sub-Admin Service
@@ -273,10 +274,16 @@ export const deleteSubAdminService = async (id) => {
 /**
  * List Sub-Admins Service
  */
-export const listSubAdminsService = async () => {
+export const listSubAdminsService = async (page, limit) => {
     try {
+        const countResult = await executeQuery('SELECT COUNT(*) AS total FROM user_master WHERE role = 2');
+        const total = countResult[0]?.total || 0;
+        
+        const sanitized = sanitizePaginationParams(page, limit);
+
         const subAdmins = await executeQuery(
-            'SELECT id, name, email, phone, role, menu_access, is_active, createdAt, modifiedAt FROM user_master WHERE role = 2 ORDER BY id DESC'
+            'SELECT id, name, email, phone, role, menu_access, is_active, createdAt, modifiedAt FROM user_master WHERE role = 2 ORDER BY id DESC LIMIT ? OFFSET ?',
+            [sanitized.limit, sanitized.offset]
         );
 
         const mappedSubAdmins = subAdmins.map(sub => {
@@ -300,7 +307,8 @@ export const listSubAdminsService = async () => {
             success: true,
             statusCode: 200,
             message: 'Sub-admins retrieved successfully',
-            data: mappedSubAdmins
+            data: mappedSubAdmins,
+            pagination: buildPagination(total, sanitized.page, sanitized.limit)
         };
     } catch (error) {
         logger.error('ListSubAdmins Service Error', { error: error.message });

@@ -8,7 +8,7 @@ import {
     getClientGiftCards,
     getClientGiftCardById,
     getGiftCardsByStore
-} from '../controller/giftCards.controller.js';
+} from '../controller/giftCards/giftCards.controller.js';
 
 import authenticate, { authorizeRole } from '../middlewares/verifyMiddleware.js';
 import { giftCardUploadFields } from '../middlewares/giftCardUpload.middleware.js';

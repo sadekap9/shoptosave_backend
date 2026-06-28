@@ -1,21 +1,26 @@
 import pool from '../../config/dbConfig.js';
+import { sanitizePaginationParams, buildPagination } from '../../helpers/pagination.helper.js';
 
 /**
  * Fetch all stores (with optional category information)
  */
-export const getStoresService = async () => {
+export const getStoresService = async (page, limit) => {
     try {
+        const [[{ total }]] = await pool.query('SELECT COUNT(*) AS total FROM stores');
+        const sanitized = sanitizePaginationParams(page, limit);
         const [rows] = await pool.query(`
             SELECT s.id, s.store_name, s.logo, s.category_id, c.category_name, s.status, s.created_at, s.updated_at 
             FROM stores s 
             LEFT JOIN categories c ON s.category_id = c.id 
             ORDER BY s.id ASC
-        `);
+            LIMIT ? OFFSET ?
+        `, [sanitized.limit, sanitized.offset]);
         return {
             success: true,
             statusCode: 200,
             message: 'Stores fetched successfully',
-            data: rows
+            data: rows,
+            pagination: buildPagination(total, sanitized.page, sanitized.limit)
         };
     } catch (error) {
         throw error;

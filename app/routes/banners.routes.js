@@ -5,7 +5,7 @@ import {
     createBanner,
     updateBanner,
     deleteBanner
-} from '../controller/banners.controller.js';
+} from '../controller/banners/banners.controller.js';
 import authenticate, { authorizeRole } from '../middlewares/verifyMiddleware.js';
 import upload from '../middlewares/upload.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';

@@ -126,7 +126,8 @@ export const deleteSubAdmin = async (req, res) => {
  */
 export const listSubAdmins = async (req, res) => {
     try {
-        const response = await subAdminService.listSubAdminsService();
+        const { page, limit } = req.query;
+        const response = await subAdminService.listSubAdminsService(page, limit);
 
         if (!response.success) {
             return res.status(response.statusCode).json({
@@ -141,7 +142,8 @@ export const listSubAdmins = async (req, res) => {
             errors: [],
             result: {
                 message: response.message,
-                data: response.data
+                data: response.data,
+                pagination: response.pagination
             }
         });
     } catch (error) {

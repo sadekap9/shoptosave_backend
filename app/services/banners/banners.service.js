@@ -1,22 +1,32 @@
 import pool from '../../config/dbConfig.js';
+import { sanitizePaginationParams, buildPagination } from '../../helpers/pagination.helper.js';
 
 /**
  * Fetch all banners
  */
-export const getBannersService = async (userRole = null) => {
+export const getBannersService = async (userRole = null, page, limit) => {
     try {
+        let countQuery = 'SELECT COUNT(*) AS total FROM banners';
         let query = 'SELECT * FROM banners';
+        let whereClause = '';
         if (userRole === 3) {
-            query += ' WHERE status = 1 AND (start_date IS NULL OR start_date <= NOW()) AND (end_date IS NULL OR end_date >= NOW())';
+            whereClause = ' WHERE status = 1 AND (start_date IS NULL OR start_date <= NOW()) AND (end_date IS NULL OR end_date >= NOW())';
         }
-        query += ' ORDER BY display_order ASC, id DESC';
+        
+        countQuery += whereClause;
+        query += whereClause;
+        query += ' ORDER BY display_order ASC, id DESC LIMIT ? OFFSET ?';
 
-        const [rows] = await pool.query(query);
+        const [[{ total }]] = await pool.query(countQuery);
+        const sanitized = sanitizePaginationParams(page, limit);
+
+        const [rows] = await pool.query(query, [sanitized.limit, sanitized.offset]);
         return {
             success: true,
             statusCode: 200,
             message: 'Banners fetched successfully',
-            data: rows
+            data: rows,
+            pagination: buildPagination(total, sanitized.page, sanitized.limit)
         };
     } catch (error) {
         throw error;

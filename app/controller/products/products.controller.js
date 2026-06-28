@@ -7,11 +7,15 @@ import logger from '../../utils/logger.js';
 export const getProductsByCategory = async (req, res) => {
     try {
         const { categoryId } = req.params;
-        const products = await productsService.getProductsByCategoryFromDB(categoryId);
+        const { page, limit } = req.query;
+        const response = await productsService.getProductsByCategoryFromDB(categoryId, page, limit);
         return res.status(200).json({
             success: true,
             message: 'Products fetched successfully',
-            result: products
+            result: {
+                data: response.data,
+                pagination: response.pagination
+            }
         });
     } catch (error) {
         logger.error('Error in getProductsByCategory', { error: error.message, stack: error.stack });

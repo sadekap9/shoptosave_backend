@@ -47,7 +47,8 @@ export const updateProfile = async (req, res) => {
  */
 export const listUsers = async (req, res) => {
     try {
-        const response = await profileService.listUsersService();
+        const { page, limit } = req.query;
+        const response = await profileService.listUsersService(page, limit);
 
         if (!response.success) {
             return res.status(response.statusCode).json({
@@ -62,7 +63,8 @@ export const listUsers = async (req, res) => {
             errors: [],
             result: {
                 message: response.message,
-                data: response.data
+                data: response.data,
+                pagination: response.pagination
             }
         });
 

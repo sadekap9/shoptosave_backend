@@ -84,3 +84,49 @@ export const getWoohooHeaders = (method, url, body = null, token = null) => {
 
     return headers;
 };
+
+/**
+ * Step 13: Build Woohoo Payload from order details, gift card SKU, and company billing configs
+ */
+export const buildWoohooPayload = (order, giftCard, companyConfig) => {
+    const refno = `S2S-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const companyFirst = companyConfig.name.split(' ')[0] || 'Shop2Save';
+    const companyLast = companyConfig.name.split(' ').slice(1).join(' ') || 'Billing';
+
+    return {
+        address: {
+            firstname: companyFirst,
+            lastname: companyLast,
+            email: companyConfig.email,
+            telephone: companyConfig.mobile,
+            address1: companyConfig.address1,
+            address2: companyConfig.address2 || '',
+            city: companyConfig.city,
+            state: companyConfig.state,
+            country: companyConfig.country,
+            pincode: companyConfig.pincode
+        },
+        payments: [
+            {
+                code: 'disbursement',
+                amount: parseFloat(order.amount)
+            }
+        ],
+        refno,
+        syncOnly: false,
+        deliveryMode: 'API',
+        products: [
+            {
+                sku: giftCard.sku,
+                qty: 1,
+                price: parseFloat(order.amount),
+                recipient: {
+                    name: order.recipient_name,
+                    email: order.recipient_email,
+                    telephone: order.recipient_mobile,
+                    message: order.gift_message || ''
+                }
+            }
+        ]
+    };
+};

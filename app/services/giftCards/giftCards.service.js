@@ -4,6 +4,7 @@ import { giftCardImageType, uploadFolders } from '../../config/constant/constant
 import { getWoohooToken } from '../categories/woohooAuth.service.js';
 import { getWoohooProduct } from '../woohoo/woohoo.service.js';
 import { saveProductsToDB } from '../products/products.service.js';
+import { sanitizePaginationParams, buildPagination } from '../../helpers/pagination.helper.js';
 
 
 
@@ -20,7 +21,12 @@ const toTinyInt = (val) => {
  */
 export const getGiftCardsService = async (filters = {}) => {
     try {
-        const { store_id } = filters;
+        const { store_id, page, limit } = filters;
+        let countSql = `
+            SELECT COUNT(*) AS total 
+            FROM gift_cards gc
+            LEFT JOIN stores s ON gc.store_id = s.id
+        `;
         let querySql = `
             SELECT gc.*, s.store_name 
             FROM gift_cards gc
@@ -28,10 +34,18 @@ export const getGiftCardsService = async (filters = {}) => {
         `;
         const params = [];
         if (store_id) {
+            countSql += ` WHERE gc.store_id = ?`;
             querySql += ` WHERE gc.store_id = ?`;
             params.push(parseInt(store_id));
         }
-        querySql += ` ORDER BY gc.id DESC`;
+        
+        const countParams = [...params];
+        
+        const [[{ total }]] = await pool.query(countSql, countParams);
+        const sanitized = sanitizePaginationParams(page, limit);
+        
+        querySql += ` ORDER BY gc.id DESC LIMIT ? OFFSET ?`;
+        params.push(sanitized.limit, sanitized.offset);
 
         const [giftCards] = await pool.query(querySql, params);
 
@@ -40,7 +54,8 @@ export const getGiftCardsService = async (filters = {}) => {
                 success: true,
                 statusCode: 200,
                 message: 'No gift cards found',
-                data: []
+                data: [],
+                pagination: buildPagination(total, sanitized.page, sanitized.limit)
             };
         }
 
@@ -84,7 +99,8 @@ export const getGiftCardsService = async (filters = {}) => {
             success: true,
             statusCode: 200,
             message: 'Gift cards fetched successfully',
-            data: giftCards
+            data: giftCards,
+            pagination: buildPagination(total, sanitized.page, sanitized.limit)
         };
     } catch (error) {
         throw error;
@@ -500,8 +516,8 @@ export const getClientGiftCardsService = async (filters = {}) => {
             store_id,
             category_id,
             search,
-            limit = 20,
-            offset = 0,
+            page,
+            limit,
             sort_by = 'id',
             sort_order = 'DESC'
         } = filters;
@@ -532,6 +548,17 @@ export const getClientGiftCardsService = async (filters = {}) => {
         const targetSortField = allowedSortFields.includes(sort_by) ? `gc.${sort_by}` : 'gc.id';
         const targetSortOrder = ['ASC', 'DESC'].includes(sort_order.toUpperCase()) ? sort_order.toUpperCase() : 'DESC';
 
+        // Fetch total count for pagination metadata
+        const countSql = `
+            SELECT COUNT(*) as total
+            FROM gift_cards gc
+            LEFT JOIN stores s ON gc.store_id = s.id
+            ${whereSql}
+        `;
+        const [[{ total }]] = await pool.query(countSql, params);
+
+        const sanitized = sanitizePaginationParams(page, limit, 20);
+
         // Fetch paginated gift cards
         const querySql = `
             SELECT gc.*, s.store_name, s.logo as store_logo
@@ -541,33 +568,17 @@ export const getClientGiftCardsService = async (filters = {}) => {
             ORDER BY ${targetSortField} ${targetSortOrder}
             LIMIT ? OFFSET ?
         `;
-        params.push(parseInt(limit), parseInt(offset));
+        const queryParams = [...params, sanitized.limit, sanitized.offset];
 
-        const [giftCards] = await pool.query(querySql, params);
-
-        // Fetch total count for pagination metadata
-        const countSql = `
-            SELECT COUNT(*) as total
-            FROM gift_cards gc
-            LEFT JOIN stores s ON gc.store_id = s.id
-            ${whereSql}
-        `;
-        const countParams = params.slice(0, -2); // exclude limit and offset
-        const [[{ total }]] = await pool.query(countSql, countParams);
+        const [giftCards] = await pool.query(querySql, queryParams);
 
         if (giftCards.length === 0) {
             return {
                 success: true,
                 statusCode: 200,
                 message: 'No gift cards found',
-                data: {
-                    giftCards: [],
-                    pagination: {
-                        total,
-                        limit: parseInt(limit),
-                        offset: parseInt(offset)
-                    }
-                }
+                data: [],
+                pagination: buildPagination(total, sanitized.page, sanitized.limit)
             };
         }
 
@@ -629,14 +640,8 @@ export const getClientGiftCardsService = async (filters = {}) => {
             success: true,
             statusCode: 200,
             message: 'Gift cards fetched successfully',
-            data: {
-                giftCards,
-                pagination: {
-                    total,
-                    limit: parseInt(limit),
-                    offset: parseInt(offset)
-                }
-            }
+            data: giftCards,
+            pagination: buildPagination(total, sanitized.page, sanitized.limit)
         };
     } catch (error) {
         throw error;

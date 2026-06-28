@@ -4,7 +4,7 @@ import {
     createStore,
     updateStore,
     deleteStore
-} from '../controller/stores.controller.js';
+} from '../controller/stores/stores.controller.js';
 import authenticate, { authorizeRole } from '../middlewares/verifyMiddleware.js';
 import upload from '../middlewares/upload.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';

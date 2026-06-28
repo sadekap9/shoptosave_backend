@@ -3,6 +3,7 @@ import pool from '../../config/dbConfig.js';
 import { getWoohooToken } from '../categories/woohooAuth.service.js';
 import { getWoohooHeaders } from '../../helpers/woohoo.helper.js';
 import logger from '../../utils/logger.js';
+import { sanitizePaginationParams, buildPagination } from '../../helpers/pagination.helper.js';
 
 /**
  * Saves a list of products fetched from Woohoo or input manually into local DB
@@ -263,7 +264,7 @@ export const saveProductsToDB = async (products, categoryId) => {
 /**
  * Get active products for a category
  */
-export const getProductsByCategoryFromDB = async (categoryId) => {
+export const getProductsByCategoryFromDB = async (categoryId, page, limit) => {
     // Look up the category in woohoo_categories to get the woohoo_category_id
     const [[category]] = await pool.query(
         'SELECT id, woohoo_category_id, name FROM woohoo_categories WHERE id = ? OR woohoo_category_id = ?',
@@ -273,6 +274,20 @@ export const getProductsByCategoryFromDB = async (categoryId) => {
     const targetId = category ? category.woohoo_category_id : categoryId;
     const targetIdStr = String(targetId);
     const targetIdNum = Number(targetId);
+
+    // Fetch total count for pagination metadata
+    const [[{ total }]] = await pool.query(
+        `SELECT COUNT(*) AS total FROM woohoo_products 
+         WHERE (
+            JSON_CONTAINS(categories, CAST(? AS JSON)) OR 
+            JSON_CONTAINS(categories, CAST(? AS JSON)) OR
+            JSON_CONTAINS(categories, JSON_OBJECT('id', ?)) OR
+            JSON_CONTAINS(categories, JSON_OBJECT('id', ?))
+         ) AND status = 1`,
+        [targetIdNum, targetIdStr, targetIdNum, targetIdStr]
+    );
+
+    const sanitized = sanitizePaginationParams(page, limit);
 
     // Query woohoo_products filtering on the JSON categories field
     // We check:
@@ -287,10 +302,13 @@ export const getProductsByCategoryFromDB = async (categoryId) => {
             JSON_CONTAINS(categories, JSON_OBJECT('id', ?)) OR
             JSON_CONTAINS(categories, JSON_OBJECT('id', ?))
          ) AND status = 1 
-         ORDER BY product_name ASC`,
-        [targetIdNum, targetIdStr, targetIdNum, targetIdStr]
+         ORDER BY product_name ASC LIMIT ? OFFSET ?`,
+        [targetIdNum, targetIdStr, targetIdNum, targetIdStr, sanitized.limit, sanitized.offset]
     );
-    return rows;
+    return {
+        data: rows,
+        pagination: buildPagination(total, sanitized.page, sanitized.limit)
+    };
 };
 
 /**

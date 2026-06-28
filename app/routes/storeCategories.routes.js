@@ -5,7 +5,7 @@ import {
     createStoreCategory,
     updateStoreCategory,
     deleteStoreCategory
-} from '../controller/storeCategories.controller.js';
+} from '../controller/storeCategories/storeCategories.controller.js';
 import authenticate, { authorizeMenu, authorizeRole } from '../middlewares/verifyMiddleware.js';
 import upload from '../middlewares/upload.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';

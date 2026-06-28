@@ -1,32 +1,49 @@
 import pool from '../../config/dbConfig.js';
+import { sanitizePaginationParams, buildPagination } from '../../helpers/pagination.helper.js';
 
 /**
  * Fetch all store categories (active & inactive) - for Admin
  */
-export const getAdminStoreCategoriesService = async () => {
-    const [rows] = await pool.query(
-        'SELECT id, category_name, logo, status, created_at, updated_at FROM categories ORDER BY id ASC'
-    );
-    return {
-        success: true,
-        statusCode: 200,
-        message: 'Admin store categories fetched successfully',
-        data: rows
-    };
+export const getAdminStoreCategoriesService = async (page, limit) => {
+    try {
+        const [[{ total }]] = await pool.query('SELECT COUNT(*) AS total FROM categories');
+        const sanitized = sanitizePaginationParams(page, limit);
+        const [rows] = await pool.query(
+            'SELECT id, category_name, logo, status, created_at, updated_at FROM categories ORDER BY id ASC LIMIT ? OFFSET ?',
+            [sanitized.limit, sanitized.offset]
+        );
+        return {
+            success: true,
+            statusCode: 200,
+            message: 'Admin store categories fetched successfully',
+            data: rows,
+            pagination: buildPagination(total, sanitized.page, sanitized.limit)
+        };
+    } catch (error) {
+        throw error;
+    }
 };
 /**
  * Fetch active store categories - Public
  */
-export const getPublicStoreCategoriesService = async () => {
-    const [rows] = await pool.query(
-        'SELECT id, category_name, logo, status FROM categories WHERE status = 1 ORDER BY id DESC'
-    );
-    return {
-        success: true,
-        statusCode: 200,
-        message: 'Store categories fetched successfully',
-        data: rows
-    };
+export const getPublicStoreCategoriesService = async (page, limit) => {
+    try {
+        const [[{ total }]] = await pool.query('SELECT COUNT(*) AS total FROM categories WHERE status = 1');
+        const sanitized = sanitizePaginationParams(page, limit);
+        const [rows] = await pool.query(
+            'SELECT id, category_name, logo, status FROM categories WHERE status = 1 ORDER BY id DESC LIMIT ? OFFSET ?',
+            [sanitized.limit, sanitized.offset]
+        );
+        return {
+            success: true,
+            statusCode: 200,
+            message: 'Store categories fetched successfully',
+            data: rows,
+            pagination: buildPagination(total, sanitized.page, sanitized.limit)
+        };
+    } catch (error) {
+        throw error;
+    }
 };
 
 
