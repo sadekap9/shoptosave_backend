@@ -1,6 +1,13 @@
 import pool from '../../config/dbConfig.js';
 import { sanitizePaginationParams, buildPagination } from '../../helpers/pagination.helper.js';
 import logger from '../../utils/logger.js';
+import { creditWallet, generateWalletTxnNo } from '../wallets/wallets.service.js';
+import {
+    WALLET_TRANSACTION_TYPE,
+    WALLET_TRANSACTION_SOURCE,
+    WALLET_TRANSACTION_STATUS
+} from '../../config/constant/constant.js';
+
 
 /**
  * Fetch and filter wallet top-up requests (Admin only)
@@ -32,14 +39,12 @@ export const getTopupRequests = async (filters) => {
             countParams.push(status);
         }
         if (request_no) {
-            // Index: wtr.request_no index is utilized when using a trailing wildcard search
             query += ` AND wtr.request_no LIKE ?`;
             countQuery += ` AND wtr.request_no LIKE ?`;
             params.push(`${request_no}%`);
             countParams.push(`${request_no}%`);
         }
         if (user) {
-            // Indexes: u.name, u.phone, and u.email indexes are utilized when using trailing wildcards
             query += ` AND (u.name LIKE ? OR u.phone LIKE ? OR u.email LIKE ?)`;
             countQuery += ` AND (u.name LIKE ? OR u.phone LIKE ? OR u.email LIKE ?)`;
             const userLike = `${user}%`;
@@ -50,7 +55,6 @@ export const getTopupRequests = async (filters) => {
         query += ` ORDER BY wtr.id DESC LIMIT ? OFFSET ?`;
         params.push(limitVal, offset);
 
-        // DB Query utilizes idx_status or primary key indexes for filtering and ordering
         const [[{ total }]] = await pool.query(countQuery, countParams);
         const [rows] = await pool.query(query, params);
 
@@ -99,7 +103,6 @@ export const getOrders = async (filters) => {
             countParams.push(status);
         }
         if (woohoo_reference_no) {
-            // Index: gco.woohoo_reference_no index is utilized when using a trailing wildcard search
             query += ` AND gco.woohoo_reference_no LIKE ?`;
             countQuery += ` AND gco.woohoo_reference_no LIKE ?`;
             params.push(`${woohoo_reference_no}%`);
@@ -112,7 +115,6 @@ export const getOrders = async (filters) => {
             countParams.push(order_id);
         }
         if (user) {
-            // Indexes: u.name, u.phone, and u.email indexes are utilized when using trailing wildcards
             query += ` AND (u.name LIKE ? OR u.phone LIKE ? OR u.email LIKE ?)`;
             countQuery += ` AND (u.name LIKE ? OR u.phone LIKE ? OR u.email LIKE ?)`;
             const userLike = `${user}%`;
@@ -123,7 +125,6 @@ export const getOrders = async (filters) => {
         query += ` ORDER BY gco.id DESC LIMIT ? OFFSET ?`;
         params.push(limitVal, offset);
 
-        // DB Query utilizes indexes on user_id, gift_card_id, status, and primary key
         const [[{ total }]] = await pool.query(countQuery, countParams);
         const [rows] = await pool.query(query, params);
 
@@ -177,7 +178,8 @@ export const getOrderDetails = async (orderId) => {
 
 /**
  * Manually refund an order (Super-Admin / Admin only)
- * Locks the row with SELECT FOR UPDATE and checks idempotency before executing credit balance update
+ * Uses user_wallet and wallet_transactions tables.
+ * Locks the row with SELECT FOR UPDATE and checks idempotency before executing credit balance update.
  */
 export const refundOrderManually = async (adminId, orderId, remarks) => {
     const connection = await pool.getConnection();
@@ -192,70 +194,66 @@ export const refundOrderManually = async (adminId, orderId, remarks) => {
 
         if (!order) {
             await connection.rollback();
-            return {
-                success: false,
-                statusCode: 404,
-                message: 'Order not found'
-            };
+            return { success: false, statusCode: 404, message: 'Order not found' };
         }
 
-        // 2. Idempotency Check: Verify if a refund credit has already been processed in ledger
+        // 2. Idempotency Check: Verify if a refund credit has already been processed
         const [[existingRefund]] = await connection.query(
-            "SELECT id FROM wallet_transactions WHERE reference_id = ? AND type = 1 AND category = 0 LIMIT 1",
-            [orderId]
+            'SELECT id FROM wallet_transactions WHERE order_id = ? AND type = ? AND source = ? LIMIT 1',
+            [orderId, WALLET_TRANSACTION_TYPE.CREDIT, WALLET_TRANSACTION_SOURCE.REFUND]
         );
 
         if (existingRefund) {
             await connection.rollback();
-            return {
-                success: false,
-                statusCode: 400,
-                message: 'Order has already been refunded'
-            };
+            return { success: false, statusCode: 400, message: 'Order has already been refunded' };
         }
 
-        // 3. Retrieve and lock User Wallet
+        // 3. Retrieve and lock user_wallet
         const [[wallet]] = await connection.query(
-            'SELECT id, available_balance FROM wallets WHERE user_id = ? FOR UPDATE',
+            'SELECT id, balance FROM user_wallet WHERE user_id = ? FOR UPDATE',
             [order.user_id]
         );
 
         if (!wallet) {
             await connection.rollback();
-            return {
-                success: false,
-                statusCode: 404,
-                message: 'User wallet not found for refund'
-            };
+            return { success: false, statusCode: 404, message: 'User wallet not found for refund' };
         }
 
-        const amount = parseFloat(order.amount);
-        const openingBalance = parseFloat(wallet.available_balance);
-        const closingBalance = openingBalance + amount;
+        // Refund only the wallet_amount portion (if it exists), otherwise refund full amount
+        const refundAmount = parseFloat(order.wallet_amount) || parseFloat(order.amount);
+        const balanceBefore = parseFloat(wallet.balance);
+        const balanceAfter = balanceBefore + refundAmount;
 
-        // 4. Update wallet available balance and total credited fields
+        // 4. Update user_wallet balance
         await connection.query(
-            `UPDATE wallets 
-             SET available_balance = available_balance + ?, 
-                 total_credited = total_credited + ? 
-             WHERE id = ?`,
-            [amount, amount, wallet.id]
+            'UPDATE user_wallet SET balance = balance + ? WHERE id = ?',
+            [refundAmount, wallet.id]
         );
 
-        // 5. Insert refund transaction entry in wallet_transactions ledger (type = 1 [CREDIT])
-        const txnNo = `TXN-REF-MAN-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+        // 5. Insert refund transaction entry in wallet_transactions (type = Credit, source = Refund)
+        const txnNo = await generateWalletTxnNo(connection);
         await connection.query(
             `INSERT INTO wallet_transactions 
-             (wallet_id, transaction_no, type, category, amount, opening_balance, closing_balance, reference_type, reference_id, status, remarks)
-             VALUES (?, ?, 1, 0, ?, ?, ?, 1, ?, 1, ?)`,
-            [wallet.id, txnNo, amount, openingBalance, closingBalance, order.id, remarks || `Manual refund approved by Admin ID: ${adminId}`]
+             (transaction_no, wallet_id, user_id, order_id, type, source, amount, balance_before, balance_after, remarks, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                txnNo,
+                wallet.id,
+                order.user_id,
+                order.id,
+                WALLET_TRANSACTION_TYPE.CREDIT,
+                WALLET_TRANSACTION_SOURCE.REFUND,
+                refundAmount,
+                balanceBefore,
+                balanceAfter,
+                remarks || `Manual refund approved by Admin ID: ${adminId}`,
+                WALLET_TRANSACTION_STATUS.SUCCESS
+            ]
         );
 
-        // 6. Update order status to 4 (FAILED) and save manual comments
+        // 6. Update order status to 5 (Refunded)
         await connection.query(
-            `UPDATE gift_card_orders 
-             SET status = 4, failure_reason = ? 
-             WHERE id = ?`,
+            'UPDATE gift_card_orders SET status = 5, failure_reason = ? WHERE id = ?',
             [`Manually refunded by Admin. Reason: ${remarks}`, order.id]
         );
 

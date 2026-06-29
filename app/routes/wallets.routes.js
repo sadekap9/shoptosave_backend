@@ -8,7 +8,7 @@ const router = express.Router();
 
 /**
  * POST /api/v1/wallets/topup
- * User requests instant auto-approved wallet top-up
+ * User requests instant auto-approved wallet top-up (legacy)
  */
 router.post(
     '/topup',
@@ -18,14 +18,22 @@ router.post(
 );
 
 /**
- * GET /api/v1/wallets/history
- * Fetch authenticated user's wallet transactions ledger
+ * POST /api/v1/wallets/add-money
+ * Add money to wallet (payment_transaction + wallet_transaction + user_wallet update)
  */
-router.get(
-    '/history',
-    authMiddleware,
-    walletsController.getWalletHistory
-);
+router.post('/add-money', authMiddleware, walletsController.addMoney);
+
+/**
+ * POST /api/v1/wallets/withdraw
+ * Withdraw from wallet
+ */
+router.post('/withdraw', authMiddleware, walletsController.withdraw);
+
+/**
+ * GET /api/v1/wallets/balance
+ * Get balance, cashback earned/used, and recent transactions
+ */
+router.get('/balance', authMiddleware, walletsController.getBalance);
 
 /**
  * GET /api/v1/wallets/details
@@ -37,17 +45,21 @@ router.get(
     walletsController.getWalletDetails
 );
 
-// ─── NEW SCHEMA-ALIGNED ENDPOINTS ─────────────────────────────────────────────
+/**
+ * GET /api/v1/wallets/history
+ * Fetch authenticated user's wallet transactions ledger (all records)
+ */
+router.get(
+    '/history',
+    authMiddleware,
+    walletsController.getWalletHistory
+);
 
-// Add money to wallet (creates pending top-up request)
-router.post('/add-money', authMiddleware, walletsController.addMoney);
-
-// Withdraw from wallet
-router.post('/withdraw', authMiddleware, walletsController.withdraw);
-
-// Get balance & transaction ledger (last 10)
-router.get('/balance', authMiddleware, walletsController.getBalance);
-
-
+/**
+ * GET /api/v1/wallets/transactions
+ * Get paginated wallet transaction history for authenticated user
+ * Query params: ?page=1&limit=10
+ */
+router.get('/transactions', authMiddleware, walletsController.getTransactionHistory);
 
 export default router;

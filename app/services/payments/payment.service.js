@@ -3,8 +3,8 @@ import {
     debitWallet,
     creditWallet,
     generatePaymentTxnNo
-} from './wallets/wallets.service.js';
-import logger from '../utils/logger.js';
+} from '../wallets/wallets.service.js';
+import logger from '../../utils/logger.js';
 import crypto from 'crypto';
 import {
     PAYMENT_METHOD,
@@ -12,7 +12,7 @@ import {
     PAYMENT_TRANSACTION_STATUS,
     WALLET_TRANSACTION_SOURCE,
     GIFT_CARD_ORDER_PAYMENT_TYPE
-} from '../config/constant/constant.js';
+} from '../../config/constant/constant.js';
 
 /**
  * Create a payment_transactions record for online payments.

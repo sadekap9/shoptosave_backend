@@ -1,12 +1,18 @@
 import pool, { runInTransaction } from '../../config/dbConfig.js';
 import { getWoohooToken } from '../categories/woohooAuth.service.js';
 import { placeWoohooOrder } from '../woohoo/woohoo.service.js';
-import { getOrCreateWallet } from '../wallets/wallets.service.js';
+import { getOrCreateWallet, creditWallet } from '../wallets/wallets.service.js';
 import { companyConfig } from '../../config/companyConfig.js';
 import { buildWoohooPayload } from '../../helpers/woohoo.helper.js';
 import logger from '../../utils/logger.js';
 import { placeGiftCardOrder } from '../giftCards/giftCards.service.js';
-import { deductPayment, processRefund } from '../payment.service.js';
+import { deductPayment } from '../payment.service.js';
+import {
+    WALLET_TRANSACTION_SOURCE,
+    PAYMENT_METHOD,
+    GIFT_CARD_ORDER_PAYMENT_TYPE
+} from '../../config/constant/constant.js';
+
 
 /**
  * Fetch Company details from app_config table, fallback to file config
@@ -17,7 +23,7 @@ async function getCompanyDetails() {
         const [[emailRow]] = await pool.query("SELECT config_value FROM app_config WHERE config_key = 'company_email';");
         const [[mobileRow]] = await pool.query("SELECT config_value FROM app_config WHERE config_key = 'company_mobile';");
         const [[addressRow]] = await pool.query("SELECT config_value FROM app_config WHERE config_key = 'company_address';");
-        
+
         return {
             name: nameRow?.config_value || companyConfig.name,
             email: emailRow?.config_value || companyConfig.email,
@@ -37,66 +43,29 @@ async function getCompanyDetails() {
 }
 
 /**
- * Refund user's wallet in case of order failure (Compensating Transaction)
+ * Generate a fresh and unique reference number for Woohoo order tracking
  */
-async function refundOrder(userId, walletId, orderId, amount, reason) {
-    const connection = await pool.getConnection();
-    await connection.beginTransaction();
-    try {
-        // Lock Wallet row
-        const [[wallet]] = await connection.query('SELECT available_balance FROM wallets WHERE id = ? FOR UPDATE', [walletId]);
-        if (!wallet) throw new Error('Wallet not found during refund');
+const generateWoohooRefNo = (userId) => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const random = Math.floor(1000 + Math.random() * 9000);
+    return `ORDER_${yyyy}${mm}${dd}_${userId}_${random}`;
+};
 
-        const openingBalance = parseFloat(wallet.available_balance);
-        const closingBalance = openingBalance + parseFloat(amount);
-
-        // 1. Credit wallet
-        await connection.query(
-            `UPDATE wallets 
-             SET available_balance = available_balance + ?, 
-                 total_credited = total_credited + ? 
-             WHERE id = ?`,
-            [amount, amount, walletId]
-        );
-
-        // 2. Insert Credit Transaction Ledger
-        const refundTxnNo = `TXN-REF-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
-        await connection.query(
-            `INSERT INTO wallet_transactions 
-             (wallet_id, transaction_no, type, category, amount, opening_balance, closing_balance, reference_type, reference_id, status, remarks)
-             VALUES (?, ?, 1, 0, ?, ?, ?, 1, ?, 1, ?)`, // category = 0 (Refund), reference_type = 1 (Order)
-            [walletId, refundTxnNo, amount, openingBalance, closingBalance, orderId, `Refund for failed order: ${reason}`]
-        );
-
-        // 3. Mark order as FAILED (status = 4)
-        await connection.query(
-            `UPDATE gift_card_orders 
-             SET status = 4, failure_reason = ? 
-             WHERE id = ?`,
-            [reason, orderId]
-        );
-
-        await connection.commit();
-        logger.info(`[Refund System] Refund processed successfully for user ${userId}, order ${orderId}. Reason: ${reason}`);
-    } catch (err) {
-        await connection.rollback();
-        logger.error(`[Refund System] CRITICAL: Refund failed for user ${userId}, order ${orderId}`, { error: err.message });
-    } finally {
-        connection.release();
-    }
-}
+// ─── Place Order (Legacy — Wallet Only) ────────────────────────────────────────
 
 /**
- * Place a gift card order
- * Encapsulates full business security flow:
- * 1. Validate JWT (handled by middleware)
- * 2. Validate Gift Card details
- * 3. Validate denomination limits
- * 4. Ensure wallet exists & check balance
- * 5. Deduct balance + create local order in database transaction using SELECT FOR UPDATE row-locks
- * 6. Commit transaction before third-party calls
- * 7. Call Woohoo using company address and customer recipient details
- * 8. Handle Success (card details + status complete) or Failure (refund rollback transaction)
+ * Place a gift card order (Legacy flow — Wallet Only payment).
+ * Steps:
+ * 1. Validate gift card and denomination
+ * 2. Lock user_wallet FOR UPDATE, check balance
+ * 3. Debit wallet + insert wallet_transaction
+ * 4. Insert gift_card_orders with payment_type=Wallet
+ * 5. COMMIT before calling Woohoo API
+ * 6. Call Woohoo API
+ * 7. On success → update order status to COMPLETE; on failure → refund wallet
  */
 export const placeOrderService = async (userId, orderData) => {
     const { gift_card_id, amount, recipient_name, recipient_email, recipient_mobile, gift_message } = orderData;
@@ -105,27 +74,18 @@ export const placeOrderService = async (userId, orderData) => {
     // 1. Resolve local user details
     const [[user]] = await pool.query('SELECT name, email, phone FROM user_master WHERE id = ?', [userId]);
     if (!user) {
-        return {
-            success: false,
-            statusCode: 404,
-            message: 'User account not found'
-        };
+        return { success: false, statusCode: 404, message: 'User account not found' };
     }
 
-    // Determine if self purchase (if recipient mobile matches user phone)
     const isSelfPurchase = (user.phone && recipient_mobile === user.phone) ? 1 : 0;
 
-    // 2. Validate Gift Card exists and is active (Step 2)
+    // 2. Validate Gift Card exists and is active
     const [[giftCard]] = await pool.query('SELECT * FROM gift_cards WHERE id = ? AND status = 1', [gift_card_id]);
     if (!giftCard) {
-        return {
-            success: false,
-            statusCode: 400,
-            message: 'Gift card is inactive or does not exist'
-        };
+        return { success: false, statusCode: 400, message: 'Gift card is inactive or does not exist' };
     }
 
-    // 3. Validate denomination range (Step 3)
+    // 3. Validate denomination range
     const minDenom = parseFloat(giftCard.min_denomination) || 0;
     const maxDenom = parseFloat(giftCard.max_denomination) || 9999999;
     if (totalAmount < minDenom || totalAmount > maxDenom) {
@@ -136,11 +96,11 @@ export const placeOrderService = async (userId, orderData) => {
         };
     }
 
-    // 4. Ensure wallet exists (checks / creates on-the-fly, Step 4)
+    // 4. Ensure wallet exists
     const wallet = await getOrCreateWallet(userId);
 
-    // 5. Check wallet balance (Step 5)
-    const currentBalance = parseFloat(wallet.available_balance) || 0.00;
+    // 5. Check wallet balance
+    const currentBalance = parseFloat(wallet.balance) || 0.00;
     if (currentBalance < totalAmount) {
         return {
             success: false,
@@ -149,123 +109,125 @@ export const placeOrderService = async (userId, orderData) => {
         };
     }
 
-    // 6. Fetch Company billing configuration details and generate payload
+    // 6. Fetch Company billing configuration and generate Woohoo payload
     const company = await getCompanyDetails();
     const orderPayload = buildWoohooPayload(
-        {
-            amount: totalAmount,
-            recipient_name,
-            recipient_email,
-            recipient_mobile,
-            gift_message
-        },
+        { amount: totalAmount, recipient_name, recipient_email, recipient_mobile, gift_message },
         giftCard,
         company
     );
     const refno = orderPayload.refno;
-    const txnNo = `TXN-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const connection = await pool.getConnection();
     await connection.beginTransaction();
 
     let orderId;
-    let txnId;
+    let walletTxnNo;
 
     try {
-        // 7. Lock Wallet using SELECT FOR UPDATE (Step 7)
+        // 7. Lock user_wallet using SELECT FOR UPDATE
         const [[lockedWallet]] = await connection.query(
-            'SELECT id, available_balance, total_debited FROM wallets WHERE id = ? FOR UPDATE',
+            'SELECT id, balance FROM user_wallet WHERE id = ? FOR UPDATE',
             [wallet.id]
         );
 
-        const activeBalance = parseFloat(lockedWallet.available_balance);
+        const activeBalance = parseFloat(lockedWallet.balance);
         if (activeBalance < totalAmount) {
             await connection.rollback();
-            return {
-                success: false,
-                statusCode: 400,
-                message: 'Insufficient Wallet Balance'
-            };
+            return { success: false, statusCode: 400, message: 'Insufficient Wallet Balance' };
         }
 
-        const openingBalance = activeBalance;
-        const closingBalance = activeBalance - totalAmount;
+        const balanceBefore = activeBalance;
+        const balanceAfter = activeBalance - totalAmount;
 
-        // 8. Debit Wallet (Step 8)
+        // 8. Debit user_wallet
         await connection.query(
-            `UPDATE wallets 
-             SET available_balance = available_balance - ?, 
-                 total_debited = total_debited + ? 
-             WHERE id = ?`,
-            [totalAmount, totalAmount, wallet.id]
+            'UPDATE user_wallet SET balance = balance - ? WHERE id = ?',
+            [totalAmount, wallet.id]
         );
 
-        // 9. Insert wallet_transactions debit log (Step 9)
+        // 9. Generate WT transaction number and insert wallet_transactions debit log
+        walletTxnNo = await generateWalletTxnNo(connection);
         const [txnResult] = await connection.query(
             `INSERT INTO wallet_transactions 
-             (wallet_id, transaction_no, type, category, amount, opening_balance, closing_balance, reference_type, status, remarks)
-             VALUES (?, ?, 0, 0, ?, ?, ?, 1, 1, ?)`, // type = 0 (Debit), category = 0 (Woohoo purchase), status = 1 (Success)
-            [wallet.id, txnNo, totalAmount, openingBalance, closingBalance, `Debit for ${giftCard.gift_card_name} purchase`]
+             (transaction_no, wallet_id, user_id, order_id, type, source, amount, balance_before, balance_after, remarks, status)
+             VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                walletTxnNo,
+                wallet.id,
+                userId,
+                WALLET_TRANSACTION_TYPE.DEBIT,
+                WALLET_TRANSACTION_SOURCE.GIFT_CARD_PURCHASE,
+                totalAmount,
+                balanceBefore,
+                balanceAfter,
+                `Debit for ${giftCard.gift_card_name} purchase`,
+                WALLET_TRANSACTION_STATUS.SUCCESS
+            ]
         );
-        txnId = txnResult.insertId;
+        const txnId = txnResult.insertId;
 
-        // 10. Insert gift_card_orders with Status = Pending (0) (Step 10)
+        // 10. Insert gift_card_orders with status = Pending (0)
         const [orderResult] = await connection.query(
             `INSERT INTO gift_card_orders 
-             (user_id, gift_card_id, amount, is_self_purchase, recipient_name, recipient_email, recipient_mobile, gift_message, wallet_transaction_id, woohoo_reference_no, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-            [userId, giftCard.id, totalAmount, isSelfPurchase, recipient_name, recipient_email, recipient_mobile, gift_message || null, txnId, refno]
+             (user_id, gift_card_id, amount, is_self_purchase, recipient_name, recipient_email, recipient_mobile, gift_message, 
+              wallet_transaction_id, woohoo_reference_no, status, wallet_amount, online_amount, payment_type)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0.00, ?)`,
+            [
+                userId, giftCard.id, totalAmount, isSelfPurchase,
+                recipient_name, recipient_email, recipient_mobile, gift_message || null,
+                txnId, refno,
+                totalAmount,
+                GIFT_CARD_ORDER_PAYMENT_TYPE.WALLET_ONLY
+            ]
         );
         orderId = orderResult.insertId;
 
-        // Update reference_id in transaction log
-        await connection.query('UPDATE wallet_transactions SET reference_id = ? WHERE id = ?', [orderId, txnId]);
+        // Update order_id in wallet_transactions
+        await connection.query('UPDATE wallet_transactions SET order_id = ? WHERE id = ?', [orderId, txnId]);
 
-        // 11. Commit Transaction before external calls (Step 11)
+        // 11. Commit before external calls
         await connection.commit();
         logger.info(`[Order System] Local transaction committed. Wallet debited. Order ID: ${orderId}`);
 
     } catch (dbErr) {
         await connection.rollback();
         logger.error('[Order System] Transaction rollback due to database error', { error: dbErr.message });
-        return {
-            success: false,
-            statusCode: 500,
-            message: 'Database transaction error during order placement'
-        };
+        return { success: false, statusCode: 500, message: 'Database transaction error during order placement' };
     } finally {
         connection.release();
     }
 
-    // 12. Retrieve Woohoo Bearer Token (Step 12 uses refno generated above)
+    // 12. Call Woohoo API
     let bearerToken;
     try {
         bearerToken = await getWoohooToken();
     } catch (authErr) {
         logger.error('[Order System] Woohoo authentication failed. Refunding wallet.', { error: authErr.message });
-        await refundOrder(userId, wallet.id, orderId, totalAmount, 'Woohoo OAuth token failed');
-        return {
-            success: false,
-            statusCode: 500,
-            message: 'Provider authentication failed. Wallet has been refunded.'
-        };
+        await runInTransaction(async (conn) => {
+            await creditWallet(userId, totalAmount, WALLET_TRANSACTION_SOURCE.REFUND, orderId, 'Woohoo OAuth token failed', conn);
+            await conn.query('UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?', ['Woohoo OAuth token failed', orderId]);
+        });
+        return { success: false, statusCode: 500, message: 'Provider authentication failed. Wallet has been refunded.' };
     }
 
-    // 14. Place Order via Woohoo API (Step 14)
     try {
         const woohooResponse = await placeWoohooOrder(bearerToken, orderPayload);
         const statusStr = woohooResponse.status?.toLowerCase();
 
-        let dbOrderStatus = 1; // 1 = PROCESSING
+        let dbOrderStatus = 1; // PROCESSING
         if (statusStr === 'complete' || statusStr === 'success') {
-            dbOrderStatus = 2; // 2 = COMPLETE (Success)
+            dbOrderStatus = 2; // COMPLETE
         } else if (statusStr === 'failed' || statusStr === 'cancelled') {
-            dbOrderStatus = 4; // 4 = FAILED
+            dbOrderStatus = 4; // FAILED
         }
 
         if (dbOrderStatus === 4) {
-            logger.error('[Order System] Woohoo order rejected status. Refunding wallet.', { status: statusStr, message: woohooResponse.message });
-            await refundOrder(userId, wallet.id, orderId, totalAmount, woohooResponse.message || 'Woohoo rejected order');
+            logger.error('[Order System] Woohoo order rejected. Refunding wallet.', { status: statusStr });
+            await runInTransaction(async (conn) => {
+                await creditWallet(userId, totalAmount, WALLET_TRANSACTION_SOURCE.REFUND, orderId, woohooResponse.message || 'Woohoo rejected order', conn);
+                await conn.query('UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?', [woohooResponse.message || 'Woohoo rejected order', orderId]);
+            });
             return {
                 success: false,
                 statusCode: 400,
@@ -274,9 +236,9 @@ export const placeOrderService = async (userId, orderData) => {
             };
         }
 
-        // 15. Woohoo Success (Step 15)
+        // Woohoo Success
         const cards = woohooResponse.cards || [];
-        const mainCard = cards[0] || {}; // Quantity is 1
+        const mainCard = cards[0] || {};
 
         await pool.query(
             `UPDATE gift_card_orders 
@@ -286,14 +248,20 @@ export const placeOrderService = async (userId, orderData) => {
                  gift_card_pin = ?, 
                  expiry_date = ? 
              WHERE id = ?`,
-            [
-                woohooResponse.orderId || null, 
-                mainCard.cardNumber || null, 
-                mainCard.pin || null, 
-                mainCard.validity || null, 
-                orderId
-            ]
+            [woohooResponse.orderId || null, mainCard.cardNumber || null, mainCard.pin || null, mainCard.validity || null, orderId]
         );
+
+        // Credit cashback if applicable
+        const cashbackPct = parseFloat(giftCard.cashback_percentage) || 0;
+        if (cashbackPct > 0) {
+            try {
+                await runInTransaction(async (conn) => {
+                    await creditCashback(userId, orderId, totalAmount, cashbackPct, conn);
+                });
+            } catch (cbErr) {
+                logger.error('[Order System] Cashback credit failed (non-critical)', { error: cbErr.message });
+            }
+        }
 
         return {
             success: true,
@@ -305,15 +273,20 @@ export const placeOrderService = async (userId, orderData) => {
                 status: 'SUCCESS',
                 gift_card_number: mainCard.cardNumber,
                 gift_card_pin: mainCard.pin,
-                expiry_date: mainCard.validity
+                expiry_date: mainCard.validity,
+                wallet_amount: totalAmount,
+                online_amount: 0,
+                payment_type: GIFT_CARD_ORDER_PAYMENT_TYPE.WALLET_ONLY
             }
         };
 
     } catch (apiErr) {
-        // 16. Woohoo Failure (Step 16)
         const apiErrorMsg = apiErr.response?.data?.message || apiErr.message;
-        logger.error('[Order System] Exception during Woohoo order request. Refunding wallet.', { error: apiErrorMsg });
-        await refundOrder(userId, wallet.id, orderId, totalAmount, `Woohoo error: ${apiErrorMsg}`);
+        logger.error('[Order System] Woohoo API call exception. Refunding wallet.', { error: apiErrorMsg });
+        await runInTransaction(async (conn) => {
+            await creditWallet(userId, totalAmount, WALLET_TRANSACTION_SOURCE.REFUND, orderId, `Woohoo error: ${apiErrorMsg}`, conn);
+            await conn.query('UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?', [`Woohoo error: ${apiErrorMsg}`, orderId]);
+        });
         return {
             success: false,
             statusCode: 500,
@@ -322,12 +295,15 @@ export const placeOrderService = async (userId, orderData) => {
     }
 };
 
+// ─── Order History ─────────────────────────────────────────────────────────────
+
 /**
- * Step 12: Order History
+ * Fetch authenticated user's order history
  */
 export const getOrderHistoryService = async (userId) => {
     const [orders] = await pool.query(
-        `SELECT gco.id, gc.brand_name, gco.amount, gco.status, gco.created_at, gco.gift_card_number, gco.expiry_date
+        `SELECT gco.id, gc.brand_name, gco.amount, gco.status, gco.created_at, gco.gift_card_number, gco.expiry_date,
+                gco.wallet_amount, gco.online_amount, gco.payment_type
          FROM gift_card_orders gco
          JOIN gift_cards gc ON gco.gift_card_id = gc.id
          WHERE gco.user_id = ?
@@ -342,46 +318,35 @@ export const getOrderHistoryService = async (userId) => {
     };
 };
 
-/**
- * Generate a fresh and unique reference number for Woohoo order tracking
- */
-const generateWoohooRefNo = (userId) => {
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const dd = String(today.getDate()).padStart(2, '0');
-    const random = Math.floor(1000 + Math.random() * 9000);
-    return `ORDER_${yyyy}${mm}${dd}_${userId}_${random}`;
-};
+// ─── Get Order By ID ───────────────────────────────────────────────────────────
 
 /**
  * Get Order Details with Payment Breakdown by ID
  */
 export const getOrderById = async (orderId) => {
-    const [[order]] = await pool.query(
-        'SELECT * FROM gift_card_orders WHERE id = ?',
-        [orderId]
-    );
+    const [[order]] = await pool.query('SELECT * FROM gift_card_orders WHERE id = ?', [orderId]);
     if (!order) {
         throw { message: 'Order not found', code: 'NOT_FOUND', statusCode: 404 };
     }
-    return {
-        success: true,
-        data: order
-    };
+    return { success: true, data: order };
 };
 
+// ─── Place Gift Card Order Flow (3 payment types) ──────────────────────────────
+
 /**
- * Main sequence flow for placing a Gift Card order (atomic, all-or-nothing)
+ * Main sequence flow for placing a Gift Card order.
+ * Supports Wallet Only, Online Only, and Split Payment.
+ * Entire payment + order creation is atomic inside runInTransaction.
  */
 export const placeGiftCardOrderFlow = async (userId, payload) => {
-    const { 
-        giftcard_id, 
-        sku, 
-        price, 
-        qty, 
-        payment_method, 
-        reference_id,
+    const {
+        giftcard_id,
+        sku,
+        price,
+        qty,
+        payment_type,
+        payment_method,
+        is_self_purchase,
         recipient_name,
         recipient_email,
         recipient_mobile,
@@ -390,102 +355,67 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
 
     const totalAmount = parseFloat(price) * parseInt(qty);
 
-    logger.info(`[Order Flow] Initiating order. User: ${userId}, Reference: ${reference_id}, Total: ₹${totalAmount}`);
+    logger.info(`[Order Flow] Initiating order. User: ${userId}, Total: ₹${totalAmount}, PaymentType: ${payment_type}`);
 
-    // Map payment method string/number to integer code (1=Wallet, 2=UPI, 3=Both)
-    let methodInt = parseInt(payment_method);
-    if (isNaN(methodInt)) {
-        if (payment_method === 'wallet') methodInt = 1;
-        else if (payment_method === 'upi') methodInt = 2;
-        else if (payment_method === 'both') methodInt = 3;
+    // Map payment_type string to constant
+    let paymentTypeInt;
+    if (typeof payment_type === 'string') {
+        const ptLower = payment_type.toLowerCase();
+        if (ptLower === 'wallet') paymentTypeInt = GIFT_CARD_ORDER_PAYMENT_TYPE.WALLET_ONLY;
+        else if (ptLower === 'online') paymentTypeInt = GIFT_CARD_ORDER_PAYMENT_TYPE.ONLINE_ONLY;
+        else if (ptLower === 'split') paymentTypeInt = GIFT_CARD_ORDER_PAYMENT_TYPE.SPLIT_PAYMENT;
+    } else {
+        paymentTypeInt = parseInt(payment_type);
     }
 
-    const validMethods = [1, 2, 3];
-    if (!validMethods.includes(methodInt)) {
-        throw { message: 'Invalid payment method', code: 'INVALID_PAYMENT_METHOD', statusCode: 400 };
+    if (![1, 2, 3].includes(paymentTypeInt)) {
+        throw { message: 'Invalid payment type. Use Wallet, Online, or Split.', code: 'INVALID_PAYMENT_TYPE', statusCode: 400 };
     }
 
-    // Pre-flight validation: Check wallet balance before calling external APIs
-    if (methodInt === 1) {
+    // Map payment_method string to constant (for online portion)
+    let paymentMethodInt = PAYMENT_METHOD.UPI; // default
+    if (payment_method) {
+        const pm = parseInt(payment_method);
+        if ([1, 2, 3].includes(pm)) paymentMethodInt = pm;
+    }
+
+    // Pre-flight: check wallet balance for Wallet Only
+    if (paymentTypeInt === GIFT_CARD_ORDER_PAYMENT_TYPE.WALLET_ONLY) {
         const wallet = await getOrCreateWallet(userId);
-        if (parseFloat(wallet.available_balance) < totalAmount) {
+        if (parseFloat(wallet.balance) < totalAmount) {
             throw {
-                message: `Insufficient wallet balance. Required: ₹${totalAmount.toFixed(2)}, Available: ₹${parseFloat(wallet.available_balance).toFixed(2)}`,
+                message: `Insufficient wallet balance. Required: ₹${totalAmount.toFixed(2)}, Available: ₹${parseFloat(wallet.balance).toFixed(2)}`,
                 code: 'INSUFFICIENT_BALANCE',
                 statusCode: 400
             };
         }
     }
 
-    // Retrieve user master details for self-purchase evaluation and fallback details
+    // Retrieve user details
     const [[user]] = await pool.query('SELECT name, email, phone FROM user_master WHERE id = ?', [userId]);
     const finalRecipientName = recipient_name || user?.name || 'Customer';
     const finalRecipientEmail = recipient_email || user?.email || 'customer@example.com';
     const finalRecipientMobile = recipient_mobile || user?.phone || '+918884520003';
+    const isSelf = is_self_purchase !== undefined ? parseInt(is_self_purchase) : ((user && user.phone === finalRecipientMobile) ? 1 : 0);
 
-    const isSelfPurchase = (user && user.phone === finalRecipientMobile) ? 1 : 0;
-
-    // Step 1: Create or resolve PENDING order in DB (Idempotent)
-    let order;
-    const [[existingOrder]] = await pool.query(
-        'SELECT * FROM gift_card_orders WHERE reference_id = ?',
-        [reference_id]
-    );
-
-    if (existingOrder) {
-        logger.info(`[Order Flow] Order already exists. Reference: ${reference_id}, Status: ${existingOrder.status}`);
-        if (existingOrder.status !== 1) { // 1 = Pending
-            return {
-                success: existingOrder.status === 3, // 3 = Success/Completed
-                data: existingOrder
-            };
-        }
-        order = existingOrder;
-    } else {
-        const woohooRefNo = generateWoohooRefNo(userId);
-        const [insertResult] = await pool.query(
-            `INSERT INTO gift_card_orders 
-             (user_id, gift_card_id, amount, is_self_purchase, recipient_name, recipient_email, recipient_mobile, gift_message, 
-              woohoo_reference_no, status, sku, qty, payment_method, wallet_deducted, upi_deducted, reference_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 0.00, 0.00, ?)`,
-            [
-                userId, 
-                giftcard_id, 
-                totalAmount, 
-                isSelfPurchase, 
-                finalRecipientName, 
-                finalRecipientEmail, 
-                finalRecipientMobile, 
-                gift_message || null, 
-                woohooRefNo, 
-                sku, 
-                qty, 
-                methodInt, 
-                reference_id
-            ]
-        );
-        const [[newOrder]] = await pool.query(
-            'SELECT * FROM gift_card_orders WHERE id = ?',
-            [insertResult.insertId]
-        );
-        order = newOrder;
+    // Fetch gift card for cashback_percentage
+    const [[giftCard]] = await pool.query('SELECT * FROM gift_cards WHERE id = ?', [giftcard_id]);
+    if (!giftCard) {
+        throw { message: 'Gift card not found', code: 'NOT_FOUND', statusCode: 404 };
     }
 
-    // Step 2: Invoke Woohoo API
+    const woohooRefNo = generateWoohooRefNo(userId);
+
+    // Step 1: Call Woohoo API FIRST (before deducting money)
     const woohooResult = await placeGiftCardOrder({
         sku,
         price,
         qty,
         amount: totalAmount,
-        refno: order.woohoo_reference_no
+        refno: woohooRefNo
     });
 
     if (!woohooResult.success) {
-        // Woohoo Failure: Mark status FAILED (4), do NOT deduct payment
-        await pool.query(
-            "UPDATE gift_card_orders SET status = 4, failure_reason = ?, woohoo_response = ? WHERE id = ?",
-            [woohooResult.error, JSON.stringify({ error: woohooResult.error }), order.id]
-        );
         throw {
             message: `Woohoo provider order failed: ${woohooResult.error}`,
             code: 'WOOHOO_FAILED',
@@ -494,72 +424,85 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
     }
 
     const woohooResponseData = woohooResult.data;
+    const cards = woohooResponseData.cards || [];
+    const mainCard = cards[0] || {};
 
-    // Step 3: Woohoo succeeded -> Deduct payments atomically inside database transaction
-    let paymentResult;
+    // Step 2: Woohoo succeeded → Deduct payments and create order atomically
+    let finalOrder;
     try {
-        paymentResult = await runInTransaction(async (connection) => {
-            // Lock order row
-            const [[lockedOrder]] = await connection.query(
-                'SELECT * FROM gift_card_orders WHERE id = ? FOR UPDATE',
-                [order.id]
-            );
-
-            if (lockedOrder.status !== 1) { // 1 = Pending
-                return { status: lockedOrder.status }; // Already processed
-            }
-
-            // Perform balance debit/UPI transaction logs
+        finalOrder = await runInTransaction(async (connection) => {
+            // Deduct payment based on payment type
             const deductRes = await deductPayment(
                 userId,
                 totalAmount,
-                methodInt,
-                order.id,
-                reference_id,
+                paymentTypeInt,
+                null, // orderId not known yet; will be updated
+                paymentMethodInt,
                 connection
             );
 
-            const cards = woohooResponseData.cards || [];
-            const mainCard = cards[0] || {};
-
-            // Update order status to Success (3)
-            await connection.query(
-                `UPDATE gift_card_orders 
-                 SET status = 3, 
-                     wallet_deducted = ?, 
-                     upi_deducted = ?, 
-                     wallet_transaction_id = ?,
-                     woohoo_order_id = ?, 
-                     gift_card_number = ?,
-                     gift_card_pin = ?,
-                     expiry_date = ?,
-                     woohoo_response = ? 
-                 WHERE id = ?`,
+            // Insert gift_card_orders
+            const [orderResult] = await connection.query(
+                `INSERT INTO gift_card_orders 
+                 (user_id, gift_card_id, amount, is_self_purchase, recipient_name, recipient_email, recipient_mobile, gift_message,
+                  woohoo_reference_no, status, sku, qty, wallet_amount, online_amount, payment_type,
+                  woohoo_order_id, gift_card_number, gift_card_pin, expiry_date, woohoo_response)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 2, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
+                    userId,
+                    giftcard_id,
+                    totalAmount,
+                    isSelf,
+                    finalRecipientName,
+                    finalRecipientEmail,
+                    finalRecipientMobile,
+                    gift_message || null,
+                    woohooRefNo,
+                    sku,
+                    qty,
                     deductRes.walletDeducted,
-                    deductRes.upiDeducted,
-                    deductRes.walletTransactionId || null,
+                    deductRes.onlineDeducted,
+                    paymentTypeInt,
                     woohooResponseData.orderId || null,
                     mainCard.cardNumber || null,
                     mainCard.pin || null,
                     mainCard.validity || null,
-                    JSON.stringify(woohooResponseData),
-                    order.id
+                    JSON.stringify(woohooResponseData)
                 ]
             );
+            const orderId = orderResult.insertId;
 
-            return {
-                status: 3,
-                wallet_deducted: deductRes.walletDeducted,
-                upi_deducted: deductRes.upiDeducted
-            };
+            // Update wallet_transactions with order_id (if wallet was used)
+            if (deductRes.walletTransactionId) {
+                await connection.query(
+                    'UPDATE wallet_transactions SET order_id = ? WHERE id = ?',
+                    [orderId, deductRes.walletTransactionId]
+                );
+            }
+
+            // Update payment_transactions with order_id (if online payment was used)
+            if (deductRes.paymentTxnNo) {
+                await connection.query(
+                    'UPDATE payment_transactions SET order_id = ? WHERE transaction_no = ?',
+                    [orderId, deductRes.paymentTxnNo]
+                );
+            }
+
+            // Credit cashback if applicable
+            const cashbackPct = parseFloat(giftCard.cashback_percentage) || 0;
+            if (cashbackPct > 0) {
+                await creditCashback(userId, orderId, totalAmount, cashbackPct, connection);
+            }
+
+            // Fetch final order
+            const [[createdOrder]] = await connection.query(
+                'SELECT * FROM gift_card_orders WHERE id = ?',
+                [orderId]
+            );
+            return createdOrder;
         });
 
-        logger.info(`[Order Flow] Order #${order.id} completed successfully`);
-        const [[finalOrder]] = await pool.query(
-            'SELECT * FROM gift_card_orders WHERE id = ?',
-            [order.id]
-        );
+        logger.info(`[Order Flow] Order #${finalOrder.id} completed successfully`);
         return {
             success: true,
             message: 'Order completed successfully',
@@ -567,41 +510,114 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
         };
 
     } catch (paymentError) {
-        // Payment Failure after Woohoo Success
         logger.error(`[Order Flow] Payment processing failed after Woohoo API success: ${paymentError.message}`);
-        
-        try {
-            await runInTransaction(async (connection) => {
-                // Refund wallet if any partial deduction occurred
-                if (methodInt === 1 || methodInt === 3) {
-                    const [[orderToCheck]] = await connection.query(
-                        'SELECT wallet_deducted FROM gift_card_orders WHERE id = ?',
-                        [order.id]
-                    );
-                    const parsedWalletDeduction = parseFloat(orderToCheck?.wallet_deducted || 0);
-                    if (parsedWalletDeduction > 0) {
-                        await processRefund(userId, parsedWalletDeduction, order.id, 'Payment resolution failure', connection);
-                    }
-                }
-
-                // Update order to FAILED (4)
-                await connection.query(
-                    `UPDATE gift_card_orders 
-                     SET status = 4, 
-                         failure_reason = ?,
-                         woohoo_response = ? 
-                     WHERE id = ?`,
-                    [`Payment failed: ${paymentError.message}`, JSON.stringify({ error: `Payment failed: ${paymentError.message}` }), order.id]
-                );
-            });
-        } catch (rollbackErr) {
-            logger.error(`[Order Flow] CRITICAL: Rollback refund failed for Order ${order.id}`, { error: rollbackErr.message });
-        }
-
         throw {
             message: `Payment failed: ${paymentError.message}`,
-            code: 'PAYMENT_FAILED',
-            statusCode: 400
+            code: paymentError.code || 'PAYMENT_FAILED',
+            statusCode: paymentError.statusCode || 400
         };
     }
+};
+
+// ─── Cashback Credit ───────────────────────────────────────────────────────────
+
+/**
+ * Credit cashback to user's wallet after successful order.
+ * @param {number} userId
+ * @param {number} orderId
+ * @param {number} orderAmount - total order amount
+ * @param {number} cashbackPercentage
+ * @param {object} connection - DB connection (inside transaction)
+ */
+export const creditCashback = async (userId, orderId, orderAmount, cashbackPercentage, connection) => {
+    const cashbackAmount = parseFloat(((parseFloat(orderAmount) * parseFloat(cashbackPercentage)) / 100).toFixed(2));
+    if (cashbackAmount <= 0) return;
+
+    logger.info(`[Cashback] Crediting ₹${cashbackAmount} cashback for Order #${orderId} (${cashbackPercentage}%)`);
+
+    // Credit wallet
+    await creditWallet(
+        userId,
+        cashbackAmount,
+        WALLET_TRANSACTION_SOURCE.CASHBACK,
+        orderId,
+        `Cashback ${cashbackPercentage}% for order #${orderId}`,
+        connection
+    );
+
+    // Update total_cashback_earned in user_wallet
+    await connection.query(
+        'UPDATE user_wallet SET total_cashback_earned = total_cashback_earned + ? WHERE user_id = ?',
+        [cashbackAmount, userId]
+    );
+
+    logger.info(`[Cashback] ₹${cashbackAmount} cashback credited to User ${userId}`);
+};
+
+// ─── Refund Order to Wallet ────────────────────────────────────────────────────
+
+/**
+ * Refund a successful order's wallet portion back to the user's wallet.
+ * Only the wallet_amount is refunded (not the online portion).
+ * @param {number} userId
+ * @param {number} orderId
+ */
+export const refundOrderToWalletService = async (userId, orderId) => {
+    return await runInTransaction(async (connection) => {
+        // 1. Fetch and lock order
+        const [[order]] = await connection.query(
+            'SELECT * FROM gift_card_orders WHERE id = ? FOR UPDATE',
+            [orderId]
+        );
+
+        if (!order) {
+            throw { message: 'Order not found', code: 'NOT_FOUND', statusCode: 404 };
+        }
+
+        if (order.user_id !== userId) {
+            throw { message: 'Order does not belong to this user', code: 'UNAUTHORIZED', statusCode: 403 };
+        }
+
+        // Check order status is Success (2) — only successful orders can be refunded
+        if (order.status !== 2) {
+            throw { message: 'Only successful orders can be refunded', code: 'INVALID_STATUS', statusCode: 400 };
+        }
+
+        const refundAmount = parseFloat(order.wallet_amount) || 0;
+        if (refundAmount <= 0) {
+            throw { message: 'No wallet amount to refund for this order', code: 'NO_REFUND', statusCode: 400 };
+        }
+
+        // 2. Credit wallet
+        const creditRes = await creditWallet(
+            userId,
+            refundAmount,
+            WALLET_TRANSACTION_SOURCE.REFUND,
+            orderId,
+            `Refund for order #${orderId}`,
+            connection
+        );
+
+        // 3. Mark order as Refunded (status = 5)
+        await connection.query(
+            'UPDATE gift_card_orders SET status = 5 WHERE id = ?',
+            [orderId]
+        );
+
+        // 4. Fetch updated wallet balance
+        const [[updatedWallet]] = await connection.query(
+            'SELECT balance FROM user_wallet WHERE user_id = ?',
+            [userId]
+        );
+
+        logger.info(`[Refund] Order #${orderId} refunded. ₹${refundAmount} credited to User ${userId}`);
+
+        return {
+            success: true,
+            message: 'Order refunded successfully',
+            refunded_amount: refundAmount,
+            new_balance: parseFloat(updatedWallet.balance).toFixed(2),
+            transaction_no: creditRes.transactionNo
+        };
+    });
 };

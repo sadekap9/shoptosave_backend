@@ -8,7 +8,7 @@ const router = express.Router();
 
 /**
  * POST /api/v1/orders
- * Protected route to place a gift card order
+ * Protected route to place a gift card order (legacy — wallet only)
  * Debits user wallet, invokes Woohoo Order API, and returns order result
  */
 router.post(
@@ -28,12 +28,22 @@ router.get(
     ordersController.getOrderHistory
 );
 
-// ─── NEW SCHEMA-ALIGNED ENDPOINTS ─────────────────────────────────────────────
-
-// Place a new gift card order (Wallet, UPI, or Both split payment)
+/**
+ * POST /api/v1/orders/gift-card
+ * Place a new gift card order (Wallet, Online, or Split payment)
+ */
 router.post('/gift-card', authMiddleware, ordersController.placeGiftCardOrder);
 
-// Retrieve detailed order history breakdown
+/**
+ * POST /api/v1/orders/:orderId/refund
+ * Refund a successful order's wallet portion back to the user's wallet
+ */
+router.post('/:orderId/refund', authMiddleware, ordersController.refundOrderToWallet);
+
+/**
+ * GET /api/v1/orders/:orderId
+ * Retrieve detailed order breakdown by ID
+ */
 router.get('/:orderId', authMiddleware, ordersController.getOrder);
 
 export default router;

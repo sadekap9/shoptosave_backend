@@ -90,3 +90,69 @@ export const REDIRECT_TYPE = Object.freeze({
 
 export const RedirectTypeValues = [1, 2, 3, 4]; // 1 = URL, 2 = Product, 3 = Category, 4 = Store
 
+// Wallet Transaction Mapping Constants
+export const WALLET_TXN_REFERENCE_TYPE = Object.freeze({
+    ORDER: 1,
+    TOPUP_REQUEST: 2,
+    WITHDRAWAL: 3,
+    P2P_SELL: 4,
+    CASHBACK: 5,
+    WALLET_LOAD: 6
+});
+
+export const WALLET_TXN_STATUS = Object.freeze({
+    PENDING: 0,
+    SUCCESS: 1,
+    APPROVED: 2,
+    FAILED: 3
+});
+
+// Database schema constants for user_wallet, payment_transactions, wallet_transactions, and gift_card_orders
+
+export const WALLET_STATUS = Object.freeze({
+    ACTIVE: 1,
+    FROZEN: 2
+});
+
+export const PAYMENT_METHOD = Object.freeze({
+    UPI: 1,
+    CARD: 2,
+    NETBANKING: 3
+});
+
+export const PAYMENT_TYPE = Object.freeze({
+    WALLET_TOPUP: 1,
+    ORDER_PAYMENT: 2
+});
+
+export const PAYMENT_TRANSACTION_STATUS = Object.freeze({
+    PENDING: 1,
+    SUCCESS: 2,
+    FAILED: 3,
+    REFUNDED: 4
+});
+
+export const WALLET_TRANSACTION_TYPE = Object.freeze({
+    CREDIT: 1,
+    DEBIT: 2
+});
+
+export const WALLET_TRANSACTION_SOURCE = Object.freeze({
+    WALLET_TOPUP: 1,
+    GIFT_CARD_PURCHASE: 2,
+    REFUND: 3,
+    CASHBACK: 4
+});
+
+export const WALLET_TRANSACTION_STATUS = Object.freeze({
+    SUCCESS: 1,
+    FAILED: 2
+});
+
+export const GIFT_CARD_ORDER_PAYMENT_TYPE = Object.freeze({
+    WALLET_ONLY: 1,
+    ONLINE_ONLY: 2,
+    SPLIT_PAYMENT: 3
+});
+
+

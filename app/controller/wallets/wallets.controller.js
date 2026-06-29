@@ -2,7 +2,8 @@ import * as walletsService from '../../services/wallets/wallets.service.js';
 import logger from '../../utils/logger.js';
 
 /**
- * Request Wallet Topup (Instant Auto-Approved)
+ * POST /api/v1/wallets/topup
+ * User requests instant auto-approved wallet top-up (legacy)
  */
 export const requestTopup = async (req, res) => {
     try {
@@ -27,7 +28,8 @@ export const requestTopup = async (req, res) => {
 };
 
 /**
- * Fetch User Wallet History
+ * GET /api/v1/wallets/history
+ * Fetch authenticated user's wallet transactions ledger (all records)
  */
 export const getWalletHistory = async (req, res) => {
     try {
@@ -53,7 +55,8 @@ export const getWalletHistory = async (req, res) => {
 };
 
 /**
- * Fetch Current Wallet Details (Balance, Cashback)
+ * GET /api/v1/wallets/details
+ * Fetch current available balance & cashback details
  */
 export const getWalletDetails = async (req, res) => {
     try {
@@ -79,22 +82,23 @@ export const getWalletDetails = async (req, res) => {
 };
 
 /**
- * Request Wallet Top-up Endpoint (Pending request creation)
+ * POST /api/v1/wallets/add-money
+ * Add money to wallet (creates payment_transaction + wallet_transaction + updates user_wallet)
  */
 export const addMoney = async (req, res) => {
     try {
         const userId = req.user.id;
-        const { amount, payment_mode, payment_reference } = req.body;
+        const { amount, payment_method, gateway_transaction_id } = req.body;
 
-        if (!amount || !payment_mode || !payment_reference) {
+        if (!amount || !payment_method) {
             return res.status(400).json({
                 success: false,
-                error: 'Missing required parameters: amount, payment_mode, payment_reference',
+                error: 'Missing required parameters: amount, payment_method',
                 code: 'INVALID_PARAMETERS'
             });
         }
 
-        const response = await walletsService.addMoney(userId, { amount, payment_mode, payment_reference });
+        const response = await walletsService.addMoney(userId, { amount, payment_method, gateway_transaction_id });
         return res.status(200).json({
             success: true,
             result: response
@@ -104,14 +108,15 @@ export const addMoney = async (req, res) => {
         logger.error('[Wallet Controller] addMoney failed', { error: error.message || error });
         return res.status(error.statusCode || 400).json({
             success: false,
-            error: error.message || 'Failed to request top-up',
+            error: error.message || 'Failed to add money',
             code: error.code || 'TOPUP_FAILED'
         });
     }
 };
 
 /**
- * Wallet Withdrawal Endpoint
+ * POST /api/v1/wallets/withdraw
+ * Withdraw from wallet
  */
 export const withdraw = async (req, res) => {
     try {
@@ -143,7 +148,8 @@ export const withdraw = async (req, res) => {
 };
 
 /**
- * Get Balance & Transaction History Ledger Endpoint
+ * GET /api/v1/wallets/balance
+ * Get balance, cashback earned, cashback used, and recent transactions
  */
 export const getBalance = async (req, res) => {
     try {
@@ -151,7 +157,7 @@ export const getBalance = async (req, res) => {
         const response = await walletsService.getWalletBalanceAndHistory(userId);
         return res.status(200).json({
             success: true,
-            result: response.data
+            data: response.data
         });
 
     } catch (error) {
@@ -159,6 +165,32 @@ export const getBalance = async (req, res) => {
         return res.status(500).json({
             success: false,
             error: 'Failed to retrieve wallet information',
+            code: 'FETCH_FAILED'
+        });
+    }
+};
+
+/**
+ * GET /api/v1/wallets/transactions
+ * Get paginated wallet transaction history for authenticated user.
+ * Query params: ?page=1&limit=10
+ */
+export const getTransactionHistory = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { page, limit } = req.query;
+
+        const response = await walletsService.getWalletTransactionHistory(userId, page, limit);
+        return res.status(200).json({
+            success: true,
+            data: response.data
+        });
+
+    } catch (error) {
+        logger.error('[Wallet Controller] getTransactionHistory failed', { error: error.message || error });
+        return res.status(500).json({
+            success: false,
+            error: 'Failed to retrieve transaction history',
             code: 'FETCH_FAILED'
         });
     }
