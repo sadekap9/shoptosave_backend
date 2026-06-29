@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import { syncCategoriesWithWoohoo, syncProductsWithWoohoo } from '../services/categories/categories.service.js';
+import { refreshWoohooToken } from '../services/categories/woohooAuth.service.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -28,6 +29,18 @@ export const initCronJobs = () => {
             logger.info('Scheduled Product Sync Completed', result);
         } catch (error) {
             logger.error('Scheduled Product Sync Failed', { error: error.message });
+        }
+    });
+
+    // 3. Force-refresh Woohoo Bearer Token every 6 days (before the 7-day expiration)
+    // Schedule: '0 0 */6 * *'
+    cron.schedule('0 0 */6 * *', async () => {
+        logger.info('Starting Scheduled Woohoo Token Refresh');
+        try {
+            await refreshWoohooToken();
+            logger.info('Scheduled Woohoo Token Refresh Completed Successfully');
+        } catch (error) {
+            logger.error('Scheduled Woohoo Token Refresh Failed', { error: error.message });
         }
     });
 

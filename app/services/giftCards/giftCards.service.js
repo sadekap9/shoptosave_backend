@@ -2,9 +2,10 @@ import pool from '../../config/dbConfig.js';
 import fs from 'fs';
 import { giftCardImageType, uploadFolders } from '../../config/constant/constant.js';
 import { getWoohooToken } from '../categories/woohooAuth.service.js';
-import { getWoohooProduct } from '../woohoo/woohoo.service.js';
+import { getWoohooProduct, placeWoohooOrder } from '../woohoo/woohoo.service.js';
 import { saveProductsToDB } from '../products/products.service.js';
 import { sanitizePaginationParams, buildPagination } from '../../helpers/pagination.helper.js';
+import logger from '../../utils/logger.js';
 
 
 
@@ -536,8 +537,9 @@ export const getClientGiftCardsService = async (filters = {}) => {
         }
 
         if (search) {
+            // Indexes: gc.gift_card_name, gc.sku, and s.store_name indexes are utilized with trailing wildcard LIKE search
             whereClauses.push('(gc.gift_card_name LIKE ? OR gc.sku LIKE ? OR s.store_name LIKE ?)');
-            const searchPattern = `%${search}%`;
+            const searchPattern = `${search}%`;
             params.push(searchPattern, searchPattern, searchPattern);
         }
 
@@ -722,5 +724,74 @@ export const getClientGiftCardByIdService = async (id) => {
         };
     } catch (error) {
         throw error;
+    }
+};
+
+/**
+ * Build Pine Labs / Woohoo API payload using exact static layout requested
+ */
+export const buildWoohooPayload = ({ sku, price, qty, amount, refno }) => ({
+  address: {
+    firstname: "John",
+    lastname: "Doe",
+    email: "johndoe@example.com",
+    telephone: "+918884520003",
+    line1: "Koramangala",
+    line2: "Bangalore",
+    city: "bangalore",
+    region: "Karnataka",
+    country: "IN",
+    postcode: "560095",
+    billToThis: true
+  },
+  payments: [
+    {
+      code: "svc",
+      amount: parseFloat(amount) // dynamic — total order amount
+    }
+  ],
+  refno: refno,                 // dynamic — e.g. "ORDER_20260618_1095"
+  syncOnly: true,
+  deliveryMode: "API",
+  products: [
+    {
+      sku: sku,                 // dynamic — e.g. "EGCGBNIK001"
+      price: parseFloat(price), // dynamic — e.g. 1000
+      qty: parseInt(qty),       // dynamic — e.g. 1
+      currency: 356             // static — INR
+    }
+  ]
+});
+
+/**
+ * Connect to Woohoo API and place order
+ */
+export const placeGiftCardOrder = async ({ sku, price, qty, amount, refno }) => {
+    try {
+        logger.info(`[GiftCard Service] Placing Woohoo order. Ref: ${refno}, SKU: ${sku}`);
+        
+        // 1. Fetch Auth Token
+        const bearerToken = await getWoohooToken();
+        
+        // 2. Construct Payload
+        const payload = buildWoohooPayload({ sku, price, qty, amount, refno });
+        logger.info(`[Woohoo API Request Body]: ${JSON.stringify(payload, null, 2)}`);
+        
+        // 3. Post to Woohoo
+        const responseData = await placeWoohooOrder(bearerToken, payload);
+        logger.info(`[Woohoo API Response Body]: ${JSON.stringify(responseData, null, 2)}`);
+        
+        logger.info(`[GiftCard Service] Woohoo response status: ${responseData.status}`);
+        return {
+            success: true,
+            data: responseData
+        };
+    } catch (error) {
+        const errorMsg = error.response?.data?.message || error.message;
+        logger.error('[GiftCard Service] Woohoo API call failed', { error: errorMsg });
+        return {
+            success: false,
+            error: errorMsg
+        };
     }
 };

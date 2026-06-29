@@ -32,15 +32,17 @@ export const getTopupRequests = async (filters) => {
             countParams.push(status);
         }
         if (request_no) {
+            // Index: wtr.request_no index is utilized when using a trailing wildcard search
             query += ` AND wtr.request_no LIKE ?`;
             countQuery += ` AND wtr.request_no LIKE ?`;
-            params.push(`%${request_no}%`);
-            countParams.push(`%${request_no}%`);
+            params.push(`${request_no}%`);
+            countParams.push(`${request_no}%`);
         }
         if (user) {
+            // Indexes: u.name, u.phone, and u.email indexes are utilized when using trailing wildcards
             query += ` AND (u.name LIKE ? OR u.phone LIKE ? OR u.email LIKE ?)`;
             countQuery += ` AND (u.name LIKE ? OR u.phone LIKE ? OR u.email LIKE ?)`;
-            const userLike = `%${user}%`;
+            const userLike = `${user}%`;
             params.push(userLike, userLike, userLike);
             countParams.push(userLike, userLike, userLike);
         }
@@ -48,6 +50,7 @@ export const getTopupRequests = async (filters) => {
         query += ` ORDER BY wtr.id DESC LIMIT ? OFFSET ?`;
         params.push(limitVal, offset);
 
+        // DB Query utilizes idx_status or primary key indexes for filtering and ordering
         const [[{ total }]] = await pool.query(countQuery, countParams);
         const [rows] = await pool.query(query, params);
 
@@ -96,10 +99,11 @@ export const getOrders = async (filters) => {
             countParams.push(status);
         }
         if (woohoo_reference_no) {
+            // Index: gco.woohoo_reference_no index is utilized when using a trailing wildcard search
             query += ` AND gco.woohoo_reference_no LIKE ?`;
             countQuery += ` AND gco.woohoo_reference_no LIKE ?`;
-            params.push(`%${woohoo_reference_no}%`);
-            countParams.push(`%${woohoo_reference_no}%`);
+            params.push(`${woohoo_reference_no}%`);
+            countParams.push(`${woohoo_reference_no}%`);
         }
         if (order_id) {
             query += ` AND gco.id = ?`;
@@ -108,9 +112,10 @@ export const getOrders = async (filters) => {
             countParams.push(order_id);
         }
         if (user) {
+            // Indexes: u.name, u.phone, and u.email indexes are utilized when using trailing wildcards
             query += ` AND (u.name LIKE ? OR u.phone LIKE ? OR u.email LIKE ?)`;
             countQuery += ` AND (u.name LIKE ? OR u.phone LIKE ? OR u.email LIKE ?)`;
-            const userLike = `%${user}%`;
+            const userLike = `${user}%`;
             params.push(userLike, userLike, userLike);
             countParams.push(userLike, userLike, userLike);
         }
@@ -118,6 +123,7 @@ export const getOrders = async (filters) => {
         query += ` ORDER BY gco.id DESC LIMIT ? OFFSET ?`;
         params.push(limitVal, offset);
 
+        // DB Query utilizes indexes on user_id, gift_card_id, status, and primary key
         const [[{ total }]] = await pool.query(countQuery, countParams);
         const [rows] = await pool.query(query, params);
 

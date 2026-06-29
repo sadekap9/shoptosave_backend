@@ -1,11 +1,13 @@
 import express from 'express';
 import { getProductsByCategory, storeProduct, getProductBySku } from '../controller/products/products.controller.js';
 import authenticate, { authorizeRole } from '../middlewares/verifyMiddleware.js';
+import { validate } from '../middlewares/validate.middleware.js';
+import { productSchema } from '../validations/product.validation.js';
 
 const router = express.Router();
 
 // Store products in database (Admin/Sub-Admin only)
-router.post('/', authenticate, authorizeRole([1, 2]), storeProduct);
+router.post('/', authenticate, authorizeRole([1, 2]), validate(productSchema), storeProduct);
 
 // Get products by category (Authenticated)
 router.get('/category/:categoryId', authenticate, getProductsByCategory);

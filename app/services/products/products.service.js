@@ -1,5 +1,5 @@
 import axios from 'axios';
-import pool from '../../config/dbConfig.js';
+import pool, { runInTransaction } from '../../config/dbConfig.js';
 import { getWoohooToken } from '../categories/woohooAuth.service.js';
 import { getWoohooHeaders } from '../../helpers/woohoo.helper.js';
 import logger from '../../utils/logger.js';
@@ -10,6 +10,7 @@ import { sanitizePaginationParams, buildPagination } from '../../helpers/paginat
  */
 export const saveProductsToDB = async (products, categoryId) => {
     const productsArray = Array.isArray(products) ? products : [products];
+    if (productsArray.length === 0) return;
 
     let localCategoryInfo = null;
     if (categoryId) {
@@ -25,7 +26,29 @@ export const saveProductsToDB = async (products, categoryId) => {
             logger.error(`Error fetching category info for ID ${categoryId}:`, err);
         }
     }
-    
+
+    const toTinyInt = (val) => {
+        if (val === true || val === 'true' || val === 1 || val === '1') return 1;
+        if (val === false || val === 'false' || val === 0 || val === '0') return 0;
+        return null;
+    };
+
+    const toTinyIntDefault0 = (val) => {
+        return toTinyInt(val) === 1 ? 1 : 0;
+    };
+
+    const toTinyIntDefault1 = (val) => {
+        return toTinyInt(val) === 0 ? 0 : 1;
+    };
+
+    const toJSONString = (val) => {
+        if (val === undefined || val === null) return null;
+        if (typeof val === 'string') return val;
+        return JSON.stringify(val);
+    };
+
+    const records = [];
+
     for (const prod of productsArray) {
         const sku = prod.sku;
         const name = prod.name || prod.product_name || prod.productName;
@@ -62,32 +85,12 @@ export const saveProductsToDB = async (products, categoryId) => {
             if (prod.price.currency) {
                 currency_code = prod.price.currency.code || prod.price.currency.currency_code || currency_code;
                 currency_symbol = prod.price.currency.symbol || prod.price.currency.currency_symbol || currency_symbol;
-                currency_numeric_code = prod.price.currency.numericCode || prod.price.currency.currency_numeric_code || currency_numeric_code;
+                currency_numeric_code = prod.price.currency.currency_numeric_code || prod.price.currency.numericCode || currency_numeric_code;
             }
         }
 
         const expiry = prod.expiry || prod.expiry_info || prod.expiryInfo || null;
         
-        const toTinyInt = (val) => {
-            if (val === true || val === 'true' || val === 1 || val === '1') return 1;
-            if (val === false || val === 'false' || val === 0 || val === '0') return 0;
-            return null;
-        };
-
-        const toTinyIntDefault0 = (val) => {
-            return toTinyInt(val) === 1 ? 1 : 0;
-        };
-
-        const toTinyIntDefault1 = (val) => {
-            return toTinyInt(val) === 0 ? 0 : 1;
-        };
-
-        const toJSONString = (val) => {
-            if (val === undefined || val === null) return null;
-            if (typeof val === 'string') return val;
-            return JSON.stringify(val);
-        };
-
         const kyc_enabled = toTinyIntDefault0(prod.kycEnabled !== undefined ? prod.kycEnabled : prod.kyc_enabled);
         const disable_cart = toTinyIntDefault0(prod.disableCart !== undefined ? prod.disableCart : prod.disable_cart);
         const scheduling_enabled = toTinyIntDefault0(prod.schedulingEnabled !== undefined ? prod.schedulingEnabled : prod.scheduling_enabled);
@@ -175,52 +178,59 @@ export const saveProductsToDB = async (products, categoryId) => {
         const status = toTinyIntDefault1(prod.isActive !== undefined ? prod.isActive : (prod.is_active !== undefined ? prod.is_active : (prod.status !== undefined ? prod.status : true)));
         const sync_response = prod;
 
-        // Check SKU uniqueness in DB manually
-        const [[existing]] = await pool.query('SELECT id FROM woohoo_products WHERE sku = ?', [sku.trim()]);
+        records.push({
+            woohoo_product_id, sku: sku.trim(), product_name, brand_name, brand_code, slug,
+            product_type, card_behaviour, description, short_description,
+            important_instructions, price_type, min_amount, max_amount,
+            currency_code, currency_symbol, currency_numeric_code, denominations: toJSONString(denominations),
+            expiry, kyc_enabled, disable_cart, scheduling_enabled,
+            add_card_to_wallet, emi_applicable, thumbnail_image, mobile_image,
+            base_image, small_image, brand_logo, tnc_link, tnc_content,
+            page_title, meta_title, meta_keywords, meta_description,
+            categories: toJSONString(productCategories), themes: toJSONString(themes), discounts: toJSONString(discounts), corporate_discounts: toJSONString(corporate_discounts),
+            related_products: toJSONString(related_products), redemption_rules: toJSONString(redemption_rules), redemption_terms: toJSONString(redemption_terms), cpg_type,
+            cpg_code, issuer_name, payout_enabled, payout_payment_methods: toJSONString(payout_payment_methods),
+            payout_account_types: toJSONString(payout_account_types), payout_transaction_types: toJSONString(payout_transaction_types), max_beneficiaries,
+            validation_amount, edit_beneficiary, convenience_charge,
+            vpa_penny_drop_required, handling_charges: toJSONString(handling_charges), convenience_charges: toJSONString(convenience_charges),
+            travel_pass: toJSONString(travel_pass), order_modes: toJSONString(order_modes), reload_card_number, custom_themes_available,
+            store_locator_url, eta_message, status, sync_response: toJSONString(sync_response)
+        });
+    }
 
-        if (existing) {
-            await pool.query(
-                `UPDATE woohoo_products SET
-                    woohoo_product_id = ?, product_name = ?, brand_name = ?, brand_code = ?, slug = ?,
-                    product_type = ?, card_behaviour = ?, description = ?, short_description = ?,
-                    important_instructions = ?, price_type = ?, min_amount = ?, max_amount = ?,
-                    currency_code = ?, currency_symbol = ?, currency_numeric_code = ?, denominations = ?,
-                    expiry = ?, kyc_enabled = ?, disable_cart = ?, scheduling_enabled = ?,
-                    add_card_to_wallet = ?, emi_applicable = ?, thumbnail_image = ?, mobile_image = ?,
-                    base_image = ?, small_image = ?, brand_logo = ?, tnc_link = ?, tnc_content = ?,
-                    page_title = ?, meta_title = ?, meta_keywords = ?, meta_description = ?,
-                    categories = ?, themes = ?, discounts = ?, corporate_discounts = ?,
-                    related_products = ?, redemption_rules = ?, redemption_terms = ?, cpg_type = ?,
-                    cpg_code = ?, issuer_name = ?, payout_enabled = ?, payout_payment_methods = ?,
-                    payout_account_types = ?, payout_transaction_types = ?, max_beneficiaries = ?,
-                    validation_amount = ?, edit_beneficiary = ?, convenience_charge = ?,
-                    vpa_penny_drop_required = ?, handling_charges = ?, convenience_charges = ?,
-                    travel_pass = ?, order_modes = ?, reload_card_number = ?, custom_themes_available = ?,
-                    store_locator_url = ?, eta_message = ?, status = ?, sync_response = ?
-                WHERE id = ?`,
-                [
-                    woohoo_product_id, product_name, brand_name, brand_code, slug,
-                    product_type, card_behaviour, description, short_description,
-                    important_instructions, price_type, min_amount, max_amount,
-                    currency_code, currency_symbol, currency_numeric_code, toJSONString(denominations),
-                    expiry, kyc_enabled, disable_cart, scheduling_enabled,
-                    add_card_to_wallet, emi_applicable, thumbnail_image, mobile_image,
-                    base_image, small_image, brand_logo, tnc_link, tnc_content,
-                    page_title, meta_title, meta_keywords, meta_description,
-                    toJSONString(productCategories), toJSONString(themes), toJSONString(discounts), toJSONString(corporate_discounts),
-                    toJSONString(related_products), toJSONString(redemption_rules), toJSONString(redemption_terms), cpg_type,
-                    cpg_code, issuer_name, payout_enabled, toJSONString(payout_payment_methods),
-                    toJSONString(payout_account_types), toJSONString(payout_transaction_types), max_beneficiaries,
-                    validation_amount, edit_beneficiary, convenience_charge,
-                    vpa_penny_drop_required, toJSONString(handling_charges), toJSONString(convenience_charges),
-                    toJSONString(travel_pass), toJSONString(order_modes), reload_card_number, custom_themes_available,
-                    store_locator_url, eta_message, status, toJSONString(sync_response),
-                    existing.id
-                ]
-            );
-        } else {
-            await pool.query(
-                `INSERT INTO woohoo_products (
+    if (records.length === 0) return;
+
+    await runInTransaction(async (connection) => {
+        const BATCH_SIZE = 500;
+        for (let i = 0; i < records.length; i += BATCH_SIZE) {
+            const batch = records.slice(i, i + BATCH_SIZE);
+            
+            const placeholders = batch.map(() => `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).join(', ');
+            
+            const values = [];
+            for (const item of batch) {
+                values.push(
+                    item.woohoo_product_id, item.sku, item.product_name, item.brand_name, item.brand_code, item.slug,
+                    item.product_type, item.card_behaviour, item.description, item.short_description,
+                    item.important_instructions, item.price_type, item.min_amount, item.max_amount,
+                    item.currency_code, item.currency_symbol, item.currency_numeric_code, item.denominations,
+                    item.expiry, item.kyc_enabled, item.disable_cart, item.scheduling_enabled,
+                    item.add_card_to_wallet, item.emi_applicable, item.thumbnail_image, item.mobile_image,
+                    item.base_image, item.small_image, item.brand_logo, item.tnc_link, item.tnc_content,
+                    item.page_title, item.meta_title, item.meta_keywords, item.meta_description,
+                    item.categories, item.themes, item.discounts, item.corporate_discounts,
+                    item.related_products, item.redemption_rules, item.redemption_terms, item.cpg_type,
+                    item.cpg_code, item.issuer_name, item.payout_enabled, item.payout_payment_methods,
+                    item.payout_account_types, item.payout_transaction_types, item.max_beneficiaries,
+                    item.validation_amount, item.edit_beneficiary, item.convenience_charge,
+                    item.vpa_penny_drop_required, item.handling_charges, item.convenience_charges,
+                    item.travel_pass, item.order_modes, item.reload_card_number, item.custom_themes_available,
+                    item.store_locator_url, item.eta_message, item.status, item.sync_response
+                );
+            }
+
+            const sql = `
+                INSERT INTO woohoo_products (
                     woohoo_product_id, sku, product_name, brand_name, brand_code, slug,
                     product_type, card_behaviour, description, short_description,
                     important_instructions, price_type, min_amount, max_amount,
@@ -237,28 +247,29 @@ export const saveProductsToDB = async (products, categoryId) => {
                     vpa_penny_drop_required, handling_charges, convenience_charges,
                     travel_pass, order_modes, reload_card_number, custom_themes_available,
                     store_locator_url, eta_message, status, sync_response
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [
-                    woohoo_product_id, sku.trim(), product_name, brand_name, brand_code, slug,
-                    product_type, card_behaviour, description, short_description,
-                    important_instructions, price_type, min_amount, max_amount,
-                    currency_code, currency_symbol, currency_numeric_code, toJSONString(denominations),
-                    expiry, kyc_enabled, disable_cart, scheduling_enabled,
-                    add_card_to_wallet, emi_applicable, thumbnail_image, mobile_image,
-                    base_image, small_image, brand_logo, tnc_link, tnc_content,
-                    page_title, meta_title, meta_keywords, meta_description,
-                    toJSONString(productCategories), toJSONString(themes), toJSONString(discounts), toJSONString(corporate_discounts),
-                    toJSONString(related_products), toJSONString(redemption_rules), toJSONString(redemption_terms), cpg_type,
-                    cpg_code, issuer_name, payout_enabled, toJSONString(payout_payment_methods),
-                    toJSONString(payout_account_types), toJSONString(payout_transaction_types), max_beneficiaries,
-                    validation_amount, edit_beneficiary, convenience_charge,
-                    vpa_penny_drop_required, toJSONString(handling_charges), toJSONString(convenience_charges),
-                    toJSONString(travel_pass), toJSONString(order_modes), reload_card_number, custom_themes_available,
-                    store_locator_url, eta_message, status, toJSONString(sync_response)
-                ]
-            );
+                ) VALUES ${placeholders}
+                ON DUPLICATE KEY UPDATE
+                    woohoo_product_id = VALUES(woohoo_product_id), product_name = VALUES(product_name), brand_name = VALUES(brand_name), brand_code = VALUES(brand_code), slug = VALUES(slug),
+                    product_type = VALUES(product_type), card_behaviour = VALUES(card_behaviour), description = VALUES(description), short_description = VALUES(short_description),
+                    important_instructions = VALUES(important_instructions), price_type = VALUES(price_type), min_amount = VALUES(min_amount), max_amount = VALUES(max_amount),
+                    currency_code = VALUES(currency_code), currency_symbol = VALUES(currency_symbol), currency_numeric_code = VALUES(currency_numeric_code), denominations = VALUES(denominations),
+                    expiry = VALUES(expiry), kyc_enabled = VALUES(kyc_enabled), disable_cart = VALUES(disable_cart), scheduling_enabled = VALUES(scheduling_enabled),
+                    add_card_to_wallet = VALUES(add_card_to_wallet), emi_applicable = VALUES(emi_applicable), thumbnail_image = VALUES(thumbnail_image), mobile_image = VALUES(mobile_image),
+                    base_image = VALUES(base_image), small_image = VALUES(small_image), brand_logo = VALUES(brand_logo), tnc_link = VALUES(tnc_link), tnc_content = VALUES(tnc_content),
+                    page_title = VALUES(page_title), meta_title = VALUES(meta_title), meta_keywords = VALUES(meta_keywords), meta_description = VALUES(meta_description),
+                    categories = VALUES(categories), themes = VALUES(themes), discounts = VALUES(discounts), corporate_discounts = VALUES(corporate_discounts),
+                    related_products = VALUES(related_products), redemption_rules = VALUES(redemption_rules), redemption_terms = VALUES(redemption_terms), cpg_type = VALUES(cpg_type),
+                    cpg_code = VALUES(cpg_code), issuer_name = VALUES(issuer_name), payout_enabled = VALUES(payout_enabled), payout_payment_methods = VALUES(payout_payment_methods),
+                    payout_account_types = VALUES(payout_account_types), payout_transaction_types = VALUES(payout_transaction_types), max_beneficiaries = VALUES(max_beneficiaries),
+                    validation_amount = VALUES(validation_amount), edit_beneficiary = VALUES(edit_beneficiary), convenience_charge = VALUES(convenience_charge),
+                    vpa_penny_drop_required = VALUES(vpa_penny_drop_required), handling_charges = VALUES(handling_charges), convenience_charges = VALUES(convenience_charges),
+                    travel_pass = VALUES(travel_pass), order_modes = VALUES(order_modes), reload_card_number = VALUES(reload_card_number), custom_themes_available = VALUES(custom_themes_available),
+                    store_locator_url = VALUES(store_locator_url), eta_message = VALUES(eta_message), status = VALUES(status), sync_response = VALUES(sync_response)
+            `;
+
+            await connection.query(sql, values);
         }
-    }
+    });
 };
 
 /**

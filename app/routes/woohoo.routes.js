@@ -1,6 +1,13 @@
 import express from 'express';
 import * as woohooController from '../controller/woohoo/woohoo.controller.js';
 import authMiddleware, { authorizeRole } from '../middlewares/verifyMiddleware.js';
+import { validate } from '../middlewares/validate.middleware.js';
+import {
+    generateTokenSchema,
+    placeOrderSchema,
+    checkBalanceSchema,
+    resendCardsSchema
+} from '../validations/woohoo.validation.js';
 
 const router = express.Router();
 
@@ -18,7 +25,7 @@ router.post('/auth/generate-code', woohooController.generateAuthCode);
  * Step 2: Exchange Authorization Code for a Bearer Token
  * Body: { "authorizationCode": "..." }
  */
-router.post('/auth/generate-token', woohooController.generateBearerToken);
+router.post('/auth/generate-token', validate(generateTokenSchema), woohooController.generateBearerToken);
 
 // ─── CATALOG ──────────────────────────────────────────────────────────────────
 
@@ -63,7 +70,7 @@ router.get('/catalog/products/:sku', woohooController.getProduct);
  * Header: Authorization: Bearer <woohoo_bearer_token>
  * Body: { address, payments, refno, syncOnly, deliveryMode, products }
  */
-router.post('/orders', woohooController.placeOrder);
+router.post('/orders', validate(placeOrderSchema), woohooController.placeOrder);
 
 /**
  * GET /api/v1/woohoo/orders/:orderId/status
@@ -95,7 +102,7 @@ router.get('/orders/:orderId', woohooController.getOrderDetails);
  * Header: Authorization: Bearer <woohoo_bearer_token>
  * Body: { "cardNumber": "1122001540000247" }
  */
-router.post('/balance', woohooController.getCardBalance);
+router.post('/balance', validate(checkBalanceSchema), woohooController.getCardBalance);
 
 // ─── RESEND ───────────────────────────────────────────────────────────────────
 
@@ -105,7 +112,7 @@ router.post('/balance', woohooController.getCardBalance);
  * Header: Authorization: Bearer <woohoo_bearer_token>
  * Body: { "cards": [{ "id": 1366668, "name": "...", "telephone": "...", "email": "..." }] }
  */
-router.post('/orders/:orderId/resend', woohooController.resendCards);
+router.post('/orders/:orderId/resend', validate(resendCardsSchema), woohooController.resendCards);
 
 // Synced Woohoo products endpoints (restricted to admin/subadmin)
 router.get('/products', authMiddleware, authorizeRole([1, 2]), woohooController.getSyncedProductsList);

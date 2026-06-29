@@ -1,6 +1,5 @@
 import express from 'express';
 import * as ordersController from '../controller/orders/orders.controller.js';
-import * as orderController from '../controller/order.controller.js';
 import authMiddleware from '../middlewares/verifyMiddleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
 import { placeOrderSchema } from '../validations/order.validation.js';
@@ -32,9 +31,9 @@ router.get(
 // ─── NEW SCHEMA-ALIGNED ENDPOINTS ─────────────────────────────────────────────
 
 // Place a new gift card order (Wallet, UPI, or Both split payment)
-router.post('/gift-card', authMiddleware, orderController.placeGiftCardOrder);
+router.post('/gift-card', authMiddleware, ordersController.placeGiftCardOrder);
 
 // Retrieve detailed order history breakdown
-router.get('/:orderId', authMiddleware, orderController.getOrder);
+router.get('/:orderId', authMiddleware, ordersController.getOrder);
 
 export default router;

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import pool from '../../config/dbConfig.js';
+import pool, { runInTransaction } from '../../config/dbConfig.js';
 import { getWoohooToken } from './woohooAuth.service.js';
 import { getWoohooHeaders } from '../../helpers/woohoo.helper.js';
 import logger from '../../utils/logger.js';
@@ -51,34 +51,71 @@ export const getCategoriesFromDB = async () => {
     return buildWoohooTree(rows, null);
 };
 
-
-
 /**
- * Recursively saves categories and subcategories to the database
+ * Helper to recursively flatten category tree structures
  */
-export const saveCategoriesToDB = async (categories, mainCategoryId = null) => {
+const flattenCategories = (categories, parentId = null, list = []) => {
     for (const cat of categories) {
-        // 1. Save current category
-        await pool.query(
-            `INSERT INTO woohoo_categories 
-            (woohoo_category_id, parent_id, name, url_slug, description, image_url, thumbnail_url, color_code, offer_description) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) 
-            ON DUPLICATE KEY UPDATE 
-            parent_id=VALUES(parent_id), name=VALUES(name), url_slug=VALUES(url_slug), 
-            description=VALUES(description), image_url=VALUES(image_url), 
-            thumbnail_url=VALUES(thumbnail_url), color_code=VALUES(color_code), 
-            offer_description=VALUES(offer_description)`,
-            [
-                cat.id, mainCategoryId, cat.name, cat.url, cat.description, 
-                cat.images?.image, cat.images?.thumbnail, cat.colorCode, cat.offerDescription
-            ]
-        );
-
-        // 2. If there are subcategories, save them recursively
+        list.push({
+            woohoo_category_id: cat.id,
+            parent_id: parentId,
+            name: cat.name,
+            url_slug: cat.url,
+            description: cat.description,
+            image_url: cat.images?.image,
+            thumbnail_url: cat.images?.thumbnail,
+            color_code: cat.colorCode,
+            offer_description: cat.offerDescription
+        });
         if (cat.subcategories && cat.subcategories.length > 0) {
-            await saveCategoriesToDB(cat.subcategories, cat.id);
+            flattenCategories(cat.subcategories, cat.id, list);
         }
     }
+    return list;
+};
+
+/**
+ * Saves categories and subcategories to the database in bulk batches
+ */
+export const saveCategoriesToDB = async (categories) => {
+    const flatList = flattenCategories(categories, null, []);
+    if (flatList.length === 0) return;
+
+    await runInTransaction(async (connection) => {
+        const BATCH_SIZE = 500;
+        for (let i = 0; i < flatList.length; i += BATCH_SIZE) {
+            const batch = flatList.slice(i, i + BATCH_SIZE);
+            const placeholders = batch.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+            
+            const values = [];
+            for (const item of batch) {
+                values.push(
+                    item.woohoo_category_id,
+                    item.parent_id,
+                    item.name,
+                    item.url_slug,
+                    item.description,
+                    item.image_url,
+                    item.thumbnail_url,
+                    item.color_code,
+                    item.offer_description
+                );
+            }
+
+            const sql = `
+                INSERT INTO woohoo_categories 
+                (woohoo_category_id, parent_id, name, url_slug, description, image_url, thumbnail_url, color_code, offer_description) 
+                VALUES ${placeholders}
+                ON DUPLICATE KEY UPDATE 
+                parent_id=VALUES(parent_id), name=VALUES(name), url_slug=VALUES(url_slug), 
+                description=VALUES(description), image_url=VALUES(image_url), 
+                thumbnail_url=VALUES(thumbnail_url), color_code=VALUES(color_code), 
+                offer_description=VALUES(offer_description)
+            `;
+
+            await connection.query(sql, values);
+        }
+    });
 };
 
 

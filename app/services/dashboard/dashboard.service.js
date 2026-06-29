@@ -27,12 +27,7 @@ const getTrendingGiftCards = async () => {
     const [giftCards] = await pool.query(`
         SELECT 
             gc.id, gc.gift_card_name, gc.brand_name, gc.brand_logo,
-            COALESCE(
-                CAST(JSON_UNQUOTE(JSON_EXTRACT(gc.discounts, '$[0].value')) AS DECIMAL(5,2)),
-                CAST(JSON_UNQUOTE(JSON_EXTRACT(gc.discounts, '$[0].discount')) AS DECIMAL(5,2)),
-                CAST(JSON_UNQUOTE(JSON_EXTRACT(gc.discounts, '$[0].percentage')) AS DECIMAL(5,2)),
-                0.00
-            ) AS discount_percentage,
+            gc.discount_percentage,
             gc.total_views,
             gc.discounts
         FROM gift_cards gc
@@ -93,17 +88,11 @@ const getTopDiscountedGiftCards = async () => {
     const [giftCards] = await pool.query(`
         SELECT 
             gc.id, gc.gift_card_name, gc.brand_name, gc.brand_logo,
-            COALESCE(
-                CAST(JSON_UNQUOTE(JSON_EXTRACT(gc.discounts, '$[0].value')) AS DECIMAL(5,2)),
-                CAST(JSON_UNQUOTE(JSON_EXTRACT(gc.discounts, '$[0].discount')) AS DECIMAL(5,2)),
-                CAST(JSON_UNQUOTE(JSON_EXTRACT(gc.discounts, '$[0].percentage')) AS DECIMAL(5,2)),
-                0.00
-            ) AS discount_percentage,
+            gc.discount_percentage,
             gc.discounts
         FROM gift_cards gc
-        WHERE gc.status = 1
-        HAVING discount_percentage > 0
-        ORDER BY discount_percentage DESC, gc.id DESC
+        WHERE gc.status = 1 AND gc.discount_percentage > 0
+        ORDER BY gc.discount_percentage DESC, gc.id DESC
         LIMIT 10
     `);
 
