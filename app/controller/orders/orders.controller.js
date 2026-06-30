@@ -78,16 +78,7 @@ export const placeGiftCardOrder = async (req, res) => {
             is_self_purchase,
             recipient_name, recipient_email, recipient_mobile,
             gift_message
-        } = req.body;
-
-        // Basic payload validation
-        if (!giftcard_id || !sku || !price || !qty || !payment_type) {
-            return res.status(400).json({
-                success: false,
-                error: 'Missing required request parameters. Check giftcard_id, sku, price, qty, payment_type.',
-                code: 'INVALID_PARAMETERS'
-            });
-        }
+        } = req.validatedData || req.body;
 
         const response = await ordersService.placeGiftCardOrderFlow(userId, {
             giftcard_id,
@@ -134,7 +125,8 @@ export const getOrder = async (req, res) => {
             });
         }
 
-        const response = await ordersService.getOrderById(orderId);
+        const userId = req.user.id;
+        const response = await ordersService.getOrderById(userId, orderId);
         return res.status(200).json({
             success: true,
             result: response.data

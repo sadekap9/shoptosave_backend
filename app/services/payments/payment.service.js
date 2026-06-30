@@ -32,16 +32,16 @@ export const createPaymentTransaction = async (userId, orderId, amount, paymentM
         `INSERT INTO payment_transactions 
          (transaction_no, user_id, order_id, payment_method, payment_type, amount, gateway_transaction_id, status)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-            payTxnNo,
-            userId,
-            orderId || null,
-            paymentMethod,
-            paymentType,
-            parseFloat(amount),
-            gatewayTxnId,
-            PAYMENT_TRANSACTION_STATUS.SUCCESS
-        ]
+         [
+             payTxnNo,
+             userId,
+             orderId || null,
+             paymentMethod,
+             paymentType,
+             parseFloat(amount),
+             gatewayTxnId,
+             PAYMENT_TRANSACTION_STATUS.SUCCESS
+         ]
     );
 
     logger.info(`[Payment Service] Payment transaction created. TxnNo: ${payTxnNo}, Amount: ₹${amount}, Gateway: ${gatewayTxnId}`);
@@ -81,7 +81,7 @@ export const deductPayment = async (userId, amount, paymentType, orderId, paymen
             totalAmount,
             WALLET_TRANSACTION_SOURCE.GIFT_CARD_PURCHASE,
             orderId,
-            `Debit for order #${orderId}`,
+            orderId ? `Debit for order #${orderId}` : 'Debit for order',
             connection
         );
         walletDeducted = totalAmount;
@@ -109,7 +109,7 @@ export const deductPayment = async (userId, amount, paymentType, orderId, paymen
         const walletBalance = parseFloat(wallet.balance);
 
         walletDeducted = Math.min(walletBalance, totalAmount);
-        onlineDeducted = totalAmount - walletDeducted;
+        onlineDeducted = parseFloat((totalAmount - walletDeducted).toFixed(2));
 
         if (walletDeducted > 0) {
             const debitRes = await debitWallet(
@@ -117,7 +117,7 @@ export const deductPayment = async (userId, amount, paymentType, orderId, paymen
                 walletDeducted,
                 WALLET_TRANSACTION_SOURCE.GIFT_CARD_PURCHASE,
                 orderId,
-                `Debit for order #${orderId} (split payment)`,
+                orderId ? `Debit for order #${orderId} (split payment)` : 'Debit for order (split payment)',
                 connection
             );
             walletTransactionId = debitRes.transactionId;

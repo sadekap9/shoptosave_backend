@@ -57,17 +57,29 @@ export const getOrCreateWallet = async (userId, connection = null) => {
         return wallet;
     }
 
-    // Create a new wallet record if it doesn't exist
-    const [result] = await db.query(
-        `INSERT INTO user_wallet 
-         (user_id, balance, total_cashback_earned, total_cashback_used, status)
-         VALUES (?, 0.00, 0.00, 0.00, ?)`,
-        [userId, WALLET_STATUS.ACTIVE]
-    );
-    logger.info(`[Wallet System] Automatically created wallet for User ${userId}`);
+    try {
+        // Create a new wallet record if it doesn't exist
+        await db.query(
+            `INSERT INTO user_wallet 
+             (user_id, balance, total_cashback_earned, total_cashback_used, status)
+             VALUES (?, 0.00, 0.00, 0.00, ?)`,
+            [userId, WALLET_STATUS.ACTIVE]
+        );
+        logger.info(`[Wallet System] Automatically created wallet for User ${userId}`);
+    } catch (error) {
+        // Catch duplicate entry error (MySQL error code ER_DUP_ENTRY / 1062)
+        if (error.code === 'ER_DUP_ENTRY' || error.errno === 1062) {
+            logger.info(`[Wallet System] Duplicate wallet insertion caught for User ${userId}. Fetching existing wallet.`);
+        } else {
+            throw error;
+        }
+    }
 
-    const [[newWallet]] = await db.query('SELECT * FROM user_wallet WHERE id = ?', [result.insertId]);
-    return newWallet;
+    const [[existingWallet]] = await db.query('SELECT * FROM user_wallet WHERE user_id = ?', [userId]);
+    if (existingWallet && existingWallet.status !== WALLET_STATUS.ACTIVE) {
+        throw { message: 'Wallet is blocked', code: 'WALLET_BLOCKED', statusCode: 400 };
+    }
+    return existingWallet;
 };
 
 // ─── Wallet Top-up ─────────────────────────────────────────────────────────────
@@ -100,7 +112,7 @@ export const addMoney = async (userId, { amount, payment_method, gateway_transac
         }
 
         const currentBalance = parseFloat(lockedWallet.balance);
-        const newBalance = currentBalance + amountVal;
+        const newBalance = parseFloat((currentBalance + amountVal).toFixed(2));
 
         // 2. Generate PAY transaction number
         const payTxnNo = await generatePaymentTxnNo(connection);
@@ -304,7 +316,7 @@ export const creditWallet = async (userId, amount, source, orderId, remarks, con
     }
 
     const balanceBefore = parseFloat(lockedWallet.balance);
-    const balanceAfter = balanceBefore + amountVal;
+    const balanceAfter = parseFloat((balanceBefore + amountVal).toFixed(2));
 
     // Update user_wallet balance
     await connection.query(
@@ -376,7 +388,7 @@ export const debitWallet = async (userId, amount, source, orderId, remarks, conn
     }
 
     const balanceBefore = currentBalance;
-    const balanceAfter = currentBalance - amountVal;
+    const balanceAfter = parseFloat((currentBalance - amountVal).toFixed(2));
 
     // Update user_wallet balance
     await connection.query(

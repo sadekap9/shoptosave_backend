@@ -1,1 +1,1 @@
-// Deprecated or removed routes
+// Deprecated and unused. Please delete this file.

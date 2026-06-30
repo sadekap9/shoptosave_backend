@@ -1,7 +1,7 @@
 export const companyConfig = {
     name: "Shop2Save Private Limited",
     email: "billing@shop2save.com",
-    mobile: "+919876543210",
+    mobile: "9876543210",
     address1: "123, Wealth Street",
     address2: "Commercial Block",
     city: "Bangalore",

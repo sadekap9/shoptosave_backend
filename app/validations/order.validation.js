@@ -23,3 +23,30 @@ export const placeOrderSchema = Joi.object({
     }),
     gift_message: Joi.string().max(255).optional().allow('', null)
 });
+
+export const giftCardOrderSchema = Joi.object({
+    giftcard_id: Joi.alternatives().try(Joi.number().integer(), Joi.string()).required().messages({
+        'any.required': 'giftcard_id is required'
+    }),
+    sku: Joi.string().required().messages({
+        'any.required': 'sku is required'
+    }),
+    price: Joi.number().positive().required().messages({
+        'any.required': 'price is required',
+        'number.positive': 'price must be positive'
+    }),
+    qty: Joi.number().integer().min(1).required().messages({
+        'any.required': 'qty is required',
+        'number.min': 'qty must be at least 1'
+    }),
+    payment_type: Joi.alternatives().try(Joi.number().integer(), Joi.string()).required().messages({
+        'any.required': 'payment_type is required'
+    }),
+    payment_method: Joi.alternatives().try(Joi.number().integer(), Joi.string()).optional(),
+    is_self_purchase: Joi.alternatives().try(Joi.number().integer(), Joi.string()).optional(),
+    recipient_name: Joi.string().max(100).optional().allow('', null),
+    recipient_email: Joi.string().email().max(100).optional().allow('', null),
+    recipient_mobile: Joi.string().max(20).optional().allow('', null),
+    gift_message: Joi.string().max(255).optional().allow('', null)
+});
+

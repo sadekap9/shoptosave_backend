@@ -1,12 +1,12 @@
 import pool, { runInTransaction } from '../../config/dbConfig.js';
 import { getWoohooToken } from '../categories/woohooAuth.service.js';
-import { placeWoohooOrder } from '../woohoo/woohoo.service.js';
+import { placeWoohooOrder, getWoohooOrderByRefNo } from '../woohoo/woohoo.service.js';
 import { getOrCreateWallet, creditWallet } from '../wallets/wallets.service.js';
 import { companyConfig } from '../../config/companyConfig.js';
 import { buildWoohooPayload } from '../../helpers/woohoo.helper.js';
 import logger from '../../utils/logger.js';
 import { placeGiftCardOrder } from '../giftCards/giftCards.service.js';
-import { deductPayment } from '../payment.service.js';
+import { deductPayment } from '../payments/payment.service.js';
 import {
     WALLET_TRANSACTION_SOURCE,
     PAYMENT_METHOD,
@@ -175,7 +175,10 @@ export const placeOrderService = async (userId, orderData) => {
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0.00, ?)`,
             [
                 userId, giftCard.id, totalAmount, isSelfPurchase,
-                recipient_name, recipient_email, recipient_mobile, gift_message || null,
+                isSelfPurchase === 1 ? null : recipient_name,
+                isSelfPurchase === 1 ? null : recipient_email,
+                isSelfPurchase === 1 ? null : recipient_mobile,
+                isSelfPurchase === 1 ? null : (gift_message || null),
                 txnId, refno,
                 totalAmount,
                 GIFT_CARD_ORDER_PAYMENT_TYPE.WALLET_ONLY
@@ -323,10 +326,13 @@ export const getOrderHistoryService = async (userId) => {
 /**
  * Get Order Details with Payment Breakdown by ID
  */
-export const getOrderById = async (orderId) => {
+export const getOrderById = async (userId, orderId) => {
     const [[order]] = await pool.query('SELECT * FROM gift_card_orders WHERE id = ?', [orderId]);
     if (!order) {
         throw { message: 'Order not found', code: 'NOT_FOUND', statusCode: 404 };
+    }
+    if (order.user_id !== userId) {
+        throw { message: 'Order does not belong to this user', code: 'UNAUTHORIZED', statusCode: 403 };
     }
     return { success: true, data: order };
 };
@@ -406,87 +412,185 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
 
     const woohooRefNo = generateWoohooRefNo(userId);
 
-    // Step 1: Call Woohoo API FIRST (before deducting money)
-    const woohooResult = await placeGiftCardOrder({
-        sku,
-        price,
-        qty,
-        amount: totalAmount,
-        refno: woohooRefNo
-    });
-
-    if (!woohooResult.success) {
-        throw {
-            message: `Woohoo provider order failed: ${woohooResult.error}`,
-            code: 'WOOHOO_FAILED',
-            statusCode: 424
-        };
-    }
-
-    const woohooResponseData = woohooResult.data;
-    const cards = woohooResponseData.cards || [];
-    const mainCard = cards[0] || {};
-
-    // Step 2: Woohoo succeeded → Deduct payments and create order atomically
-    let finalOrder;
+    // Stage 1: Deduct payment and insert order as PENDING (status = 0)
+    let orderId;
+    let deductRes;
     try {
-        finalOrder = await runInTransaction(async (connection) => {
-            // Deduct payment based on payment type
-            const deductRes = await deductPayment(
+        const stage1Result = await runInTransaction(async (connection) => {
+            // Deduct payment based on payment type (orderId is not yet generated, pass null)
+            const deduct = await deductPayment(
                 userId,
                 totalAmount,
                 paymentTypeInt,
-                null, // orderId not known yet; will be updated
+                null,
                 paymentMethodInt,
                 connection
             );
 
-            // Insert gift_card_orders
+            // Insert gift_card_orders in PENDING (0) state
             const [orderResult] = await connection.query(
                 `INSERT INTO gift_card_orders 
                  (user_id, gift_card_id, amount, is_self_purchase, recipient_name, recipient_email, recipient_mobile, gift_message,
                   woohoo_reference_no, status, sku, qty, wallet_amount, online_amount, payment_type,
                   woohoo_order_id, gift_card_number, gift_card_pin, expiry_date, woohoo_response)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 2, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL)`,
                 [
                     userId,
                     giftcard_id,
                     totalAmount,
                     isSelf,
-                    finalRecipientName,
-                    finalRecipientEmail,
-                    finalRecipientMobile,
-                    gift_message || null,
+                    isSelf === 1 ? null : finalRecipientName,
+                    isSelf === 1 ? null : finalRecipientEmail,
+                    isSelf === 1 ? null : finalRecipientMobile,
+                    isSelf === 1 ? null : (gift_message || null),
                     woohooRefNo,
                     sku,
                     qty,
-                    deductRes.walletDeducted,
-                    deductRes.onlineDeducted,
-                    paymentTypeInt,
+                    deduct.walletDeducted,
+                    deduct.onlineDeducted,
+                    paymentTypeInt
+                ]
+            );
+            const insertedOrderId = orderResult.insertId;
+
+            // Update wallet_transactions with the generated order_id
+            if (deduct.walletTransactionId) {
+                await connection.query(
+                    'UPDATE wallet_transactions SET order_id = ?, remarks = ? WHERE id = ?',
+                    [
+                        insertedOrderId,
+                        paymentTypeInt === GIFT_CARD_ORDER_PAYMENT_TYPE.SPLIT_PAYMENT
+                            ? `Debit for order #${insertedOrderId} (split payment)`
+                            : `Debit for order #${insertedOrderId}`,
+                        deduct.walletTransactionId
+                    ]
+                );
+            }
+
+            // Update payment_transactions with the generated order_id
+            if (deduct.paymentTxnNo) {
+                await connection.query(
+                    'UPDATE payment_transactions SET order_id = ? WHERE transaction_no = ?',
+                    [insertedOrderId, deduct.paymentTxnNo]
+                );
+            }
+
+            return { orderId: insertedOrderId, deduct };
+        });
+
+        orderId = stage1Result.orderId;
+        deductRes = stage1Result.deduct;
+        logger.info(`[Order Flow] Stage 1 complete. Created pending order #${orderId}.`);
+    } catch (stage1Err) {
+        logger.error(`[Order Flow] Stage 1 payment/pending order creation failed: ${stage1Err.message}`);
+        throw {
+            message: stage1Err.message || 'Payment/Order initialization failed',
+            code: stage1Err.code || 'PAYMENT_FAILED',
+            statusCode: stage1Err.statusCode || 400
+        };
+    }
+
+    // Stage 2: Call external Woohoo API
+    let woohooResult;
+    try {
+        woohooResult = await placeGiftCardOrder({
+            sku,
+            price,
+            qty,
+            amount: totalAmount,
+            refno: woohooRefNo
+        });
+    } catch (apiErr) {
+        // Axios error or network timeout
+        logger.error(`[Order Flow] Woohoo API call failed or timed out: ${apiErr.message}`);
+        // To prevent money loss, if we don't know if the order succeeded, we leave the order in PENDING status.
+        // The cron job will poll the actual status from Woohoo later.
+        throw {
+            message: `Order placement timed out or provider is unreachable. Your order is pending resolution. Reference: ${woohooRefNo}`,
+            code: 'PROVIDER_TIMEOUT',
+            statusCode: 504
+        };
+    }
+
+    // Stage 3: Resolve order based on Woohoo response
+    if (!woohooResult.success) {
+        // Clear rejection -> refund wallet portion and fail order
+        logger.warn(`[Order Flow] Woohoo rejected the order: ${woohooResult.error}. Refunding...`);
+        try {
+            await runInTransaction(async (connection) => {
+                await connection.query(
+                    'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
+                    [`Woohoo error: ${woohooResult.error}`, orderId]
+                );
+                if (deductRes.walletDeducted > 0) {
+                    await creditWallet(
+                        userId,
+                        deductRes.walletDeducted,
+                        WALLET_TRANSACTION_SOURCE.REFUND,
+                        orderId,
+                        `Refund for failed order #${orderId}`,
+                        connection
+                    );
+                }
+            });
+        } catch (refundErr) {
+            logger.error(`[Order Flow] Refund failed for order #${orderId}: ${refundErr.message}`);
+        }
+
+        throw {
+            message: `Woohoo provider order failed: ${woohooResult.error}. Wallet portion refunded if applicable.`,
+            code: 'WOOHOO_FAILED',
+            statusCode: 424
+        };
+    }
+
+    // Woohoo order was successful! Update order to COMPLETE (status = 2)
+    const woohooResponseData = woohooResult.data;
+    const statusStr = woohooResponseData.status?.toLowerCase();
+
+    // Check if Woohoo status is actually SUCCESS or COMPLETE. 
+    // If it's PROCESSING or PENDING (async order), do NOT write null card details, leave order in processing/pending.
+    if (statusStr === 'processing' || statusStr === 'pending' || !woohooResponseData.cards || woohooResponseData.cards.length === 0) {
+        logger.info(`[Order Flow] Woohoo order #${orderId} is processing asynchronously on provider side.`);
+        await pool.query(
+            'UPDATE gift_card_orders SET status = 1, woohoo_order_id = ?, woohoo_response = ? WHERE id = ?',
+            [woohooResponseData.orderId || null, JSON.stringify(woohooResponseData), orderId]
+        );
+        return {
+            success: true,
+            message: 'Order is processing asynchronously',
+            data: {
+                orderId,
+                woohooOrderId: woohooResponseData.orderId,
+                status: 'PROCESSING'
+            }
+        };
+    }
+
+    // Direct success with cards available!
+    const cards = woohooResponseData.cards || [];
+    const mainCard = cards[0] || {};
+
+    try {
+        const finalOrder = await runInTransaction(async (connection) => {
+            await connection.query(
+                `UPDATE gift_card_orders 
+                 SET status = 2, 
+                     woohoo_order_id = ?, 
+                     gift_card_number = ?, 
+                     gift_card_pin = ?, 
+                     expiry_date = ?,
+                     woohoo_response = ?
+                 WHERE id = ?`,
+                [
                     woohooResponseData.orderId || null,
                     mainCard.cardNumber || null,
                     mainCard.pin || null,
                     mainCard.validity || null,
-                    JSON.stringify(woohooResponseData)
+                    JSON.stringify(woohooResponseData),
+                    orderId
                 ]
             );
-            const orderId = orderResult.insertId;
-
-            // Update wallet_transactions with order_id (if wallet was used)
-            if (deductRes.walletTransactionId) {
-                await connection.query(
-                    'UPDATE wallet_transactions SET order_id = ? WHERE id = ?',
-                    [orderId, deductRes.walletTransactionId]
-                );
-            }
-
-            // Update payment_transactions with order_id (if online payment was used)
-            if (deductRes.paymentTxnNo) {
-                await connection.query(
-                    'UPDATE payment_transactions SET order_id = ? WHERE transaction_no = ?',
-                    [orderId, deductRes.paymentTxnNo]
-                );
-            }
 
             // Credit cashback if applicable
             const cashbackPct = parseFloat(giftCard.cashback_percentage) || 0;
@@ -494,12 +598,12 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
                 await creditCashback(userId, orderId, totalAmount, cashbackPct, connection);
             }
 
-            // Fetch final order
-            const [[createdOrder]] = await connection.query(
+            // Fetch updated order row
+            const [[orderRow]] = await connection.query(
                 'SELECT * FROM gift_card_orders WHERE id = ?',
                 [orderId]
             );
-            return createdOrder;
+            return orderRow;
         });
 
         logger.info(`[Order Flow] Order #${finalOrder.id} completed successfully`);
@@ -508,13 +612,14 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
             message: 'Order completed successfully',
             data: finalOrder
         };
-
-    } catch (paymentError) {
-        logger.error(`[Order Flow] Payment processing failed after Woohoo API success: ${paymentError.message}`);
+    } catch (finalErr) {
+        logger.error(`[Order Flow] Failed to save completed order details: ${finalErr.message}`);
+        // Even if local DB failed to write the cards, DO NOT refund the wallet automatically since the cards are active!
+        // Throw an error so the support/system can resolve it.
         throw {
-            message: `Payment failed: ${paymentError.message}`,
-            code: paymentError.code || 'PAYMENT_FAILED',
-            statusCode: paymentError.statusCode || 400
+            message: `Order completed at provider but failed to save details locally. Please contact support. Ref: ${woohooRefNo}`,
+            code: 'LOCAL_SAVE_FAILED',
+            statusCode: 500
         };
     }
 };
@@ -620,4 +725,119 @@ export const refundOrderToWalletService = async (userId, orderId) => {
             transaction_no: creditRes.transactionNo
         };
     });
+};
+
+/**
+ * Cron task: Resolve all orders currently stuck in PENDING (status = 0) state
+ */
+export const resolvePendingOrdersService = async () => {
+    // 1. Fetch all orders that have been stuck in PENDING (status = 0) or PROCESSING (status = 1) for more than 2 minutes
+    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
+    const [pendingOrders] = await pool.query(
+        `SELECT * FROM gift_card_orders 
+         WHERE (status = 0 OR status = 1) AND created_at <= ?`,
+        [twoMinutesAgo]
+    );
+
+    if (pendingOrders.length === 0) {
+        return;
+    }
+
+    logger.info(`[Cron Resolver] Found ${pendingOrders.length} pending/processing orders to resolve.`);
+    const token = await getWoohooToken();
+
+    for (const order of pendingOrders) {
+        try {
+            logger.info(`[Cron Resolver] Checking status of Order #${order.id} (Ref: ${order.woohoo_reference_no})`);
+            const woohooRes = await getWoohooOrderByRefNo(token, order.woohoo_reference_no);
+
+            // If the order has status 'COMPLETE' or 'SUCCESS'
+            const statusStr = woohooRes.status?.toLowerCase();
+            const cards = woohooRes.cards || [];
+            
+            if ((statusStr === 'complete' || statusStr === 'success') && cards.length > 0) {
+                const mainCard = cards[0];
+                await runInTransaction(async (connection) => {
+                    await connection.query(
+                        `UPDATE gift_card_orders 
+                         SET status = 2, 
+                             woohoo_order_id = ?, 
+                             gift_card_number = ?, 
+                             gift_card_pin = ?, 
+                             expiry_date = ?,
+                             woohoo_response = ?
+                         WHERE id = ?`,
+                        [
+                            woohooRes.orderId || null,
+                            mainCard.cardNumber || null,
+                            mainCard.pin || null,
+                            mainCard.validity || null,
+                            JSON.stringify(woohooRes),
+                            order.id
+                        ]
+                    );
+
+                    // Fetch the gift card details for cashback check
+                    const [[giftCard]] = await connection.query('SELECT cashback_percentage FROM gift_cards WHERE id = ?', [order.gift_card_id]);
+                    const cashbackPct = parseFloat(giftCard?.cashback_percentage) || 0;
+                    if (cashbackPct > 0) {
+                        await creditCashback(order.user_id, order.id, order.amount, cashbackPct, connection);
+                    }
+                });
+                logger.info(`[Cron Resolver] Resolved Order #${order.id} as COMPLETE.`);
+            } else if (statusStr === 'failed' || statusStr === 'cancelled') {
+                // Clear rejection or cancelled by provider -> fail order and refund wallet
+                await runInTransaction(async (connection) => {
+                    await connection.query(
+                        'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
+                        [`Woohoo error: ${woohooRes.message || 'Cancelled by provider'}`, order.id]
+                    );
+                    const walletAmount = parseFloat(order.wallet_amount) || 0;
+                    if (walletAmount > 0) {
+                        await creditWallet(
+                            order.user_id,
+                            walletAmount,
+                            WALLET_TRANSACTION_SOURCE.REFUND,
+                            order.id,
+                            `Refund for failed order #${order.id}`,
+                            connection
+                        );
+                    }
+                });
+                logger.info(`[Cron Resolver] Resolved Order #${order.id} as FAILED. Wallet portion refunded.`);
+            } else {
+                logger.info(`[Cron Resolver] Order #${order.id} is still in status '${statusStr}' on Woohoo.`);
+            }
+        } catch (err) {
+            // If Woohoo returns 404/not found, it means the order was never actually created at the provider!
+            // Thus, we can safely mark it as failed and refund the wallet!
+            if (err.response?.status === 404) {
+                logger.warn(`[Cron Resolver] Order #${order.id} not found at Woohoo. Refunding user...`);
+                try {
+                    await runInTransaction(async (connection) => {
+                        await connection.query(
+                            'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
+                            ['Order not found at provider', order.id]
+                        );
+                        const walletAmount = parseFloat(order.wallet_amount) || 0;
+                        if (walletAmount > 0) {
+                            await creditWallet(
+                                order.user_id,
+                                walletAmount,
+                                WALLET_TRANSACTION_SOURCE.REFUND,
+                                order.id,
+                                `Refund for failed order #${order.id}`,
+                                connection
+                            );
+                        }
+                    });
+                    logger.info(`[Cron Resolver] Order #${order.id} resolved as FAILED (not found).`);
+                } catch (refundErr) {
+                    logger.error(`[Cron Resolver] Failed to refund not-found order #${order.id}: ${refundErr.message}`);
+                }
+            } else {
+                logger.error(`[Cron Resolver] Error checking Order #${order.id}: ${err.message}`);
+            }
+        }
+    }
 };
