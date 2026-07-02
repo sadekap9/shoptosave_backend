@@ -1,7 +1,6 @@
 import cron from 'node-cron';
 import { syncCategoriesWithWoohoo, syncProductsWithWoohoo } from '../services/categories/categories.service.js';
 import { refreshWoohooToken } from '../services/categories/woohooAuth.service.js';
-import { resolvePendingOrdersService } from '../services/orders/orders.service.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -33,27 +32,15 @@ export const initCronJobs = () => {
         }
     });
 
-    // 3. Force-refresh Woohoo Bearer Token every 6 days (before the 7-day expiration)
-    // Schedule: '0 0 */6 * *'
-    cron.schedule('0 0 */6 * *', async () => {
+    // 3. Force-refresh Woohoo Bearer Token every hour
+    // Schedule: '0 * * * *'
+    cron.schedule('0 * * * *', async () => {
         logger.info('Starting Scheduled Woohoo Token Refresh');
         try {
             await refreshWoohooToken();
             logger.info('Scheduled Woohoo Token Refresh Completed Successfully');
         } catch (error) {
             logger.error('Scheduled Woohoo Token Refresh Failed', { error: error.message });
-        }
-    });
-
-    // 4. Resolve pending orders stuck due to timeouts
-    // Schedule: '*/5 * * * *' (Every 5 minutes)
-    cron.schedule('*/5 * * * *', async () => {
-        logger.info('Starting Scheduled Pending Order Resolution');
-        try {
-            await resolvePendingOrdersService();
-            logger.info('Scheduled Pending Order Resolution Completed Successfully');
-        } catch (error) {
-            logger.error('Scheduled Pending Order Resolution Failed', { error: error.message });
         }
     });
 
