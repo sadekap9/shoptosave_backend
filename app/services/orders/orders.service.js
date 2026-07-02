@@ -12,6 +12,8 @@ import {
     PAYMENT_METHOD,
     GIFT_CARD_ORDER_PAYMENT_TYPE
 } from '../../config/constant/constant.js';
+import { validateAndCalculateOffer, validateOfferForOrder } from '../offers/offers.service.js';
+import { generateWalletTxnNo } from '../wallets/wallets.service.js';
 
 
 /**
@@ -356,7 +358,9 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
         recipient_name,
         recipient_email,
         recipient_mobile,
-        gift_message
+        gift_message,
+        promo_code,
+        offer_id
     } = payload;
 
     const totalAmount = parseFloat(price) * parseInt(qty);
@@ -385,12 +389,41 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
         if ([1, 2, 3].includes(pm)) paymentMethodInt = pm;
     }
 
-    // Pre-flight: check wallet balance for Wallet Only
+    // Fetch gift card details first
+    const [[giftCard]] = await pool.query('SELECT * FROM gift_cards WHERE id = ?', [giftcard_id]);
+    if (!giftCard) {
+        throw { message: 'Gift card not found', code: 'NOT_FOUND', statusCode: 404 };
+    }
+
+    let appliedOfferId = null;
+    let discountAmount = 0.00;
+    let cashbackAmount = 0.00;
+    let payableAmount = totalAmount;
+
+    // Validate active offers and calculate final payable amount if selected
+    if (offer_id || promo_code) {
+        const offerResult = await validateOfferForOrder(
+            userId,
+            giftcard_id,
+            giftCard.store_id,
+            totalAmount,
+            offer_id || null,
+            promo_code || null,
+            pool
+        );
+
+        appliedOfferId = offerResult.offerId;
+        discountAmount = offerResult.discountAmount;
+        cashbackAmount = offerResult.cashbackAmount;
+        payableAmount = offerResult.payableAmount;
+    }
+
+    // Pre-flight: check wallet balance for Wallet Only (using payableAmount)
     if (paymentTypeInt === GIFT_CARD_ORDER_PAYMENT_TYPE.WALLET_ONLY) {
         const wallet = await getOrCreateWallet(userId);
-        if (parseFloat(wallet.balance) < totalAmount) {
+        if (parseFloat(wallet.balance) < payableAmount) {
             throw {
-                message: `Insufficient wallet balance. Required: ₹${totalAmount.toFixed(2)}, Available: ₹${parseFloat(wallet.balance).toFixed(2)}`,
+                message: `Insufficient wallet balance. Required: ₹${payableAmount.toFixed(2)}, Available: ₹${parseFloat(wallet.balance).toFixed(2)}`,
                 code: 'INSUFFICIENT_BALANCE',
                 statusCode: 400
             };
@@ -404,12 +437,6 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
     const finalRecipientMobile = recipient_mobile || user?.phone || '+918884520003';
     const isSelf = is_self_purchase !== undefined ? parseInt(is_self_purchase) : ((user && user.phone === finalRecipientMobile) ? 1 : 0);
 
-    // Fetch gift card for cashback_percentage
-    const [[giftCard]] = await pool.query('SELECT * FROM gift_cards WHERE id = ?', [giftcard_id]);
-    if (!giftCard) {
-        throw { message: 'Gift card not found', code: 'NOT_FOUND', statusCode: 404 };
-    }
-
     const woohooRefNo = generateWoohooRefNo(userId);
 
     // Stage 1: Deduct payment and insert order as PENDING (status = 0)
@@ -420,7 +447,7 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
             // Deduct payment based on payment type (orderId is not yet generated, pass null)
             const deduct = await deductPayment(
                 userId,
-                totalAmount,
+                payableAmount,
                 paymentTypeInt,
                 null,
                 paymentMethodInt,
@@ -432,8 +459,9 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
                 `INSERT INTO gift_card_orders 
                  (user_id, gift_card_id, amount, is_self_purchase, recipient_name, recipient_email, recipient_mobile, gift_message,
                   woohoo_reference_no, status, sku, qty, wallet_amount, online_amount, payment_type,
-                  woohoo_order_id, gift_card_number, gift_card_pin, expiry_date, woohoo_response)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL)`,
+                  woohoo_order_id, gift_card_number, gift_card_pin, expiry_date, woohoo_response,
+                  offer_id, discount_amount, cashback_amount, payable_amount)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?)`,
                 [
                     userId,
                     giftcard_id,
@@ -448,10 +476,30 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
                     qty,
                     deduct.walletDeducted,
                     deduct.onlineDeducted,
-                    paymentTypeInt
+                    paymentTypeInt,
+                    appliedOfferId,
+                    discountAmount,
+                    cashbackAmount,
+                    payableAmount
                 ]
             );
             const insertedOrderId = orderResult.insertId;
+
+            // ─── Record Offer Redemption inside database transaction ───────────
+            if (appliedOfferId) {
+                await connection.query(
+                    `INSERT INTO offer_usage 
+                     (offer_id, user_id, order_id, wallet_transaction_id, discount_amount, cashback_amount, status)
+                     VALUES (?, ?, ?, NULL, ?, ?, 1)`,
+                    [
+                        appliedOfferId,
+                        userId,
+                        insertedOrderId,
+                        discountAmount,
+                        cashbackAmount
+                    ]
+                );
+            }
 
             // Update wallet_transactions with the generated order_id
             if (deduct.walletTransactionId) {
@@ -522,6 +570,13 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
                     'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
                     [`Woohoo error: ${woohooResult.error}`, orderId]
                 );
+                
+                // Mark offer usage as failed
+                await connection.query(
+                    'UPDATE offer_usage SET status = 2 WHERE order_id = ?',
+                    [orderId]
+                );
+
                 if (deductRes.walletDeducted > 0) {
                     await creditWallet(
                         userId,
@@ -592,17 +647,38 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
                 ]
             );
 
-            // Credit cashback if applicable
-            const cashbackPct = parseFloat(giftCard.cashback_percentage) || 0;
-            if (cashbackPct > 0) {
-                await creditCashback(userId, orderId, totalAmount, cashbackPct, connection);
-            }
-
             // Fetch updated order row
             const [[orderRow]] = await connection.query(
                 'SELECT * FROM gift_card_orders WHERE id = ?',
                 [orderId]
             );
+
+            // Credit cashback if cashback_amount > 0
+            if (orderRow && parseFloat(orderRow.cashback_amount) > 0) {
+                const creditRes = await creditWallet(
+                    userId,
+                    parseFloat(orderRow.cashback_amount),
+                    WALLET_TRANSACTION_SOURCE.CASHBACK,
+                    orderId,
+                    `Cashback reward for order #${orderId}`,
+                    connection
+                );
+
+                // Update total_cashback_earned in user_wallet
+                await connection.query(
+                    'UPDATE user_wallet SET total_cashback_earned = total_cashback_earned + ? WHERE user_id = ?',
+                    [parseFloat(orderRow.cashback_amount), userId]
+                );
+
+                // Link wallet_transaction_id in offer_usage
+                if (creditRes && creditRes.transactionId) {
+                    await connection.query(
+                        'UPDATE offer_usage SET wallet_transaction_id = ? WHERE order_id = ? AND offer_id = ?',
+                        [creditRes.transactionId, orderId, orderRow.offer_id]
+                    );
+                }
+            }
+
             return orderRow;
         });
 
@@ -777,11 +853,30 @@ export const resolvePendingOrdersService = async () => {
                         ]
                     );
 
-                    // Fetch the gift card details for cashback check
-                    const [[giftCard]] = await connection.query('SELECT cashback_percentage FROM gift_cards WHERE id = ?', [order.gift_card_id]);
-                    const cashbackPct = parseFloat(giftCard?.cashback_percentage) || 0;
-                    if (cashbackPct > 0) {
-                        await creditCashback(order.user_id, order.id, order.amount, cashbackPct, connection);
+                    // Credit cashback if cashback_amount > 0
+                    if (order && parseFloat(order.cashback_amount) > 0) {
+                        const creditRes = await creditWallet(
+                            order.user_id,
+                            parseFloat(order.cashback_amount),
+                            WALLET_TRANSACTION_SOURCE.CASHBACK,
+                            order.id,
+                            `Cashback reward for order #${order.id}`,
+                            connection
+                        );
+
+                        // Update total_cashback_earned in user_wallet
+                        await connection.query(
+                            'UPDATE user_wallet SET total_cashback_earned = total_cashback_earned + ? WHERE user_id = ?',
+                            [parseFloat(order.cashback_amount), order.user_id]
+                        );
+
+                        // Link wallet_transaction_id in offer_usage
+                        if (creditRes && creditRes.transactionId) {
+                            await connection.query(
+                                'UPDATE offer_usage SET wallet_transaction_id = ? WHERE order_id = ? AND offer_id = ?',
+                                [creditRes.transactionId, order.id, order.offer_id]
+                            );
+                        }
                     }
                 });
                 logger.info(`[Cron Resolver] Resolved Order #${order.id} as COMPLETE.`);
@@ -792,6 +887,13 @@ export const resolvePendingOrdersService = async () => {
                         'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
                         [`Woohoo error: ${woohooRes.message || 'Cancelled by provider'}`, order.id]
                     );
+
+                    // Mark offer usage as failed
+                    await connection.query(
+                        'UPDATE offer_usage SET status = 2 WHERE order_id = ?',
+                        [order.id]
+                    );
+
                     const walletAmount = parseFloat(order.wallet_amount) || 0;
                     if (walletAmount > 0) {
                         await creditWallet(
@@ -819,6 +921,13 @@ export const resolvePendingOrdersService = async () => {
                             'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
                             ['Order not found at provider', order.id]
                         );
+
+                        // Mark offer usage as failed
+                        await connection.query(
+                            'UPDATE offer_usage SET status = 2 WHERE order_id = ?',
+                            [order.id]
+                        );
+
                         const walletAmount = parseFloat(order.wallet_amount) || 0;
                         if (walletAmount > 0) {
                             await creditWallet(

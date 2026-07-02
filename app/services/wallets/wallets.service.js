@@ -390,10 +390,10 @@ export const debitWallet = async (userId, amount, source, orderId, remarks, conn
     const balanceBefore = currentBalance;
     const balanceAfter = parseFloat((currentBalance - amountVal).toFixed(2));
 
-    // Update user_wallet balance
+    // Update user_wallet balance and increment total_cashback_used
     await connection.query(
-        'UPDATE user_wallet SET balance = balance - ? WHERE id = ?',
-        [amountVal, wallet.id]
+        'UPDATE user_wallet SET balance = balance - ?, total_cashback_used = total_cashback_used + ? WHERE id = ?',
+        [amountVal, amountVal, wallet.id]
     );
 
     // Generate WT transaction number and log transaction

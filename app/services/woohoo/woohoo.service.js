@@ -20,7 +20,8 @@ export const generateAuthorizationCode = async () => {
 
     logger.info(`[Woohoo API Call] generateAuthorizationCode called on ${AUTH_URL}`);
 
-    const response = await axios.post(AUTH_URL, payload, { timeout: 10000 });
+    const headers = getWoohooHeaders('POST', AUTH_URL, payload);
+    const response = await axios.post(AUTH_URL, payload, { headers, timeout: 10000 });
     return response.data;
 };
 
@@ -39,8 +40,6 @@ export const generateBearerToken = async (authorizationCode) => {
     const response = await axios.post(TOKEN_URL, payload, { timeout: 10000 });
     return response.data;
 };
-
-// ─── CATALOG ──────────────────────────────────────────────────────────────────
 
 /**
  * Get all categories from Woohoo
@@ -71,8 +70,6 @@ export const getWoohooProduct = async (bearerToken, sku) => {
     const response = await axios.get(url, { headers, timeout: 10000 });
     return response.data;
 };
-
-// ─── ORDERS ───────────────────────────────────────────────────────────────────
 
 /**
  * Place an order on Woohoo

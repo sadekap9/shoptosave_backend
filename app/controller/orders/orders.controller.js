@@ -77,7 +77,7 @@ export const placeGiftCardOrder = async (req, res) => {
             payment_type, payment_method,
             is_self_purchase,
             recipient_name, recipient_email, recipient_mobile,
-            gift_message
+            gift_message, offer_id, promo_code
         } = req.validatedData || req.body;
 
         const response = await ordersService.placeGiftCardOrderFlow(userId, {
@@ -91,7 +91,9 @@ export const placeGiftCardOrder = async (req, res) => {
             recipient_name,
             recipient_email,
             recipient_mobile,
-            gift_message
+            gift_message,
+            offer_id,
+            promo_code
         });
 
         return res.status(200).json({

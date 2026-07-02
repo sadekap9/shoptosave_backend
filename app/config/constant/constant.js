@@ -119,4 +119,24 @@ export const IS_SELF_PURCHASE = Object.freeze({
     NO: 0
 });
 
+export const OFFER_TYPE = Object.freeze({
+    INSTANT_DISCOUNT: 1,
+    CASHBACK: 2,
+    PROMO_CODE: 3
+});
 
+export const VALUE_TYPE = Object.freeze({
+    FLAT: 1,
+    PERCENTAGE: 2
+});
+
+export const OFFER_STATUS = Object.freeze({
+    ACTIVE: 1,
+    INACTIVE: 0
+});
+
+export const OFFER_USAGE_STATUS = Object.freeze({
+    SUCCESS: 1,
+    FAILED: 2,
+    REVERSED: 3
+});

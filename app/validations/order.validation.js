@@ -47,6 +47,8 @@ export const giftCardOrderSchema = Joi.object({
     recipient_name: Joi.string().max(100).optional().allow('', null),
     recipient_email: Joi.string().email().max(100).optional().allow('', null),
     recipient_mobile: Joi.string().max(20).optional().allow('', null),
-    gift_message: Joi.string().max(255).optional().allow('', null)
+    gift_message: Joi.string().max(255).optional().allow('', null),
+    promo_code: Joi.string().trim().uppercase().max(50).optional().allow('', null),
+    offer_id: Joi.number().integer().positive().optional().allow(null)
 });
 

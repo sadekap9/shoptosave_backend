@@ -196,7 +196,7 @@ export const verifyOTPService = async (data, meta) => {
         const accessToken = jwt.sign(
             { id: user.id, phone: user.phone, role: user.role, email: user.email || '' },
             process.env.JWT_SECRET,
-            { expiresIn: '15m' } // 15 mins short-lived token
+            { expiresIn: '7d' }
         );
 
         const refreshToken = jwt.sign(
@@ -332,7 +332,7 @@ export const refreshTokenService = async (refreshToken) => {
         const newAccessToken = jwt.sign(
             { id: decoded.id, phone: decoded.phone, role: session.role, email: session.email || '' },
             process.env.JWT_SECRET,
-            { expiresIn: '15m' }
+            { expiresIn: '7d' }
         );
 
         // Update session table with new access token
@@ -517,7 +517,7 @@ export const adminLoginService = async (data, meta) => {
         const accessToken = jwt.sign(
             { id: user.id, phone: user.phone, role: user.role, email: user.email },
             process.env.JWT_SECRET,
-            { expiresIn: '15m' }
+            { expiresIn: '7d' }
         );
 
         const refreshToken = jwt.sign(
