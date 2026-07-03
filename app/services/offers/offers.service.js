@@ -266,37 +266,53 @@ export const getOfferUsageHistoryService = async (filters = {}) => {
         const limitVal = parseInt(limit);
         const offset = (pageVal - 1) * limitVal;
 
-        let countSql = 'SELECT COUNT(*) AS total FROM offer_usage WHERE 1=1';
+        let countSql = 'SELECT COUNT(*) AS total FROM gift_card_orders WHERE offer_id IS NOT NULL';
         let querySql = `
-            SELECT ou.*, o.offer_name, o.offer_type, u.name AS user_name, u.phone AS user_phone 
-            FROM offer_usage ou
-            JOIN offers o ON ou.offer_id = o.id
-            JOIN user_master u ON ou.user_id = u.id
-            WHERE 1=1
+            SELECT 
+                gco.id AS order_id, 
+                gco.offer_id, 
+                gco.user_id, 
+                gco.discount_amount, 
+                gco.cashback_amount, 
+                gco.created_at,
+                CASE WHEN gco.status = 4 THEN 2 ELSE 1 END AS status,
+                o.offer_name, 
+                o.offer_type, 
+                u.name AS user_name, 
+                u.phone AS user_phone 
+            FROM gift_card_orders gco
+            JOIN offers o ON gco.offer_id = o.id
+            JOIN user_master u ON gco.user_id = u.id
+            WHERE gco.offer_id IS NOT NULL
         `;
         const params = [];
 
         if (offer_id) {
             countSql += ' AND offer_id = ?';
-            querySql += ' AND ou.offer_id = ?';
+            querySql += ' AND gco.offer_id = ?';
             params.push(parseInt(offer_id));
         }
 
         if (user_id) {
             countSql += ' AND user_id = ?';
-            querySql += ' AND ou.user_id = ?';
+            querySql += ' AND gco.user_id = ?';
             params.push(parseInt(user_id));
         }
 
         if (status) {
-            countSql += ' AND ou.status = ?';
-            querySql += ' AND ou.status = ?';
-            params.push(parseInt(status));
+            const statusVal = parseInt(status);
+            if (statusVal === 1) {
+                countSql += ' AND status != 4';
+                querySql += ' AND gco.status != 4';
+            } else if (statusVal === 2) {
+                countSql += ' AND status = 4';
+                querySql += ' AND gco.status = 4';
+            }
         }
 
         const [[{ total }]] = await pool.query(countSql, params);
 
-        querySql += ' ORDER BY ou.id DESC LIMIT ? OFFSET ?';
+        querySql += ' ORDER BY gco.id DESC LIMIT ? OFFSET ?';
         const queryParams = [...params, limitVal, offset];
 
         const [history] = await pool.query(querySql, queryParams);
@@ -356,8 +372,8 @@ export const validateAndCalculateOffer = async (userId, giftCardId, storeId, ord
     // Fetch total successful usage counts for all offers in one bulk query
     const [globalUsages] = await db.query(
         `SELECT offer_id, COUNT(*) AS count 
-         FROM offer_usage 
-         WHERE offer_id IN (?) AND status = ${OFFER_USAGE_STATUS.SUCCESS}
+         FROM gift_card_orders 
+         WHERE offer_id IN (?) AND status != 4
          GROUP BY offer_id`,
         [offerIds]
     );
@@ -370,8 +386,8 @@ export const validateAndCalculateOffer = async (userId, giftCardId, storeId, ord
     // Fetch user-specific successful usage counts for all offers in one bulk query
     const [userUsages] = await db.query(
         `SELECT offer_id, COUNT(*) AS count 
-         FROM offer_usage 
-         WHERE offer_id IN (?) AND user_id = ? AND status = ${OFFER_USAGE_STATUS.SUCCESS}
+         FROM gift_card_orders 
+         WHERE offer_id IN (?) AND user_id = ? AND status != 4
          GROUP BY offer_id`,
         [offerIds, userId]
     );
@@ -535,7 +551,7 @@ export const validateOfferForOrder = async (userId, giftCardId, storeId, orderAm
     // Check global usage limit
     if (offer.total_usage_limit !== null) {
         const [[usageCount]] = await db.query(
-            `SELECT COUNT(*) AS count FROM offer_usage WHERE offer_id = ? AND status = 1`,
+            `SELECT COUNT(*) AS count FROM gift_card_orders WHERE offer_id = ? AND status != 4`,
             [offer.id]
         );
         if (usageCount.count >= offer.total_usage_limit) {
@@ -545,7 +561,7 @@ export const validateOfferForOrder = async (userId, giftCardId, storeId, orderAm
 
     // Check per user limit / unique users
     const [[userUsageCount]] = await db.query(
-        `SELECT COUNT(*) AS count FROM offer_usage WHERE offer_id = ? AND user_id = ? AND status = 1`,
+        `SELECT COUNT(*) AS count FROM gift_card_orders WHERE offer_id = ? AND user_id = ? AND status != 4`,
         [offer.id, userId]
     );
     if (offer.per_user_limit !== null && userUsageCount.count >= offer.per_user_limit) {

@@ -485,22 +485,6 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
             );
             const insertedOrderId = orderResult.insertId;
 
-            // ─── Record Offer Redemption inside database transaction ───────────
-            if (appliedOfferId) {
-                await connection.query(
-                    `INSERT INTO offer_usage 
-                     (offer_id, user_id, order_id, wallet_transaction_id, discount_amount, cashback_amount, status)
-                     VALUES (?, ?, ?, NULL, ?, ?, 1)`,
-                    [
-                        appliedOfferId,
-                        userId,
-                        insertedOrderId,
-                        discountAmount,
-                        cashbackAmount
-                    ]
-                );
-            }
-
             // Update wallet_transactions with the generated order_id
             if (deduct.walletTransactionId) {
                 await connection.query(
@@ -571,11 +555,7 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
                     [`Woohoo error: ${woohooResult.error}`, orderId]
                 );
                 
-                // Mark offer usage as failed
-                await connection.query(
-                    'UPDATE offer_usage SET status = 2 WHERE order_id = ?',
-                    [orderId]
-                );
+
 
                 if (deductRes.walletDeducted > 0) {
                     await creditWallet(
@@ -670,13 +650,7 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
                     [parseFloat(orderRow.cashback_amount), userId]
                 );
 
-                // Link wallet_transaction_id in offer_usage
-                if (creditRes && creditRes.transactionId) {
-                    await connection.query(
-                        'UPDATE offer_usage SET wallet_transaction_id = ? WHERE order_id = ? AND offer_id = ?',
-                        [creditRes.transactionId, orderId, orderRow.offer_id]
-                    );
-                }
+
             }
 
             return orderRow;
@@ -870,13 +844,7 @@ export const resolvePendingOrdersService = async () => {
                             [parseFloat(order.cashback_amount), order.user_id]
                         );
 
-                        // Link wallet_transaction_id in offer_usage
-                        if (creditRes && creditRes.transactionId) {
-                            await connection.query(
-                                'UPDATE offer_usage SET wallet_transaction_id = ? WHERE order_id = ? AND offer_id = ?',
-                                [creditRes.transactionId, order.id, order.offer_id]
-                            );
-                        }
+
                     }
                 });
                 logger.info(`[Cron Resolver] Resolved Order #${order.id} as COMPLETE.`);
@@ -888,11 +856,7 @@ export const resolvePendingOrdersService = async () => {
                         [`Woohoo error: ${woohooRes.message || 'Cancelled by provider'}`, order.id]
                     );
 
-                    // Mark offer usage as failed
-                    await connection.query(
-                        'UPDATE offer_usage SET status = 2 WHERE order_id = ?',
-                        [order.id]
-                    );
+
 
                     const walletAmount = parseFloat(order.wallet_amount) || 0;
                     if (walletAmount > 0) {
@@ -922,11 +886,7 @@ export const resolvePendingOrdersService = async () => {
                             ['Order not found at provider', order.id]
                         );
 
-                        // Mark offer usage as failed
-                        await connection.query(
-                            'UPDATE offer_usage SET status = 2 WHERE order_id = ?',
-                            [order.id]
-                        );
+
 
                         const walletAmount = parseFloat(order.wallet_amount) || 0;
                         if (walletAmount > 0) {
