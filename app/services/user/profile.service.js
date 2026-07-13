@@ -120,17 +120,52 @@ export const updateProfileService = async (userId, profileData) => {
     };
 };
 
+let userMasterColumns = null;
+
+const getUserMasterColumns = async () => {
+    if (!userMasterColumns) {
+        try {
+            const cols = await executeQuery('SHOW COLUMNS FROM user_master');
+            userMasterColumns = cols.map(c => c.Field);
+        } catch (e) {
+            userMasterColumns = ['id', 'name', 'email', 'phone', 'dob', 'profile_image', 'is_active'];
+        }
+    }
+    return userMasterColumns;
+};
+
 export const listUsersService = async (page, limit) => {
     try {
         const countResult = await executeQuery('SELECT COUNT(*) AS total FROM user_master WHERE role = 3');
         const total = countResult[0]?.total || 0;
 
         const sanitized = sanitizePaginationParams(page, limit);
+        const availableCols = await getUserMasterColumns();
+        const selectFields = ['id', 'name', 'email', 'phone', 'dob', 'profile_image', 'is_active'];
 
-        const users = await executeQuery(
-            'SELECT id, name, email, phone, dob, profile_image, is_active, createdAt, modifiedAt FROM user_master WHERE role = 3 ORDER BY id DESC LIMIT ? OFFSET ?',
-            [sanitized.limit, sanitized.offset]
-        );
+        if (availableCols.includes('createdAt')) {
+            selectFields.push('createdAt');
+        } else if (availableCols.includes('created_at')) {
+            selectFields.push('created_at AS createdAt');
+        }
+
+        if (availableCols.includes('modifiedAt')) {
+            selectFields.push('modifiedAt');
+        } else if (availableCols.includes('modified_at')) {
+            selectFields.push('modified_at AS modifiedAt');
+        } else if (availableCols.includes('updated_at')) {
+            selectFields.push('updated_at AS modifiedAt');
+        }
+
+        const query = `
+            SELECT ${selectFields.join(', ')} 
+            FROM user_master 
+            WHERE role = 3 
+            ORDER BY id DESC 
+            LIMIT ? OFFSET ?
+        `;
+
+        const users = await executeQuery(query, [sanitized.limit, sanitized.offset]);
 
         return {
             success: true,
@@ -153,10 +188,30 @@ export const listUsersService = async (page, limit) => {
  */
 export const getUserByIdService = async (userId) => {
     try {
-        const users = await executeQuery(
-            'SELECT id, name, email, phone, dob, profile_image, is_active, createdAt, modifiedAt FROM user_master WHERE id = ? AND role = 3',
-            [userId]
-        );
+        const availableCols = await getUserMasterColumns();
+        const selectFields = ['id', 'name', 'email', 'phone', 'dob', 'profile_image', 'is_active'];
+
+        if (availableCols.includes('createdAt')) {
+            selectFields.push('createdAt');
+        } else if (availableCols.includes('created_at')) {
+            selectFields.push('created_at AS createdAt');
+        }
+
+        if (availableCols.includes('modifiedAt')) {
+            selectFields.push('modifiedAt');
+        } else if (availableCols.includes('modified_at')) {
+            selectFields.push('modified_at AS modifiedAt');
+        } else if (availableCols.includes('updated_at')) {
+            selectFields.push('updated_at AS modifiedAt');
+        }
+
+        const query = `
+            SELECT ${selectFields.join(', ')} 
+            FROM user_master 
+            WHERE id = ? AND role = 3
+        `;
+
+        const users = await executeQuery(query, [userId]);
 
         if (users.length === 0) {
             return {

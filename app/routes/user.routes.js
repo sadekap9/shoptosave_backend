@@ -7,20 +7,19 @@ import { updateProfileSchema, updateUserStatusSchema } from '../validations/user
 
 const router = express.Router();
 
-// Protected route to update profile
+// Update user profile
 router.patch('/profile', authMiddleware, upload.single('profile_image'), validate(updateProfileSchema), profileController.updateProfile);
 
-// Protected route to list users (restricted to Admin/Sub-Admin only)
+// List all users (Admins/Sub-Admins)
 router.get('/get-all', authMiddleware, authorizeRole([1, 2]), profileController.listUsers);
 
-// Protected route to change user status (restricted to Admin/Sub-Admin only)
+// Change user status (Admins/Sub-Admins)
 router.patch('/status/:id', authMiddleware, authorizeRole([1, 2]), validate(updateUserStatusSchema), profileController.updateUserStatus);
 
-// Protected route to get user by ID (restricted to Admin/Sub-Admin only)
-router.get('/list/:id', authMiddleware, authorizeRole([1,2,3]), profileController.getUserById);
+// Get user profile details by ID
+router.get('/list/:id', authMiddleware, authorizeRole([1, 2, 3]), profileController.getUserById);
 
-// Protected route to delete user by ID (restricted to Admin/Sub-Admin only)
+// Delete user by ID (Admins/Sub-Admins)
 router.delete('/delete/:id', authMiddleware, authorizeRole([1, 2]), profileController.deleteUserByAdmin);
-
 
 export default router;

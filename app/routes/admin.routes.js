@@ -6,11 +6,7 @@ import { listTopupsSchema, listOrdersSchema, manualRefundSchema } from '../valid
 
 const router = express.Router();
 
-/**
- * GET /api/v1/admin/wallets/topups
- * List pending/approved/rejected top-up requests
- * Restricted to Admins/Sub-Admins (roles 1, 2)
- */
+// List pending/approved/rejected top-up requests (Admins/Sub-Admins)
 router.get(
     '/wallets/topups',
     authMiddleware,
@@ -19,11 +15,7 @@ router.get(
     adminController.getTopups
 );
 
-/**
- * GET /api/v1/admin/orders
- * List all local gift card orders
- * Restricted to Admins/Sub-Admins (roles 1, 2)
- */
+// List all local gift card orders (Admins/Sub-Admins)
 router.get(
     '/orders',
     authMiddleware,
@@ -32,11 +24,7 @@ router.get(
     adminController.getOrdersList
 );
 
-/**
- * GET /api/v1/admin/order/:id
- * Retrieve details of a single local order
- * Restricted to Admins/Sub-Admins (roles 1, 2)
- */
+// Retrieve details of a single local order (Admins/Sub-Admins)
 router.get(
     '/order/:id',
     authMiddleware,
@@ -44,15 +32,11 @@ router.get(
     adminController.getOrder
 );
 
-/**
- * POST /api/v1/admin/order/refund
- * Process manual refund for an order
- * Restricted to Admin roles (Super-Admin 1)
- */
+// Process manual refund for an order (Super-Admin only)
 router.post(
     '/order/refund',
     authMiddleware,
-    authorizeRole([1]), // Strictly Super Admin only
+    authorizeRole([1]),
     validate(manualRefundSchema),
     adminController.manualRefund
 );

@@ -29,7 +29,7 @@ pool.getConnection()
 
 export const executeQuery = async (sql, params) => {
     try {
-        const [rows] = await pool.execute(sql, params);
+        const [rows] = await pool.query(sql, params);
         return rows;
     } catch (error) {
         throw error;
