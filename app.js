@@ -8,6 +8,7 @@ import userRoutes from './app/routes/user.routes.js';
 import categoriesRoutes from './app/routes/categories.routes.js';
 import productsRoutes from './app/routes/products.routes.js';
 import woohooRoutes from './app/routes/woohoo.routes.js';
+import woohoo2Routes from './app/routes/woohoo2.routes.js';
 import storeCategoriesRoutes from './app/routes/storeCategories.routes.js';
 import subAdminRoutes from './app/routes/subAdmin.routes.js';
 import storesRoutes from './app/routes/stores.routes.js';
@@ -56,6 +57,7 @@ v1Router.use('/admin', adminRoutes);
 v1Router.use('/offers', offersRoutes);
 v1Router.get('/catalog/products/:sku', getProductBySku);
 v1Router.use('/woohoo', woohooRoutes);      // Woohoo v3 Client API Proxy
+v1Router.use('/woohoo2', woohoo2Routes);
 
 app.use('/api/v1', apiLimiter, v1Router);
 

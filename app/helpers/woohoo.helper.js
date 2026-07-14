@@ -64,9 +64,9 @@ export const generateSignature = (method, url, body, clientSecret) => {
  * @param {string} token - OAuth Token
  * @returns {Object}
  */
-export const getWoohooHeaders = (method, url, body = null, token = null) => {
+export const getWoohooHeaders = (method, url, body = null, token = null, customClientSecret = null) => {
     const dateAtClient = new Date().toISOString();
-    const clientSecret = process.env.WOOHOO_CLIENT_SECRET;
+    const clientSecret = customClientSecret || process.env.WOOHOO_CLIENT_SECRET;
     
     logger.info(`[Woohoo API Call] ${method} ${url}`);
     
