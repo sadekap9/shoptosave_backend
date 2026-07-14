@@ -29,11 +29,24 @@ export const generateAuthCode = async (req, res) => {
             result,
         });
     } catch (error) {
-        logger.error('Error in woohoo2 generateAuthCode', { error: error.response?.data || error.message });
+        logger.error('Error in woohoo2 generateAuthCode details:', {
+            message: error.message,
+            status: error.response?.status,
+            statusText: error.response?.statusText,
+            data: error.response?.data,
+            headers: error.response?.headers,
+            configUrl: error.config?.url,
+            configHeaders: error.config?.headers,
+            configData: error.config?.data
+        });
         return res.status(error.response?.status || 500).json({
             success: false,
-            message: error.response?.data?.message || 'Failed to generate authorization code',
-            result: error.response?.data || {},
+            message: error.response?.data?.message || error.message || 'Failed to generate authorization code',
+            errorDetails: {
+                status: error.response?.status,
+                data: error.response?.data,
+                message: error.message
+            }
         });
     }
 };
