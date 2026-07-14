@@ -128,11 +128,23 @@ export const getCategories = async (req, res) => {
             result,
         });
     } catch (error) {
-        logger.error('Error in getCategories (woohoo2)', { error: error.response?.data || error.message });
+        logger.error('Error in getCategories (woohoo2) details:', {
+            message: error.message,
+            status: error.response?.status,
+            statusText: error.response?.statusText,
+            data: error.response?.data,
+            headers: error.response?.headers,
+            configUrl: error.config?.url,
+            configHeaders: error.config?.headers
+        });
         return res.status(error.response?.status || 500).json({
             success: false,
-            message: error.response?.data?.message || 'Failed to fetch categories',
-            result: error.response?.data || {},
+            message: error.response?.data?.message || error.message || 'Failed to fetch categories',
+            errorDetails: {
+                status: error.response?.status,
+                data: error.response?.data,
+                message: error.message
+            }
         });
     }
 };
