@@ -120,7 +120,7 @@ export const generateBearerToken = async (req, res) => {
 export const getCategories = async (req, res) => {
     try {
         const bearerToken = await getWoohoo2Token();
-        const result = await woohoo2Service.getWoohooCategories(bearerToken, req.query);
+        const result = await woohoo2Service.getWoohooCategories(bearerToken);
 
         return res.status(200).json({
             success: true,

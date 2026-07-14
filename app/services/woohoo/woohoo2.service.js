@@ -44,10 +44,11 @@ export const generateBearerToken = async (authorizationCode) => {
 /**
  * Get all categories from Woohoo
  */
-export const getWoohooCategories = async (bearerToken, query = {}) => {
-    const queryString = new URLSearchParams(query).toString();
-    const url = `${getBaseUrl()}/v3/catalog/categories${queryString ? '?' + queryString : ''}`;
+export const getWoohooCategories = async (bearerToken) => {
+    const url = `${getBaseUrl()}/v3/catalog/categories?q=1`;
+    logger.info(`[Woohoo2 API Call] getWoohooCategories URL: ${url}`);
     const headers = getWoohooHeaders('GET', url, null, bearerToken, process.env.WOOHOO2_CLIENT_SECRET);
+    logger.info(`[Woohoo2 API Call] getWoohooCategories headers: ${JSON.stringify(headers)}`);
     const response = await axios.get(url, { headers, timeout: 10000 });
     return response.data;
 };
