@@ -44,8 +44,9 @@ export const generateBearerToken = async (authorizationCode) => {
 /**
  * Get all categories from Woohoo
  */
-export const getWoohooCategories = async (bearerToken) => {
-    const url = `${getBaseUrl()}/v3/catalog/categories`;
+export const getWoohooCategories = async (bearerToken, query = {}) => {
+    const queryString = new URLSearchParams(query).toString();
+    const url = `${getBaseUrl()}/v3/catalog/categories${queryString ? '?' + queryString : ''}`;
     const headers = getWoohooHeaders('GET', url, null, bearerToken, process.env.WOOHOO2_CLIENT_SECRET);
     const response = await axios.get(url, { headers, timeout: 10000 });
     return response.data;
@@ -54,8 +55,9 @@ export const getWoohooCategories = async (bearerToken) => {
 /**
  * Get products by category ID from Woohoo
  */
-export const getWoohooProductsByCategory = async (bearerToken, categoryId) => {
-    const url = `${getBaseUrl()}/v3/catalog/categories/${categoryId}/products`;
+export const getWoohooProductsByCategory = async (bearerToken, categoryId, query = {}) => {
+    const queryString = new URLSearchParams(query).toString();
+    const url = `${getBaseUrl()}/v3/catalog/categories/${categoryId}/products${queryString ? '?' + queryString : ''}`;
     const headers = getWoohooHeaders('GET', url, null, bearerToken, process.env.WOOHOO2_CLIENT_SECRET);
     const response = await axios.get(url, { headers, timeout: 10000 });
     return response.data;
@@ -64,8 +66,9 @@ export const getWoohooProductsByCategory = async (bearerToken, categoryId) => {
 /**
  * Get a single product by SKU from Woohoo
  */
-export const getWoohooProduct = async (bearerToken, sku) => {
-    const url = `${getBaseUrl()}/v3/catalog/products/${sku}`;
+export const getWoohooProduct = async (bearerToken, sku, query = {}) => {
+    const queryString = new URLSearchParams(query).toString();
+    const url = `${getBaseUrl()}/v3/catalog/products/${sku}${queryString ? '?' + queryString : ''}`;
     const headers = getWoohooHeaders('GET', url, null, bearerToken, process.env.WOOHOO2_CLIENT_SECRET);
     const response = await axios.get(url, { headers, timeout: 10000 });
     return response.data;

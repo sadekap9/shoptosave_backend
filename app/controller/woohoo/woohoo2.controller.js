@@ -120,7 +120,7 @@ export const generateBearerToken = async (req, res) => {
 export const getCategories = async (req, res) => {
     try {
         const bearerToken = await getWoohoo2Token();
-        const result = await woohoo2Service.getWoohooCategories(bearerToken);
+        const result = await woohoo2Service.getWoohooCategories(bearerToken, req.query);
 
         return res.status(200).json({
             success: true,
@@ -144,7 +144,7 @@ export const getProductsByCategory = async (req, res) => {
     try {
         const bearerToken = await getWoohoo2Token();
         const { categoryId } = req.params;
-        const result = await woohoo2Service.getWoohooProductsByCategory(bearerToken, categoryId);
+        const result = await woohoo2Service.getWoohooProductsByCategory(bearerToken, categoryId, req.query);
 
         return res.status(200).json({
             success: true,
@@ -168,7 +168,7 @@ export const getProduct = async (req, res) => {
     try {
         const bearerToken = await getWoohoo2Token();
         const { sku } = req.params;
-        const result = await woohoo2Service.getWoohooProduct(bearerToken, sku);
+        const result = await woohoo2Service.getWoohooProduct(bearerToken, sku, req.query);
 
         return res.status(200).json({
             success: true,
