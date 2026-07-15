@@ -288,9 +288,9 @@ export const updateUserStatusService = async (targetUserId, isActiveVal) => {
         // Update status
         await executeQuery('UPDATE user_master SET is_active = ? WHERE id = ?', [isActive, targetUserId]);
 
-        // If inactive, revoke all active sessions for the user to force log them out
+        // If inactive, delete all active sessions for the user to force log them out
         if (isActive === 0) {
-            await executeQuery('UPDATE session_master SET is_revoked = 1 WHERE user_id = ?', [targetUserId]);
+            await executeQuery('DELETE FROM session_master WHERE user_id = ?', [targetUserId]);
         }
 
         return {

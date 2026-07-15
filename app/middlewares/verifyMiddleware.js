@@ -22,12 +22,12 @@ export const verifyToken = async (req, res, next) => {
         try {
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-            // Verify if session exists in DB, is not revoked, and is not expired
+            // Verify if session exists in DB and is not expired
             const sessionQuery = `
                 SELECT s.*, u.is_active, u.role, u.menu_access 
                 FROM session_master s
                 JOIN user_master u ON s.user_id = u.id
-                WHERE s.access_token = ? AND s.user_id = ? AND s.is_revoked = 0 AND s.expires_at > NOW()
+                WHERE s.access_token = ? AND s.user_id = ? AND s.expires_at > NOW()
             `;
             const sessions = await executeQuery(sessionQuery, [token, decoded.id]);
 

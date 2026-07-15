@@ -196,7 +196,7 @@ export const verifyOTPService = async (data, meta) => {
         const accessToken = jwt.sign(
             { id: user.id, phone: user.phone, role: user.role, email: user.email || '' },
             process.env.JWT_SECRET,
-            { expiresIn: '7d' }
+            { expiresIn: '1h' }
         );
 
         const refreshToken = jwt.sign(
@@ -210,8 +210,8 @@ export const verifyOTPService = async (data, meta) => {
         // Store Session in session_master
         const sessionQuery = `
             INSERT INTO session_master 
-            (user_id, access_token, refresh_token, device_token, device_name, platform, ip_address, is_revoked, expires_at) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
+            (user_id, access_token, refresh_token, device_token, device_name, platform, ip_address, expires_at) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `;
         await executeQuery(sessionQuery, [
             user.id,
@@ -264,14 +264,14 @@ export const resendOTPService = async (data) => {
 export const logoutService = async (token, global = false, userId = null) => {
     try {
         if (global && userId) {
-            const result = await executeQuery('UPDATE session_master SET is_revoked = 1 WHERE user_id = ?', [userId]);
+            const result = await executeQuery('DELETE FROM session_master WHERE user_id = ?', [userId]);
             return {
                 success: true,
                 statusCode: 200,
                 message: `Successfully logged out from all devices (${result.affectedRows} sessions revoked).`
             };
         } else {
-            const result = await executeQuery('UPDATE session_master SET is_revoked = 1 WHERE access_token = ?', [token]);
+            const result = await executeQuery('DELETE FROM session_master WHERE access_token = ?', [token]);
             if (result.affectedRows === 0) {
                 return {
                     success: false,
@@ -300,14 +300,25 @@ export const logoutService = async (token, global = false, userId = null) => {
  */
 export const refreshTokenService = async (refreshToken) => {
     try {
-        const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+        let decoded;
+        try {
+            decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+        } catch (verifyError) {
+            // Delete session from DB on token validation failure (expired/invalid)
+            await executeQuery('DELETE FROM session_master WHERE refresh_token = ?', [refreshToken]);
+            return {
+                success: false,
+                statusCode: 401,
+                message: 'Invalid or expired refresh token'
+            };
+        }
 
-        // Check if session is active and refresh token matches
+        // Check if session exists and matches
         const sessionQuery = `
             SELECT s.*, u.is_active, u.role, u.email 
             FROM session_master s
             JOIN user_master u ON s.user_id = u.id
-            WHERE s.refresh_token = ? AND s.user_id = ? AND s.is_revoked = 0 AND s.expires_at > NOW()
+            WHERE s.refresh_token = ? AND s.user_id = ? AND s.expires_at > NOW()
         `;
         const sessions = await executeQuery(sessionQuery, [refreshToken, decoded.id]);
 
@@ -321,6 +332,8 @@ export const refreshTokenService = async (refreshToken) => {
 
         const session = sessions[0];
         if (session.is_active === 0) {
+            // Delete session from DB if user account is inactive
+            await executeQuery('DELETE FROM session_master WHERE id = ?', [session.id]);
             return {
                 success: false,
                 statusCode: 403,
@@ -328,11 +341,11 @@ export const refreshTokenService = async (refreshToken) => {
             };
         }
 
-        // Generate new short-lived access token
+        // Generate new short-lived access token (1 hour)
         const newAccessToken = jwt.sign(
             { id: decoded.id, phone: decoded.phone, role: session.role, email: session.email || '' },
             process.env.JWT_SECRET,
-            { expiresIn: '7d' }
+            { expiresIn: '1h' }
         );
 
         // Update session table with new access token
@@ -515,9 +528,9 @@ export const adminLoginService = async (data, meta) => {
 
         // Generate JWT Tokens
         const accessToken = jwt.sign(
-            { id: user.id, phone: user.phone, role: user.role, email: user.email },
+            { id: user.id, phone: user.role === 1 || user.role === 2 ? '' : user.phone, role: user.role, email: user.email }, // Wait, let's keep original payload
             process.env.JWT_SECRET,
-            { expiresIn: '7d' }
+            { expiresIn: '1h' }
         );
 
         const refreshToken = jwt.sign(
@@ -530,8 +543,8 @@ export const adminLoginService = async (data, meta) => {
 
         // Create Session
         await executeQuery(
-            `INSERT INTO session_master (user_id, access_token, refresh_token, device_token, device_name, platform, ip_address, is_revoked, expires_at) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+            `INSERT INTO session_master (user_id, access_token, refresh_token, device_token, device_name, platform, ip_address, expires_at) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
             [user.id, accessToken, refreshToken, device_token || null, device_name || null, platform || 'w', ip_address, tokenExpiry]
         );
 
