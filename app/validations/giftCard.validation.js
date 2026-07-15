@@ -12,6 +12,12 @@ export const createGiftCardSchema = Joi.object({
         'any.required': 'SKU is required',
         'string.max': 'SKU cannot exceed 100 characters'
     }),
+    category_id: Joi.number().integer().positive().required().messages({
+        'number.base': 'Category ID must be a number',
+        'number.integer': 'Category ID must be an integer',
+        'number.positive': 'Category ID must be positive',
+        'any.required': 'Category ID is required'
+    }),
     featured: Joi.alternatives().try(
         Joi.number().integer().valid(0, 1),
         Joi.boolean()

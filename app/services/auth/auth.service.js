@@ -302,7 +302,7 @@ export const refreshTokenService = async (refreshToken) => {
     try {
         let decoded;
         try {
-            decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+            decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || 'refresh_secret');
         } catch (verifyError) {
             // Delete session from DB on token validation failure (expired/invalid)
             await executeQuery('DELETE FROM session_master WHERE refresh_token = ?', [refreshToken]);

@@ -33,7 +33,7 @@ export const getStores = async (req, res) => {
  */
 export const createStore = async (req, res) => {
     try {
-        const { store_name, category_id, status } = req.validatedData;
+        const { store_name, status } = req.validatedData;
         let logo = req.validatedData.logo;
 
         if (req.file) {
@@ -43,7 +43,6 @@ export const createStore = async (req, res) => {
         const response = await storesService.createStoreService({
             store_name,
             logo,
-            category_id: category_id !== undefined && category_id !== '' ? parseInt(category_id) : null,
             status
         });
         
@@ -79,7 +78,7 @@ export const createStore = async (req, res) => {
 export const updateStore = async (req, res) => {
     try {
         const { id } = req.params;
-        const { store_name, category_id, status } = req.validatedData;
+        const { store_name, status } = req.validatedData;
         let logo = req.validatedData.logo;
 
         if (req.file) {
@@ -89,11 +88,6 @@ export const updateStore = async (req, res) => {
         const updateData = {};
         if (store_name !== undefined) updateData.store_name = store_name;
         if (logo !== undefined) updateData.logo = logo;
-        if (category_id !== undefined) {
-            updateData.category_id = category_id !== '' && category_id !== null && category_id !== 'null' 
-                ? parseInt(category_id) 
-                : null;
-        }
         if (status !== undefined) updateData.status = status;
 
         const response = await storesService.updateStoreService(id, updateData);

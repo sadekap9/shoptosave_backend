@@ -9,9 +9,8 @@ export const getStoresService = async (page, limit) => {
         const [[{ total }]] = await pool.query('SELECT COUNT(*) AS total FROM stores');
         const sanitized = sanitizePaginationParams(page, limit);
         const [rows] = await pool.query(`
-            SELECT s.id, s.store_name, s.logo, s.category_id, c.category_name, s.status, s.created_at, s.updated_at 
+            SELECT s.id, s.store_name, s.logo, s.status, s.created_at, s.updated_at 
             FROM stores s 
-            LEFT JOIN categories c ON s.category_id = c.id 
             ORDER BY s.id ASC
             LIMIT ? OFFSET ?
         `, [sanitized.limit, sanitized.offset]);
@@ -31,7 +30,7 @@ export const getStoresService = async (page, limit) => {
  * Create a new store
  */
 export const createStoreService = async (data) => {
-    const { store_name, logo, category_id, status } = data;
+    const { store_name, logo, status } = data;
     const storeStatus = status !== undefined ? parseInt(status) : 1;
 
     // Check if store name already exists (case-insensitive duplicate check)
@@ -47,28 +46,12 @@ export const createStoreService = async (data) => {
         };
     }
 
-    // Check if category exists if category_id is provided
-    if (category_id !== undefined && category_id !== null) {
-        const [[existingCategory]] = await pool.query(
-            'SELECT id FROM categories WHERE id = ?',
-            [category_id]
-        );
-        if (!existingCategory) {
-            return {
-                success: false,
-                statusCode: 400,
-                message: 'Category not found'
-            };
-        }
-    }
-
     try {
         const [result] = await pool.query(
-            'INSERT INTO stores (store_name, logo, category_id, status) VALUES (?, ?, ?, ?)',
+            'INSERT INTO stores (store_name, logo, status) VALUES (?, ?, ?)',
             [
                 store_name.trim(), 
                 logo ? logo.trim() : null, 
-                category_id !== undefined ? category_id : null, 
                 storeStatus
             ]
         );
@@ -103,7 +86,7 @@ export const updateStoreService = async (id, body) => {
     }
 
     // Step 2: Define allowed fields
-    const allowedFields = ['store_name', 'logo', 'category_id', 'status'];
+    const allowedFields = ['store_name', 'logo', 'status'];
 
     // Step 3: Filter keys
     const keys = Object.keys(updateFields).filter(
@@ -131,22 +114,7 @@ export const updateStoreService = async (id, body) => {
         updateFields.store_name = nameToValidate;
     }
 
-    if (keys.includes('category_id')) {
-        const catId = updateFields.category_id;
-        if (catId !== null) {
-            const [[existingCategory]] = await pool.query(
-                'SELECT id FROM categories WHERE id = ?',
-                [catId]
-            );
-            if (!existingCategory) {
-                return {
-                    success: false,
-                    statusCode: 400,
-                    message: 'Category not found'
-                };
-            }
-        }
-    }
+    // category_id checks removed as store no longer holds category
 
     if (keys.includes('logo') && updateFields.logo) {
         updateFields.logo = updateFields.logo.trim();

@@ -27,11 +27,13 @@ export const getGiftCardsService = async (filters = {}) => {
             SELECT COUNT(*) AS total 
             FROM gift_cards gc
             LEFT JOIN stores s ON gc.store_id = s.id
+            LEFT JOIN categories c ON gc.category_id = c.id
         `;
         let querySql = `
-            SELECT gc.*, s.store_name 
+            SELECT gc.*, s.store_name, c.category_name 
             FROM gift_cards gc
             LEFT JOIN stores s ON gc.store_id = s.id
+            LEFT JOIN categories c ON gc.category_id = c.id
         `;
         const params = [];
         if (store_id) {
@@ -114,9 +116,10 @@ export const getGiftCardsService = async (filters = {}) => {
 export const getGiftCardByIdService = async (id) => {
     try {
         const [[giftCard]] = await pool.query(`
-            SELECT gc.*, s.store_name 
+            SELECT gc.*, s.store_name, c.category_name 
             FROM gift_cards gc
             LEFT JOIN stores s ON gc.store_id = s.id
+            LEFT JOIN categories c ON gc.category_id = c.id
             WHERE gc.id = ?
         `, [id]);
 
@@ -171,6 +174,7 @@ export const createGiftCardService = async (data) => {
     const {
         store_id,
         sku,
+        category_id,
         status,
         featured,
         sort_order,
@@ -190,6 +194,17 @@ export const createGiftCardService = async (data) => {
             message: 'Store not found'
         };
     }
+
+    // Verify Category exists
+    const [[categoryRecord]] = await pool.query('SELECT id FROM categories WHERE id = ?', [category_id]);
+    if (!categoryRecord) {
+        return {
+            success: false,
+            statusCode: 404,
+            message: 'Category not found'
+        };
+    }
+
 
 
 
@@ -340,6 +355,7 @@ export const createGiftCardService = async (data) => {
         const insertData = {
             store_id,
             sku: sku.trim(),
+            category_id,
             woohoo_product_id,
             gift_card_name,
             brand_name,
@@ -532,7 +548,7 @@ export const getClientGiftCardsService = async (filters = {}) => {
         }
 
         if (category_id) {
-            whereClauses.push('s.category_id = ?');
+            whereClauses.push('gc.category_id = ?');
             params.push(parseInt(category_id));
         }
 
@@ -563,9 +579,10 @@ export const getClientGiftCardsService = async (filters = {}) => {
 
         // Fetch paginated gift cards
         const querySql = `
-            SELECT gc.*, s.store_name, s.logo as store_logo
+            SELECT gc.*, s.store_name, s.logo as store_logo, c.category_name
             FROM gift_cards gc
             LEFT JOIN stores s ON gc.store_id = s.id
+            LEFT JOIN categories c ON gc.category_id = c.id
             ${whereSql}
             ORDER BY ${targetSortField} ${targetSortOrder}
             LIMIT ? OFFSET ?
@@ -656,9 +673,10 @@ export const getClientGiftCardsService = async (filters = {}) => {
 export const getClientGiftCardByIdService = async (id) => {
     try {
         const [[giftCard]] = await pool.query(`
-            SELECT gc.*, s.store_name, s.logo as store_logo
+            SELECT gc.*, s.store_name, s.logo as store_logo, c.category_name
             FROM gift_cards gc
             LEFT JOIN stores s ON gc.store_id = s.id
+            LEFT JOIN categories c ON gc.category_id = c.id
             WHERE gc.id = ? AND gc.status = 1 AND s.status = 1
         `, [id]);
 
