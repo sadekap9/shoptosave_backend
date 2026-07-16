@@ -42,7 +42,7 @@ export const createOfferSchema = Joi.object({
         'date.format': 'End date must be a valid ISO date'
     }),
     status: Joi.number().valid(1, 0).default(1).optional()
-});
+}).unknown(true);
 
 export const updateOfferSchema = Joi.object({
     offer_name: Joi.string().trim().max(150).optional(),
@@ -60,7 +60,7 @@ export const updateOfferSchema = Joi.object({
     start_date: Joi.date().iso().optional(),
     end_date: Joi.date().iso().min(Joi.ref('start_date')).optional(),
     status: Joi.number().valid(1, 0).optional()
-});
+}).unknown(true);
 
 export const changeStatusSchema = Joi.object({
     status: Joi.number().valid(1, 0).required().messages({
