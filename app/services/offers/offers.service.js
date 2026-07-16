@@ -51,13 +51,13 @@ export const createOfferService = async (payload) => {
 
         const [result] = await pool.query(
             `INSERT INTO offers 
-             (offer_name, offer_type, promo_code, store_id, gift_card_id, value_type, value, min_order_amount, max_discount, total_usage_limit, per_user_limit, unique_users_only, priority, start_date, end_date, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (offer_name, offer_type, promo_code, store_id, gift_card_id, value_type, value, min_order_amount, max_discount, total_usage_limit, per_user_limit, unique_users_only, start_date, end_date, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 offer_name, offer_type, promo_code || null, store_id || null, gift_card_id || null,
                 value_type, value, min_order_amount || 0.00, max_discount || null,
                 total_usage_limit || null, per_user_limit || null, unique_users_only || 0,
-                1, start_date, end_date, status || 1
+                start_date, end_date, status || 1
             ]
         );
 
@@ -533,10 +533,10 @@ export const validateOfferForOrder = async (userId, giftCardId, storeId, orderAm
 
     // Check minimum order amount
     if (amountVal < parseFloat(offer.min_order_amount)) {
-        throw { 
-            message: `Minimum order amount of ₹${parseFloat(offer.min_order_amount).toFixed(2)} required for this offer`, 
-            code: 'MIN_AMOUNT_NOT_MET', 
-            statusCode: 400 
+        throw {
+            message: `Minimum order amount of ₹${parseFloat(offer.min_order_amount).toFixed(2)} required for this offer`,
+            code: 'MIN_AMOUNT_NOT_MET',
+            statusCode: 400
         };
     }
 
