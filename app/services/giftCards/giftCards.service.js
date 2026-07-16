@@ -22,7 +22,15 @@ const toTinyInt = (val) => {
  */
 export const getGiftCardsService = async (filters = {}) => {
     try {
-        const { store_id, page, limit } = filters;
+        const { store_id, page, limit, shortResponse } = filters;
+        
+        let selectColumns = 'gc.*';
+        if (shortResponse) {
+            selectColumns = `gc.id, gc.category_id, gc.store_id, gc.sku, gc.gift_card_name, 
+                             gc.product_type, gc.min_denomination, gc.max_denomination, 
+                             gc.validity, gc.giftcard_image`;
+        }
+
         let countSql = `
             SELECT COUNT(*) AS total 
             FROM gift_cards gc
@@ -30,7 +38,7 @@ export const getGiftCardsService = async (filters = {}) => {
             LEFT JOIN categories c ON gc.category_id = c.id
         `;
         let querySql = `
-            SELECT gc.*, s.store_name, c.category_name 
+            SELECT ${selectColumns}, s.store_name, c.category_name 
             FROM gift_cards gc
             LEFT JOIN stores s ON gc.store_id = s.id
             LEFT JOIN categories c ON gc.category_id = c.id
@@ -210,8 +218,21 @@ export const createGiftCardService = async (data) => {
 
     // Verify SKU uniqueness
     if (sku) {
-        const [[existingSku]] = await pool.query('SELECT id FROM gift_cards WHERE sku = ?', [sku.trim()]);
+        const [[existingSku]] = await pool.query('SELECT id, status, store_id FROM gift_cards WHERE sku = ?', [sku.trim()]);
         if (existingSku) {
+            if (existingSku.status === 0 && existingSku.store_id === null) {
+                // Reactivate and update instead of throwing unique constraint error
+                await pool.query(
+                    'UPDATE gift_cards SET store_id = ?, category_id = ?, status = 1, giftcard_image = COALESCE(?, giftcard_image) WHERE id = ?',
+                    [store_id, category_id, data.giftcard_image || null, existingSku.id]
+                );
+                return {
+                    success: true,
+                    statusCode: 200,
+                    message: 'Gift card mapped successfully',
+                    data: { id: existingSku.id }
+                };
+            }
             return {
                 success: false,
                 statusCode: 400,
@@ -502,27 +523,10 @@ export const deleteGiftCardService = async (id) => {
             };
         }
 
-        // Fetch images to delete physical files
-        const [images] = await connection.query('SELECT image_url FROM gift_card_images WHERE gift_card_id = ?', [id]);
-
-        // Delete gift card (cascades delete on gift_card_images in database)
-        await connection.query('DELETE FROM gift_cards WHERE id = ?', [id]);
+        // Soft delete: set store_id to NULL and status to 0
+        await connection.query('UPDATE gift_cards SET store_id = NULL, status = 0 WHERE id = ?', [id]);
 
         await connection.commit();
-
-        // Delete physical image files after transaction commit is completed
-        images.forEach(img => {
-            if (img.image_url && !img.image_url.startsWith('http')) {
-                const filePath = img.image_url.startsWith('/') ? `.${img.image_url}` : img.image_url;
-                try {
-                    if (fs.existsSync(filePath)) {
-                        fs.unlinkSync(filePath);
-                    }
-                } catch (err) {
-                    console.error(`Failed to delete physical file: ${filePath}`, err);
-                }
-            }
-        });
 
         return {
             success: true,

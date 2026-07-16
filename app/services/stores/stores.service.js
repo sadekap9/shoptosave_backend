@@ -9,8 +9,14 @@ export const getStoresService = async (page, limit) => {
         const [[{ total }]] = await pool.query('SELECT COUNT(*) AS total FROM stores');
         const sanitized = sanitizePaginationParams(page, limit);
         const [rows] = await pool.query(`
-            SELECT s.id, s.store_name, s.logo, s.status, s.created_at, s.updated_at 
+            SELECT s.id, s.store_name, s.logo, s.status, s.created_at, s.updated_at,
+                   COALESCE(gc.voucher_count, 0) AS voucher_count
             FROM stores s 
+            LEFT JOIN (
+                SELECT store_id, COUNT(*) AS voucher_count 
+                FROM gift_cards 
+                GROUP BY store_id
+            ) gc ON s.id = gc.store_id
             ORDER BY s.id ASC
             LIMIT ? OFFSET ?
         `, [sanitized.limit, sanitized.offset]);

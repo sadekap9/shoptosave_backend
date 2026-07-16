@@ -8,7 +8,7 @@ export const getAdminStoreCategories = async (req, res) => {
     try {
         const { page, limit } = req.query;
         const response = await storeCategoriesService.getAdminStoreCategoriesService(page, limit);
-        
+
         return res.status(response.statusCode).json({
             success: response.success,
             errors: response.success ? [] : [{ message: response.message }],
@@ -35,7 +35,7 @@ export const getPublicStoreCategories = async (req, res) => {
     try {
         const { page, limit } = req.query;
         const response = await storeCategoriesService.getPublicStoreCategoriesService(page, limit);
-        
+
         return res.status(response.statusCode).json({
             success: response.success,
             errors: response.success ? [] : [{ message: response.message }],
@@ -73,7 +73,7 @@ export const createStoreCategory = async (req, res) => {
             logo,
             status
         });
-        
+
         if (!response.success) {
             return res.status(response.statusCode).json({
                 success: false,
@@ -81,7 +81,7 @@ export const createStoreCategory = async (req, res) => {
                 result: {}
             });
         }
-        
+
         return res.status(response.statusCode).json({
             success: true,
             errors: [],
@@ -118,7 +118,7 @@ export const updateStoreCategory = async (req, res) => {
             logo,
             status
         });
-        
+
         if (!response.success) {
             return res.status(response.statusCode).json({
                 success: false,
@@ -126,7 +126,7 @@ export const updateStoreCategory = async (req, res) => {
                 result: {}
             });
         }
-        
+
         return res.status(response.statusCode).json({
             success: true,
             errors: [],
@@ -152,7 +152,7 @@ export const deleteStoreCategory = async (req, res) => {
     try {
         const { id } = req.params;
         const response = await storeCategoriesService.deleteStoreCategoryService(id);
-        
+
         if (!response.success) {
             return res.status(response.statusCode).json({
                 success: false,
@@ -160,7 +160,7 @@ export const deleteStoreCategory = async (req, res) => {
                 result: {}
             });
         }
-        
+
         return res.status(response.statusCode).json({
             success: true,
             errors: [],

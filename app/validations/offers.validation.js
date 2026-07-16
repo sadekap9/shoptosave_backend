@@ -32,7 +32,6 @@ export const createOfferSchema = Joi.object({
     total_usage_limit: Joi.number().integer().positive().allow(null).optional(),
     per_user_limit: Joi.number().integer().positive().allow(null).optional(),
     unique_users_only: Joi.number().valid(0, 1).default(0).optional(),
-    priority: Joi.number().integer().min(0).default(1).optional(),
     start_date: Joi.date().iso().required().messages({
         'any.required': 'Start date is required',
         'date.format': 'Start date must be a valid ISO date'
@@ -58,7 +57,6 @@ export const updateOfferSchema = Joi.object({
     total_usage_limit: Joi.number().integer().positive().allow(null).optional(),
     per_user_limit: Joi.number().integer().positive().allow(null).optional(),
     unique_users_only: Joi.number().valid(0, 1).optional(),
-    priority: Joi.number().integer().min(0).optional(),
     start_date: Joi.date().iso().optional(),
     end_date: Joi.date().iso().min(Joi.ref('start_date')).optional(),
     status: Joi.number().valid(1, 0).optional()

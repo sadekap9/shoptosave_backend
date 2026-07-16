@@ -3,15 +3,42 @@ import { sanitizePaginationParams, buildPagination } from '../../helpers/paginat
 
 /**
  * Fetch all store categories (active & inactive) - for Admin
+ * Supports filtering by status and search keyword
  */
-export const getAdminStoreCategoriesService = async (page, limit) => {
+export const getAdminStoreCategoriesService = async (page, limit, filters = {}) => {
     try {
-        const [[{ total }]] = await pool.query('SELECT COUNT(*) AS total FROM categories');
+        const { status, search } = filters;
+        const whereClauses = [];
+        const queryParams = [];
+
+        // Check and filter by status parameter safely
+        if (status !== undefined && status !== null && status !== 'All' && String(status).trim() !== '') {
+            whereClauses.push('status = ?');
+            const isActive = status === 'Active' || String(status) === '1';
+            queryParams.push(isActive ? 1 : 0);
+        }
+
+        // Check and search by keyword parameter, ignoring whitespace-only strings
+        if (search && String(search).trim() !== '') {
+            whereClauses.push('(category_name LIKE ? OR id LIKE ?)');
+            const searchPattern = `%${String(search).trim()}%`;
+            queryParams.push(searchPattern);
+            queryParams.push(searchPattern);
+        }
+
+        const whereSql = whereClauses.length > 0 ? ` WHERE ${whereClauses.join(' AND ')}` : '';
+
+        // Query total record count for pagination
+        const [[{ total }]] = await pool.query(`SELECT COUNT(*) AS total FROM categories${whereSql}`, queryParams);
         const sanitized = sanitizePaginationParams(page, limit);
+        
+        // Execute main paginated list query
+        const selectParams = [...queryParams, sanitized.limit, sanitized.offset];
         const [rows] = await pool.query(
-            'SELECT id, category_name, logo, status, created_at, updated_at FROM categories ORDER BY id ASC LIMIT ? OFFSET ?',
-            [sanitized.limit, sanitized.offset]
+            `SELECT id, category_name, logo, status, created_at, updated_at FROM categories${whereSql} ORDER BY id ASC LIMIT ? OFFSET ?`,
+            selectParams
         );
+
         return {
             success: true,
             statusCode: 200,
@@ -23,6 +50,7 @@ export const getAdminStoreCategoriesService = async (page, limit) => {
         throw error;
     }
 };
+
 /**
  * Fetch active store categories - Public
  */
@@ -46,18 +74,18 @@ export const getPublicStoreCategoriesService = async (page, limit) => {
     }
 };
 
-
 /**
  * Create a new store category
  */
 export const createStoreCategoryService = async (data) => {
     const { category_name, logo, status } = data;
-    const categoryStatus = status !== undefined ? parseInt(status) : 1;
+    const categoryStatus = status !== undefined ? Number(status) : 1;
+    const trimmedName = category_name?.trim() || '';
 
     // Check if category name already exists
     const [[existingCategory]] = await pool.query(
         'SELECT id FROM categories WHERE LOWER(category_name) = ?',
-        [category_name.trim().toLowerCase()]
+        [trimmedName.toLowerCase()]
     );
     if (existingCategory) {
         return {
@@ -68,19 +96,18 @@ export const createStoreCategoryService = async (data) => {
     }
 
     try {
+        const trimmedLogo = logo?.trim() || null;
         const [result] = await pool.query(
             'INSERT INTO categories (category_name, logo, status) VALUES (?, ?, ?)',
-            [category_name.trim(), logo ? logo.trim() : null, categoryStatus]
+            [trimmedName, trimmedLogo, categoryStatus]
         );
-
-        const newId = result.insertId;
 
         return {
             success: true,
             statusCode: 200,
             message: 'Category created successfully',
             data: {
-                id: newId
+                id: result.insertId
             }
         };
     } catch (error) {
@@ -92,28 +119,32 @@ export const createStoreCategoryService = async (data) => {
  * Update an existing store category
  */
 export const updateStoreCategoryService = async (id, body) => {
-    const { ...updateFields } = body;
-
-    // Step 1: Define which fields are allowed to be updated (Security Whitelist)
     const allowedFields = ['category_name', 'logo', 'status'];
 
-    // Step 2: Filter input to keep only allowed fields that are not undefined
-    const keys = Object.keys(updateFields).filter(
-        key => allowedFields.includes(key) && updateFields[key] !== undefined
-    );
-
-    // Step 3: Guard clause if no valid fields are provided
-    if (keys.length === 0) {
-        return { success: false, statusCode: 400, message: "No valid fields provided to update." };
+    // Map body attributes to separate sanitized storage to avoid parameter mutation
+    const updateFields = {};
+    for (const key of allowedFields) {
+        if (body[key] !== undefined) {
+            updateFields[key] = body[key];
+        }
     }
 
-    // Step 4: Handle specific validations (e.g. duplicate category name)
-    if (keys.includes('category_name')) {
-        const nameToValidate = updateFields.category_name.trim();
-        // Check if category name already exists for another category
+    const keys = Object.keys(updateFields);
+
+    if (keys.length === 0) {
+        return { 
+            success: false, 
+            statusCode: 400, 
+            message: "No valid fields provided to update." 
+        };
+    }
+
+    // Specific key validation rules
+    if (updateFields.category_name !== undefined) {
+        const trimmedName = updateFields.category_name.trim();
         const [[existingCategory]] = await pool.query(
             'SELECT id FROM categories WHERE LOWER(category_name) = ? AND id != ?',
-            [nameToValidate.toLowerCase(), id]
+            [trimmedName.toLowerCase(), id]
         );
         if (existingCategory) {
             return {
@@ -122,39 +153,42 @@ export const updateStoreCategoryService = async (id, body) => {
                 message: 'Category name already exists'
             };
         }
-        updateFields.category_name = nameToValidate;
+        updateFields.category_name = trimmedName;
     }
 
-    if (keys.includes('logo') && updateFields.logo) {
-        updateFields.logo = updateFields.logo.trim();
+    if (updateFields.logo !== undefined) {
+        updateFields.logo = updateFields.logo ? updateFields.logo.trim() : null;
     }
 
-    if (keys.includes('status')) {
-        updateFields.status = parseInt(updateFields.status);
+    if (updateFields.status !== undefined) {
+        updateFields.status = Number(updateFields.status);
     }
 
-    // Step 5: Dynamically construct the SET clause for SQL
     const setClause = keys.map(field => `${field} = ?`).join(', ');
-    
-    // Step 6: Extract the matching values in the exact same order
     const values = keys.map(field => updateFields[field]);
+    const queryParams = [...values, id];
 
-    // Step 7: Create the full SQL query and push the 'id' parameter for the WHERE clause
-    const updateQuery = `UPDATE categories SET ${setClause} WHERE id = ?`;
-    values.push(id);
-
-    // Step 8: Run the query
-    const [result] = await pool.query(updateQuery, values);
+    const [result] = await pool.query(
+        `UPDATE categories SET ${setClause} WHERE id = ?`,
+        queryParams
+    );
 
     if (result.affectedRows === 0) {
-        return { success: false, statusCode: 404, message: "Category not found or no changes made." };
+        return { 
+            success: false, 
+            statusCode: 404, 
+            message: "Category not found or no changes made." 
+        };
     }
 
     return {
         success: true,
         statusCode: 200,
         message: "Category updated successfully",
-        data: { id: parseInt(id), ...updateFields }
+        data: { 
+            id: Number(id), 
+            ...updateFields 
+        }
     };
 };
 
@@ -188,7 +222,7 @@ export const deleteStoreCategoryService = async (id) => {
             success: true,
             statusCode: 200,
             message: 'Category deleted successfully',
-            data: { id: parseInt(id) }
+            data: { id: Number(id) }
         };
     } catch (error) {
         await connection.rollback();

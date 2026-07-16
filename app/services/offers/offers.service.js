@@ -18,7 +18,7 @@ export const createOfferService = async (payload) => {
         const {
             offer_name, offer_type, promo_code, store_id, gift_card_id,
             value_type, value, min_order_amount, max_discount,
-            total_usage_limit, per_user_limit, unique_users_only, priority,
+            total_usage_limit, per_user_limit, unique_users_only,
             start_date, end_date, status
         } = payload;
 
@@ -57,7 +57,7 @@ export const createOfferService = async (payload) => {
                 offer_name, offer_type, promo_code || null, store_id || null, gift_card_id || null,
                 value_type, value, min_order_amount || 0.00, max_discount || null,
                 total_usage_limit || null, per_user_limit || null, unique_users_only || 0,
-                priority || 1, start_date, end_date, status || 1
+                1, start_date, end_date, status || 1
             ]
         );
 
@@ -107,7 +107,7 @@ export const getOffersService = async (filters = {}) => {
 
         const [[{ total }]] = await pool.query(countSql, params);
 
-        querySql += ' ORDER BY priority DESC, id DESC LIMIT ? OFFSET ?';
+        querySql += ' ORDER BY id DESC LIMIT ? OFFSET ?';
         const queryParams = [...params, limitVal, offset];
 
         const [offers] = await pool.query(querySql, queryParams);
@@ -352,7 +352,7 @@ export const validateAndCalculateOffer = async (userId, giftCardId, storeId, ord
            AND min_order_amount <= ?
            AND (store_id IS NULL OR store_id = ?)
            AND (gift_card_id IS NULL OR gift_card_id = ?)
-         ORDER BY priority DESC, id DESC`,
+         ORDER BY id DESC`,
         [amountVal, storeId || null, giftCardId || null]
     );
 
@@ -485,7 +485,7 @@ export const getActiveOffersService = async () => {
              WHERE status = 1 
                AND start_date <= NOW() 
                AND end_date >= NOW()
-             ORDER BY priority DESC, id DESC`
+             ORDER BY id DESC`
         );
         return {
             success: true,

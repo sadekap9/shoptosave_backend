@@ -34,7 +34,7 @@ export const getGiftCardsByStore = async (req, res) => {
     try {
         const { storeId } = req.params;
         const { page, limit } = req.query;
-        const response = await giftCardsService.getGiftCardsService({ store_id: storeId, page, limit });
+        const response = await giftCardsService.getGiftCardsService({ store_id: storeId, page, limit, shortResponse: true });
         
         return res.status(response.statusCode).json({
             success: response.success,
