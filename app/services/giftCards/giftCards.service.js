@@ -224,7 +224,7 @@ export const createGiftCardService = async (data) => {
     if (sku) {
         const [[existingSku]] = await pool.query('SELECT id, status, store_id FROM gift_cards WHERE sku = ?', [sku.trim()]);
         if (existingSku) {
-            if (existingSku.status === 0 && existingSku.store_id === null) {
+            if (existingSku.status === 0) {
                 // Reactivate and update instead of throwing unique constraint error
                 await pool.query(
                     'UPDATE gift_cards SET store_id = ?, category_id = ?, status = 1, gift_card_image = COALESCE(?, gift_card_image) WHERE id = ?',
@@ -527,8 +527,8 @@ export const deleteGiftCardService = async (id) => {
             };
         }
 
-        // Soft delete: set store_id to NULL and status to 0
-        await connection.query('UPDATE gift_cards SET store_id = NULL, status = 0 WHERE id = ?', [id]);
+        // Soft delete: disassociate from store by setting store_id to NULL
+        await connection.query('UPDATE gift_cards SET store_id = NULL WHERE id = ?', [id]);
 
         await connection.commit();
 

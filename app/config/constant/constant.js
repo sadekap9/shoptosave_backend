@@ -16,7 +16,7 @@ export const giftCardImageType = Object.freeze({
 
 export const imageLimits = Object.freeze({
     MAX_COUNT: 20,
-    MAX_FILE_SIZE: 5 * 1024 * 1024, // 5 MB
+    MAX_FILE_SIZE: 20 * 1024 * 1024, // 20 MB
     ALLOWED_EXTENSIONS: /jpeg|jpg|png|webp/i,
     ALLOWED_MIME_TYPES: [
         'image/jpeg',

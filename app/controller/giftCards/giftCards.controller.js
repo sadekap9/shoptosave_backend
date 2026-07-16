@@ -158,7 +158,7 @@ export const deleteGiftCard = async (req, res) => {
         logger.error('Error in deleteGiftCard', { error: error.message, stack: error.stack });
         return res.status(500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message, stack: error.stack }],
             result: {}
         });
     }
