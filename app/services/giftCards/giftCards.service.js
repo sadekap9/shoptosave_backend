@@ -28,7 +28,7 @@ export const getGiftCardsService = async (filters = {}) => {
         if (shortResponse) {
             selectColumns = `gc.id, gc.category_id, gc.store_id, gc.sku, gc.gift_card_name, 
                              gc.product_type, gc.min_denomination, gc.max_denomination, 
-                             gc.validity, gc.gift_card_image`;
+                             gc.validity, gc.gift_card_image, gc.featured, gc.status`;
         }
 
         let countSql = `
@@ -66,6 +66,32 @@ export const getGiftCardsService = async (filters = {}) => {
                 statusCode: 200,
                 message: 'No gift cards found',
                 data: [],
+                pagination: buildPagination(total, sanitized.page, sanitized.limit)
+            };
+        }
+
+        if (shortResponse) {
+            const sanitizedData = giftCards.map(gc => ({
+                id: gc.id,
+                category_id: gc.category_id,
+                store_id: gc.store_id,
+                sku: gc.sku,
+                gift_card_name: gc.gift_card_name,
+                product_type: gc.product_type,
+                min_denomination: gc.min_denomination,
+                max_denomination: gc.max_denomination,
+                validity: gc.validity,
+                giftcard_image: gc.gift_card_image || null,
+                store_name: gc.store_name,
+                category_name: gc.category_name,
+                featured: gc.featured,
+                status: gc.status
+            }));
+            return {
+                success: true,
+                statusCode: 200,
+                message: 'Gift cards fetched successfully',
+                data: sanitizedData,
                 pagination: buildPagination(total, sanitized.page, sanitized.limit)
             };
         }
