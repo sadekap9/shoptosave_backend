@@ -28,7 +28,7 @@ export const getGiftCardsService = async (filters = {}) => {
         if (shortResponse) {
             selectColumns = `gc.id, gc.category_id, gc.store_id, gc.sku, gc.gift_card_name, 
                              gc.product_type, gc.min_denomination, gc.max_denomination, 
-                             gc.validity, gc.giftcard_image`;
+                             gc.validity, gc.gift_card_image`;
         }
 
         let countSql = `
@@ -104,6 +104,9 @@ export const getGiftCardsService = async (filters = {}) => {
             const grouped = imageMap[gc.id] || { mobile_images: [], desktop_images: [] };
             gc.mobile_images = grouped.mobile_images;
             gc.desktop_images = grouped.desktop_images;
+            if (gc.gift_card_image !== undefined) {
+                gc.giftcard_image = gc.gift_card_image;
+            }
         });
 
         return {
@@ -163,6 +166,7 @@ export const getGiftCardByIdService = async (id) => {
 
         giftCard.mobile_images = mobile_images;
         giftCard.desktop_images = desktop_images;
+        giftCard.giftcard_image = giftCard.gift_card_image || null;
 
         return {
             success: true,
@@ -223,7 +227,7 @@ export const createGiftCardService = async (data) => {
             if (existingSku.status === 0 && existingSku.store_id === null) {
                 // Reactivate and update instead of throwing unique constraint error
                 await pool.query(
-                    'UPDATE gift_cards SET store_id = ?, category_id = ?, status = 1, giftcard_image = COALESCE(?, giftcard_image) WHERE id = ?',
+                    'UPDATE gift_cards SET store_id = ?, category_id = ?, status = 1, gift_card_image = COALESCE(?, gift_card_image) WHERE id = ?',
                     [store_id, category_id, data.giftcard_image || null, existingSku.id]
                 );
                 return {
@@ -400,7 +404,7 @@ export const createGiftCardService = async (data) => {
             sync_response,
             status: status !== undefined ? toTinyInt(status) : 1,
             featured: featured !== undefined ? toTinyInt(featured) : 0,
-            giftcard_image: data.giftcard_image || null
+            gift_card_image: data.giftcard_image || null
         };
 
         const keysToInsert = Object.keys(insertData).filter(key => dbColumns.includes(key));
@@ -484,7 +488,7 @@ export const updateGiftCardService = async (id, body) => {
     if (body.category_id !== undefined) updateData.category_id = Number(body.category_id);
     if (body.featured !== undefined) updateData.featured = toTinyInt(body.featured);
     if (body.status !== undefined) updateData.status = toTinyInt(body.status);
-    if (body.giftcard_image !== undefined) updateData.giftcard_image = body.giftcard_image;
+    if (body.giftcard_image !== undefined) updateData.gift_card_image = body.giftcard_image;
 
     const keysToUpdate = Object.keys(updateData).filter(key => dbColumns.includes(key));
     
