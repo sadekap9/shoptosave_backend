@@ -378,7 +378,8 @@ export const createGiftCardService = async (data) => {
             payout_enabled,
             sync_response,
             status: status !== undefined ? toTinyInt(status) : 1,
-            featured: featured !== undefined ? toTinyInt(featured) : 0
+            featured: featured !== undefined ? toTinyInt(featured) : 0,
+            giftcard_image: data.giftcard_image || null
         };
 
         const keysToInsert = Object.keys(insertData).filter(key => dbColumns.includes(key));
@@ -441,12 +442,7 @@ export const createGiftCardService = async (data) => {
     }
 };
 
-/**
- * Update an existing gift card status only
- */
 export const updateGiftCardService = async (id, body) => {
-    const { status } = body;
-
     // Check if gift card exists
     const [[giftCard]] = await pool.query('SELECT id FROM gift_cards WHERE id = ?', [id]);
     if (!giftCard) {
@@ -457,15 +453,33 @@ export const updateGiftCardService = async (id, body) => {
         };
     }
 
-    const statusValue = (status === true || status === 'true' || status === 1 || status === '1') ? 1 : 0;
+    const [columns] = await pool.query('DESCRIBE gift_cards');
+    const dbColumns = columns.map(c => c.Field);
 
-    await pool.query('UPDATE gift_cards SET status = ? WHERE id = ?', [statusValue, id]);
+    const updateData = {};
+    
+    if (body.store_id !== undefined) updateData.store_id = Number(body.store_id);
+    if (body.sku !== undefined) updateData.sku = body.sku.trim();
+    if (body.category_id !== undefined) updateData.category_id = Number(body.category_id);
+    if (body.featured !== undefined) updateData.featured = toTinyInt(body.featured);
+    if (body.status !== undefined) updateData.status = toTinyInt(body.status);
+    if (body.giftcard_image !== undefined) updateData.giftcard_image = body.giftcard_image;
+
+    const keysToUpdate = Object.keys(updateData).filter(key => dbColumns.includes(key));
+    
+    if (keysToUpdate.length > 0) {
+        const setSql = keysToUpdate.map(key => `${key} = ?`).join(', ');
+        const valuesToUpdate = keysToUpdate.map(key => updateData[key]);
+        valuesToUpdate.push(id);
+        
+        await pool.query(`UPDATE gift_cards SET ${setSql} WHERE id = ?`, valuesToUpdate);
+    }
 
     return {
         success: true,
         statusCode: 200,
-        message: 'Gift card status updated successfully',
-        data: { id: parseInt(id), status: statusValue }
+        message: 'Gift card updated successfully',
+        data: { id: parseInt(id), ...updateData }
     };
 };
 

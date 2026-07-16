@@ -33,12 +33,26 @@ export const createGiftCardSchema = Joi.object({
 });
 
 export const updateGiftCardSchema = Joi.object({
+    store_id: Joi.number().integer().positive().optional().messages({
+        'number.base': 'Store ID must be a number'
+    }),
+    sku: Joi.string().trim().max(100).optional().messages({
+        'string.max': 'SKU cannot exceed 100 characters'
+    }),
+    category_id: Joi.number().integer().positive().optional().messages({
+        'number.base': 'Category ID must be a number'
+    }),
+    featured: Joi.alternatives().try(
+        Joi.number().integer().valid(0, 1),
+        Joi.boolean()
+    ).optional().messages({
+        'any.only': 'Featured must be 0, 1, true or false'
+    }),
     status: Joi.alternatives().try(
         Joi.number().integer().valid(0, 1),
         Joi.boolean()
-    ).required().messages({
-        'any.only': 'Status must be 0, 1, true or false',
-        'any.required': 'Status is required'
+    ).optional().messages({
+        'any.only': 'Status must be 0, 1, true or false'
     })
 });
 

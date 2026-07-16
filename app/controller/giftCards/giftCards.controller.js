@@ -60,7 +60,11 @@ export const getGiftCardsByStore = async (req, res) => {
  */
 export const createGiftCard = async (req, res) => {
     try {
-        const response = await giftCardsService.createGiftCardService(req.body);
+        const data = { ...req.body };
+        if (req.files && req.files.giftcard_image && req.files.giftcard_image.length > 0) {
+            data.giftcard_image = `/uploads/giftcards/${req.files.giftcard_image[0].filename}`;
+        }
+        const response = await giftCardsService.createGiftCardService(data);
         
         if (!response.success) {
             return res.status(response.statusCode).json({
@@ -94,7 +98,11 @@ export const createGiftCard = async (req, res) => {
 export const updateGiftCard = async (req, res) => {
     try {
         const { id } = req.params;
-        const response = await giftCardsService.updateGiftCardService(id, req.body);
+        const data = { ...req.body };
+        if (req.files && req.files.giftcard_image && req.files.giftcard_image.length > 0) {
+            data.giftcard_image = `/uploads/giftcards/${req.files.giftcard_image[0].filename}`;
+        }
+        const response = await giftCardsService.updateGiftCardService(id, data);
         
         if (!response.success) {
             return res.status(response.statusCode).json({

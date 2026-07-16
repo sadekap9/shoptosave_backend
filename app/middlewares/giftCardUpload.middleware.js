@@ -4,7 +4,7 @@ import fs from 'fs';
 import { imageLimits, uploadFolders } from '../config/constant/constant.js';
 
 // Ensure uploads directories exist
-[uploadFolders.MOBILE, uploadFolders.DESKTOP].forEach(dir => {
+[uploadFolders.MOBILE, uploadFolders.DESKTOP, 'uploads/giftcards'].forEach(dir => {
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
     }
@@ -17,6 +17,8 @@ const storage = multer.diskStorage({
             cb(null, uploadFolders.MOBILE);
         } else if (file.fieldname === 'desktop_images') {
             cb(null, uploadFolders.DESKTOP);
+        } else if (file.fieldname === 'giftcard_image') {
+            cb(null, 'uploads/giftcards');
         } else {
             cb(new Error(`Invalid fieldname: ${file.fieldname}`), null);
         }
@@ -51,5 +53,6 @@ const upload = multer({
 // Field-based uploads middleware supporting multiple file fields
 export const giftCardUploadFields = upload.fields([
     { name: 'mobile_images', maxCount: imageLimits.MAX_COUNT },
-    { name: 'desktop_images', maxCount: imageLimits.MAX_COUNT }
+    { name: 'desktop_images', maxCount: imageLimits.MAX_COUNT },
+    { name: 'giftcard_image', maxCount: 1 }
 ]);
