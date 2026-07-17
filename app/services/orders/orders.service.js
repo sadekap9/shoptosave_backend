@@ -85,7 +85,11 @@ export const placeOrderService = async (userId, orderData) => {
     const isSelfPurchase = (user.phone && recipient_mobile === user.phone) ? 1 : 0;
 
     // 2. Validate Gift Card exists and is active
-    const [[giftCard]] = await pool.query('SELECT * FROM gift_cards WHERE id = ? AND status = 1', [gift_card_id]);
+    const [[giftCard]] = await pool.query(
+        `SELECT id, sku, gift_card_name, min_denomination, max_denomination
+         FROM gift_cards WHERE id = ? AND status = 1`,
+        [gift_card_id]
+    );
     if (!giftCard) {
         return { success: false, statusCode: 400, message: 'Gift card is inactive or does not exist' };
     }
@@ -332,7 +336,16 @@ export const getOrderHistoryService = async (userId) => {
  * Get Order Details with Payment Breakdown by ID
  */
 export const getOrderById = async (userId, orderId) => {
-    const [[order]] = await pool.query('SELECT * FROM gift_card_orders WHERE id = ?', [orderId]);
+    const [[order]] = await pool.query(
+        `SELECT id, user_id, gift_card_id, amount, sku, qty, status, is_self_purchase,
+                recipient_name, recipient_email, recipient_mobile, gift_message,
+                wallet_amount, online_amount, payment_type, woohoo_order_id,
+                gift_card_number, gift_card_pin, expiry_date, woohoo_reference_no,
+                offer_id, discount_amount, cashback_amount, payable_amount,
+                failure_reason, created_at
+         FROM gift_card_orders WHERE id = ?`,
+        [orderId]
+    );
     if (!order) {
         throw { message: 'Order not found', code: 'NOT_FOUND', statusCode: 404 };
     }
@@ -393,7 +406,11 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
     }
 
     // Fetch gift card details first
-    const [[giftCard]] = await pool.query('SELECT * FROM gift_cards WHERE id = ?', [giftcard_id]);
+    const [[giftCard]] = await pool.query(
+        `SELECT id, sku, store_id, gift_card_name, min_denomination, max_denomination
+         FROM gift_cards WHERE id = ?`,
+        [giftcard_id]
+    );
     if (!giftCard) {
         throw { message: 'Gift card not found', code: 'NOT_FOUND', statusCode: 404 };
     }
@@ -632,7 +649,9 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
 
             // Fetch updated order row
             const [[orderRow]] = await connection.query(
-                'SELECT * FROM gift_card_orders WHERE id = ?',
+                `SELECT id, user_id, gift_card_id, amount, status, wallet_amount,
+                        online_amount, cashback_amount, woohoo_reference_no, payment_type
+                 FROM gift_card_orders WHERE id = ?`,
                 [orderId]
             );
 
@@ -724,7 +743,9 @@ export const refundOrderToWalletService = async (userId, orderId) => {
     return await runInTransaction(async (connection) => {
         // 1. Fetch and lock order
         const [[order]] = await connection.query(
-            'SELECT * FROM gift_card_orders WHERE id = ? FOR UPDATE',
+            `SELECT id, user_id, gift_card_id, amount, status, wallet_amount,
+                    online_amount, cashback_amount, woohoo_reference_no, payment_type
+             FROM gift_card_orders WHERE id = ? FOR UPDATE`,
             [orderId]
         );
 
@@ -787,7 +808,8 @@ export const resolvePendingOrdersService = async () => {
     // 1. Fetch all orders that have been stuck in PENDING (status = 0) or PROCESSING (status = 1) for more than 2 minutes
     const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
     const [pendingOrders] = await pool.query(
-        `SELECT * FROM gift_card_orders 
+        `SELECT id, user_id, woohoo_reference_no, cashback_amount, wallet_amount, status
+         FROM gift_card_orders 
          WHERE (status = 0 OR status = 1) AND created_at <= ?`,
         [twoMinutesAgo]
     );

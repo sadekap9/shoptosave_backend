@@ -24,13 +24,12 @@ export const getGiftCardsService = async (filters = {}) => {
     try {
         const { store_id, page, limit, shortResponse = true } = filters;
         
-        let selectColumns = 'gc.*';
-        if (shortResponse) {
-            selectColumns = `gc.id, gc.category_id, gc.store_id, gc.sku, gc.gift_card_name, 
-                             gc.product_type, gc.min_denomination, gc.max_denomination, 
-                             gc.validity, gc.gift_card_image, gc.featured, gc.status,
-                             gc.discounts, gc.cashback_percentage, gc.resell_margin, gc.payout_enabled`;
-        }
+        const selectColumns = `gc.id, gc.category_id, gc.store_id, gc.sku, gc.gift_card_name,
+            gc.product_type, gc.min_denomination, gc.max_denomination,
+            gc.validity, gc.gift_card_image, gc.featured, gc.status,
+            gc.discounts, gc.brand_name, gc.description, gc.short_description,
+            gc.things_to_note, gc.redeem_steps, gc.tnc_link, gc.brand_logo,
+            gc.currency_code, gc.currency_symbol, gc.payout_enabled`;
 
         let countSql = `
             SELECT COUNT(*) AS total 
@@ -85,7 +84,7 @@ export const getGiftCardsService = async (filters = {}) => {
                 giftcard_image: gc.gift_card_image || null,
                 store_name: gc.store_name,
                 category_name: gc.category_name,
-                featured: gc.featured,
+                
                 status: gc.status
             }));
             return {
@@ -121,7 +120,14 @@ export const getGiftCardsService = async (filters = {}) => {
 export const getGiftCardByIdService = async (id) => {
     try {
         const [[giftCard]] = await pool.query(`
-            SELECT gc.*, s.store_name, c.category_name 
+            SELECT gc.id, gc.category_id, gc.store_id, gc.sku, gc.gift_card_name,
+                   gc.product_type, gc.min_denomination, gc.max_denomination,
+                   gc.validity, gc.gift_card_image, gc.featured, gc.status,
+                   gc.discounts, gc.brand_name, gc.brand_code, gc.description,
+                   gc.short_description, gc.things_to_note, gc.redeem_steps,
+                   gc.tnc_link, gc.brand_logo, gc.currency_code, gc.currency_symbol,
+                   gc.payout_enabled, gc.total_views,
+                   s.store_name, c.category_name
             FROM gift_cards gc
             LEFT JOIN stores s ON gc.store_id = s.id
             LEFT JOIN categories c ON gc.category_id = c.id
@@ -137,7 +143,8 @@ export const getGiftCardByIdService = async (id) => {
         }
 
         const [images] = await pool.query(`
-            SELECT * FROM gift_card_images WHERE gift_card_id = ?
+            SELECT id, gift_card_id, image_url, image_type, created_at, updated_at
+            FROM gift_card_images WHERE gift_card_id = ?
         `, [id]);
 
         const mobile_images = [];
@@ -595,7 +602,13 @@ export const getClientGiftCardsService = async (filters = {}) => {
 
         // Fetch paginated gift cards
         const querySql = `
-            SELECT gc.*, s.store_name, s.logo as store_logo, c.category_name
+            SELECT gc.id, gc.category_id, gc.store_id, gc.sku, gc.gift_card_name,
+                   gc.product_type, gc.min_denomination, gc.max_denomination,
+                   gc.validity, gc.gift_card_image, gc.featured, gc.status,
+                   gc.discounts, gc.brand_name, gc.description, gc.short_description,
+                   gc.things_to_note, gc.redeem_steps, gc.tnc_link, gc.brand_logo,
+                   gc.currency_code, gc.currency_symbol, gc.payout_enabled,
+                   s.store_name, s.logo as store_logo, c.category_name
             FROM gift_cards gc
             LEFT JOIN stores s ON gc.store_id = s.id
             LEFT JOIN categories c ON gc.category_id = c.id
@@ -620,7 +633,7 @@ export const getClientGiftCardsService = async (filters = {}) => {
         // Fetch images for the active gift cards
         const activeGiftCardIds = giftCards.map(gc => gc.id);
         const [images] = await pool.query(
-            'SELECT * FROM gift_card_images WHERE gift_card_id IN (?)',
+            'SELECT id, gift_card_id, image_url, image_type, created_at, updated_at FROM gift_card_images WHERE gift_card_id IN (?)',
             [activeGiftCardIds]
         );
 
@@ -689,7 +702,13 @@ export const getClientGiftCardsService = async (filters = {}) => {
 export const getClientGiftCardByIdService = async (id) => {
     try {
         const [[giftCard]] = await pool.query(`
-            SELECT gc.*, s.store_name, s.logo as store_logo, c.category_name
+            SELECT gc.id, gc.category_id, gc.store_id, gc.sku, gc.gift_card_name,
+                   gc.product_type, gc.min_denomination, gc.max_denomination,
+                   gc.validity, gc.gift_card_image, gc.featured, gc.status,
+                   gc.discounts, gc.brand_name, gc.description, gc.short_description,
+                   gc.things_to_note, gc.redeem_steps, gc.tnc_link, gc.brand_logo,
+                   gc.currency_code, gc.currency_symbol, gc.payout_enabled, gc.total_views,
+                   s.store_name, s.logo as store_logo, c.category_name
             FROM gift_cards gc
             LEFT JOIN stores s ON gc.store_id = s.id
             LEFT JOIN categories c ON gc.category_id = c.id
@@ -709,7 +728,8 @@ export const getClientGiftCardByIdService = async (id) => {
         giftCard.total_views = (giftCard.total_views || 0) + 1;
 
         const [images] = await pool.query(`
-            SELECT * FROM gift_card_images WHERE gift_card_id = ?
+            SELECT id, gift_card_id, image_url, image_type, created_at, updated_at
+            FROM gift_card_images WHERE gift_card_id = ?
         `, [id]);
 
         const mobile_images = [];
