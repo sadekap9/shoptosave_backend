@@ -55,8 +55,12 @@ export const getTopupRequests = async (filters) => {
         query += ` ORDER BY wtr.id DESC LIMIT ? OFFSET ?`;
         params.push(limitVal, offset);
 
-        const [[{ total }]] = await pool.query(countQuery, countParams);
-        const [rows] = await pool.query(query, params);
+        const [totalResult, rowsResult] = await Promise.all([
+            pool.query(countQuery, countParams),
+            pool.query(query, params)
+        ]);
+        const [[{ total }]] = totalResult;
+        const [rows] = rowsResult;
 
         return {
             success: true,
@@ -125,8 +129,12 @@ export const getOrders = async (filters) => {
         query += ` ORDER BY gco.id DESC LIMIT ? OFFSET ?`;
         params.push(limitVal, offset);
 
-        const [[{ total }]] = await pool.query(countQuery, countParams);
-        const [rows] = await pool.query(query, params);
+        const [totalResult, rowsResult] = await Promise.all([
+            pool.query(countQuery, countParams),
+            pool.query(query, params)
+        ]);
+        const [[{ total }]] = totalResult;
+        const [rows] = rowsResult;
 
         return {
             success: true,

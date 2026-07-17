@@ -21,16 +21,19 @@ import { generateWalletTxnNo } from '../wallets/wallets.service.js';
  */
 async function getCompanyDetails() {
     try {
-        const [[nameRow]] = await pool.query("SELECT config_value FROM app_config WHERE config_key = 'company_name';");
-        const [[emailRow]] = await pool.query("SELECT config_value FROM app_config WHERE config_key = 'company_email';");
-        const [[mobileRow]] = await pool.query("SELECT config_value FROM app_config WHERE config_key = 'company_mobile';");
-        const [[addressRow]] = await pool.query("SELECT config_value FROM app_config WHERE config_key = 'company_address';");
+        const [rows] = await pool.query(
+            "SELECT config_key, config_value FROM app_config WHERE config_key IN ('company_name', 'company_email', 'company_mobile', 'company_address');"
+        );
+        const configMap = rows.reduce((acc, row) => {
+            acc[row.config_key] = row.config_value;
+            return acc;
+        }, {});
 
         return {
-            name: nameRow?.config_value || companyConfig.name,
-            email: emailRow?.config_value || companyConfig.email,
-            mobile: mobileRow?.config_value || companyConfig.mobile,
-            address1: addressRow?.config_value || companyConfig.address1,
+            name: configMap.company_name || companyConfig.name,
+            email: configMap.company_email || companyConfig.email,
+            mobile: configMap.company_mobile || companyConfig.mobile,
+            address1: configMap.company_address || companyConfig.address1,
             address2: companyConfig.address2,
             city: companyConfig.city,
             state: companyConfig.state,

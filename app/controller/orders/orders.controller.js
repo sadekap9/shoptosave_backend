@@ -32,9 +32,9 @@ export const placeOrder = async (req, res) => {
 
     } catch (error) {
         logger.error('[Orders Controller] Error in placeOrder', { error: error.message, stack: error.stack });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }
@@ -58,9 +58,9 @@ export const getOrderHistory = async (req, res) => {
         });
     } catch (error) {
         logger.error('[Orders Controller] Error in getOrderHistory', { error: error.message, stack: error.stack });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }

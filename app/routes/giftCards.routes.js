@@ -12,10 +12,11 @@ import {
 
 import authenticate, { authorizeRole } from '../middlewares/verifyMiddleware.js';
 import { giftCardUploadFields } from '../middlewares/giftCardUpload.middleware.js';
-import { validate } from '../middlewares/validate.middleware.js';
+import { validate, validateParams } from '../middlewares/validate.middleware.js';
 import {
     createGiftCardSchema,
-    updateGiftCardSchema
+    updateGiftCardSchema,
+    giftCardIdParamSchema
 } from '../validations/giftCard.validation.js';
 
 const router = express.Router();
@@ -25,12 +26,20 @@ const router = express.Router();
 router.get('/lists', getClientGiftCards);
 
 // Get gift card details for customers
-router.get('/lists/:id', getClientGiftCardById);
+router.get('/lists/:id', validateParams(giftCardIdParamSchema), getClientGiftCardById);
 
 
-// Get all gift cards
+// Get all gift cards (Admin list - legacy alias)
 router.get(
     '/list',
+    authenticate,
+    authorizeRole([1, 2]),
+    getGiftCards
+);
+
+// Get all gift cards (Admin list)
+router.get(
+    '/admin/list',
     authenticate,
     authorizeRole([1, 2]),
     getGiftCards
@@ -49,6 +58,7 @@ router.get(
     '/:id',
     authenticate,
     authorizeRole([1, 2]),
+    validateParams(giftCardIdParamSchema),
     getGiftCardById
 );
 
@@ -67,6 +77,7 @@ router.patch(
     '/update/:id',
     authenticate,
     authorizeRole([1,2]), // Super Admin only
+    validateParams(giftCardIdParamSchema),
     giftCardUploadFields,
     validate(updateGiftCardSchema),
     updateGiftCard
@@ -77,7 +88,9 @@ router.delete(
     '/delete/:id',
     authenticate,
     authorizeRole([1]), // Super Admin only
+    validateParams(giftCardIdParamSchema),
     deleteGiftCard
 );
+
 
 export default router;

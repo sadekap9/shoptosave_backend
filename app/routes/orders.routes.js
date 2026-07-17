@@ -1,8 +1,8 @@
 import express from 'express';
 import * as ordersController from '../controller/orders/orders.controller.js';
 import authMiddleware from '../middlewares/verifyMiddleware.js';
-import { validate } from '../middlewares/validate.middleware.js';
-import { placeOrderSchema, giftCardOrderSchema } from '../validations/order.validation.js';
+import { validate, validateParams } from '../middlewares/validate.middleware.js';
+import { placeOrderSchema, giftCardOrderSchema, orderIdParamSchema } from '../validations/order.validation.js';
 
 const router = express.Router();
 
@@ -38,12 +38,13 @@ router.post('/gift-card', authMiddleware, validate(giftCardOrderSchema), ordersC
  * POST /api/v1/orders/:orderId/refund
  * Refund a successful order's wallet portion back to the user's wallet
  */
-router.post('/:orderId/refund', authMiddleware, ordersController.refundOrderToWallet);
+router.post('/:orderId/refund', authMiddleware, validateParams(orderIdParamSchema), ordersController.refundOrderToWallet);
 
 /**
  * GET /api/v1/orders/:orderId
  * Retrieve detailed order breakdown by ID
  */
-router.get('/:orderId', authMiddleware, ordersController.getOrder);
+router.get('/:orderId', authMiddleware, validateParams(orderIdParamSchema), ordersController.getOrder);
+
 
 export default router;

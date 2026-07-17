@@ -264,15 +264,17 @@ export const getWalletHistoryService = async (userId) => {
  * Get available balance and last 10 transactions (for /balance endpoint).
  */
 export const getWalletBalanceAndHistory = async (userId) => {
-    const wallet = await getOrCreateWallet(userId);
-    const [transactions] = await pool.query(
-        `SELECT id, transaction_no, type, source, amount, balance_before, balance_after, created_at, remarks
-         FROM wallet_transactions
-         WHERE wallet_id = ?
-         ORDER BY id DESC
-         LIMIT 10`,
-        [wallet.id]
-    );
+    const [wallet, [transactions]] = await Promise.all([
+        getOrCreateWallet(userId),
+        pool.query(
+            `SELECT id, transaction_no, type, source, amount, balance_before, balance_after, created_at, remarks
+             FROM wallet_transactions
+             WHERE user_id = ?
+             ORDER BY id DESC
+             LIMIT 10`,
+            [userId]
+        )
+    ]);
 
     return {
         success: true,

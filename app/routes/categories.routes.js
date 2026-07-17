@@ -1,8 +1,8 @@
 import express from 'express';
 import { getCategories, getProductsByCategory, syncCategories, syncProducts, storeProduct } from '../controller/categories/categories.controller.js';
 import authenticate, { authorizeRole } from '../middlewares/verifyMiddleware.js';
-import { validate } from '../middlewares/validate.middleware.js';
-import { productSchema } from '../validations/product.validation.js';
+import { validate, validateParams } from '../middlewares/validate.middleware.js';
+import { productSchema, getProductsByCategoryParamsSchema } from '../validations/product.validation.js';
 
 const router = express.Router();
 
@@ -10,7 +10,8 @@ const router = express.Router();
 router.get('/', getCategories);
 
 // Get products by category (Authenticated)
-router.get('/:categoryId/products', authenticate, getProductsByCategory);
+router.get('/:categoryId/products', authenticate, validateParams(getProductsByCategoryParamsSchema), getProductsByCategory);
+
 
 // Store products in database (Authenticated)
 router.post('/products', authenticate, validate(productSchema), storeProduct);

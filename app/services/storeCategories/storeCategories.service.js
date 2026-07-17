@@ -28,16 +28,19 @@ export const getAdminStoreCategoriesService = async (page, limit, filters = {}) 
 
         const whereSql = whereClauses.length > 0 ? ` WHERE ${whereClauses.join(' AND ')}` : '';
 
-        // Query total record count for pagination
-        const [[{ total }]] = await pool.query(`SELECT COUNT(*) AS total FROM categories${whereSql}`, queryParams);
         const sanitized = sanitizePaginationParams(page, limit);
-        
-        // Execute main paginated list query
         const selectParams = [...queryParams, sanitized.limit, sanitized.offset];
-        const [rows] = await pool.query(
-            `SELECT id, category_name, logo, status, created_at, updated_at FROM categories${whereSql} ORDER BY id ASC LIMIT ? OFFSET ?`,
-            selectParams
-        );
+        
+        // Execute count and list queries in parallel
+        const [totalResult, rowsResult] = await Promise.all([
+            pool.query(`SELECT COUNT(*) AS total FROM categories${whereSql}`, queryParams),
+            pool.query(
+                `SELECT id, category_name, logo, status, created_at, updated_at FROM categories${whereSql} ORDER BY id ASC LIMIT ? OFFSET ?`,
+                selectParams
+            )
+        ]);
+        const [[{ total }]] = totalResult;
+        const [rows] = rowsResult;
 
         return {
             success: true,
@@ -56,12 +59,16 @@ export const getAdminStoreCategoriesService = async (page, limit, filters = {}) 
  */
 export const getPublicStoreCategoriesService = async (page, limit) => {
     try {
-        const [[{ total }]] = await pool.query('SELECT COUNT(*) AS total FROM categories WHERE status = 1');
         const sanitized = sanitizePaginationParams(page, limit);
-        const [rows] = await pool.query(
-            'SELECT id, category_name, logo, status FROM categories WHERE status = 1 ORDER BY id DESC LIMIT ? OFFSET ?',
-            [sanitized.limit, sanitized.offset]
-        );
+        const [totalResult, rowsResult] = await Promise.all([
+            pool.query('SELECT COUNT(*) AS total FROM categories WHERE status = 1'),
+            pool.query(
+                'SELECT id, category_name, logo, status FROM categories WHERE status = 1 ORDER BY id DESC LIMIT ? OFFSET ?',
+                [sanitized.limit, sanitized.offset]
+            )
+        ]);
+        const [[{ total }]] = totalResult;
+        const [rows] = rowsResult;
         return {
             success: true,
             statusCode: 200,
@@ -88,8 +95,7 @@ export const createStoreCategoryService = async (data) => {
         [trimmedName.toLowerCase()]
     );
     if (existingCategory) {
-        return {
-            success: false,
+        throw {
             statusCode: 400,
             message: 'Category name already exists'
         };
@@ -132,8 +138,7 @@ export const updateStoreCategoryService = async (id, body) => {
     const keys = Object.keys(updateFields);
 
     if (keys.length === 0) {
-        return { 
-            success: false, 
+        throw { 
             statusCode: 400, 
             message: "No valid fields provided to update." 
         };
@@ -147,8 +152,7 @@ export const updateStoreCategoryService = async (id, body) => {
             [trimmedName.toLowerCase(), id]
         );
         if (existingCategory) {
-            return {
-                success: false,
+            throw {
                 statusCode: 400,
                 message: 'Category name already exists'
             };
@@ -199,8 +203,7 @@ export const deleteStoreCategoryService = async (id) => {
     // Check if category exists
     const [[category]] = await pool.query('SELECT id FROM categories WHERE id = ?', [id]);
     if (!category) {
-        return {
-            success: false,
+        throw {
             statusCode: 404,
             message: 'Category not found'
         };

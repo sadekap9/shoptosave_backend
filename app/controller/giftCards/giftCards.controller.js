@@ -19,9 +19,9 @@ export const getGiftCards = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in getGiftCards', { error: error.message, stack: error.stack });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }
@@ -47,9 +47,9 @@ export const getGiftCardsByStore = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in getGiftCardsByStore', { error: error.message, stack: error.stack });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }
@@ -84,9 +84,9 @@ export const createGiftCard = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in createGiftCard', { error: error.message, stack: error.stack });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }
@@ -122,9 +122,9 @@ export const updateGiftCard = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in updateGiftCard', { error: error.message, stack: error.stack });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }
@@ -156,9 +156,9 @@ export const deleteGiftCard = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in deleteGiftCard', { error: error.message, stack: error.stack });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: error.message, stack: error.stack }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }
@@ -190,9 +190,9 @@ export const getGiftCardById = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in getGiftCardById', { error: error.message, stack: error.stack });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }
@@ -227,9 +227,9 @@ export const getClientGiftCards = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in getClientGiftCards', { error: error.message, stack: error.stack });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }
@@ -261,9 +261,9 @@ export const getClientGiftCardById = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in getClientGiftCardById', { error: error.message, stack: error.stack });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }

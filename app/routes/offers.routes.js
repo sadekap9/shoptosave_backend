@@ -6,11 +6,10 @@ import { createOfferSchema, updateOfferSchema, changeStatusSchema, applyPromoSch
 
 const router = express.Router();
 
-// Get all offers (restricted to admin & sub-admin roles)
+// Get all offers (accessible by admin and regular users)
 router.get(
     '/list',
     authMiddleware,
-    authorizeRole([1, 2]),
     offersController.getOffers
 );
 

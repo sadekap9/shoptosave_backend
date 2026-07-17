@@ -22,13 +22,14 @@ const toTinyInt = (val) => {
  */
 export const getGiftCardsService = async (filters = {}) => {
     try {
-        const { store_id, page, limit, shortResponse } = filters;
+        const { store_id, page, limit, shortResponse = true } = filters;
         
         let selectColumns = 'gc.*';
         if (shortResponse) {
             selectColumns = `gc.id, gc.category_id, gc.store_id, gc.sku, gc.gift_card_name, 
                              gc.product_type, gc.min_denomination, gc.max_denomination, 
-                             gc.validity, gc.gift_card_image, gc.featured, gc.status`;
+                             gc.validity, gc.gift_card_image, gc.featured, gc.status,
+                             gc.discounts, gc.cashback_percentage, gc.resell_margin, gc.payout_enabled`;
         }
 
         let countSql = `
@@ -96,40 +97,7 @@ export const getGiftCardsService = async (filters = {}) => {
             };
         }
 
-        const activeGiftCardIds = giftCards.map(gc => gc.id);
-        const [images] = await pool.query(
-            'SELECT * FROM gift_card_images WHERE gift_card_id IN (?)',
-            [activeGiftCardIds]
-        );
-
-        // Map images to their respective gift cards, grouped by image_type
-        const imageMap = {};
-        images.forEach(img => {
-            if (!imageMap[img.gift_card_id]) {
-                imageMap[img.gift_card_id] = {
-                    mobile_images: [],
-                    desktop_images: []
-                };
-            }
-
-            const imgData = {
-                id: img.id,
-                image_url: img.image_url,
-                created_at: img.created_at,
-                updated_at: img.updated_at
-            };
-
-            if (img.image_type === 'mobile') {
-                imageMap[img.gift_card_id].mobile_images.push(imgData);
-            } else {
-                imageMap[img.gift_card_id].desktop_images.push(imgData);
-            }
-        });
-
         giftCards.forEach(gc => {
-            const grouped = imageMap[gc.id] || { mobile_images: [], desktop_images: [] };
-            gc.mobile_images = grouped.mobile_images;
-            gc.desktop_images = grouped.desktop_images;
             if (gc.gift_card_image !== undefined) {
                 gc.giftcard_image = gc.gift_card_image;
             }

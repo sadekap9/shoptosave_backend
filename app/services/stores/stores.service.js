@@ -6,20 +6,25 @@ import { sanitizePaginationParams, buildPagination } from '../../helpers/paginat
  */
 export const getStoresService = async (page, limit) => {
     try {
-        const [[{ total }]] = await pool.query('SELECT COUNT(*) AS total FROM stores');
         const sanitized = sanitizePaginationParams(page, limit);
-        const [rows] = await pool.query(`
-            SELECT s.id, s.store_name, s.logo, s.status, s.created_at, s.updated_at,
-                   COALESCE(gc.voucher_count, 0) AS voucher_count
-            FROM stores s 
-            LEFT JOIN (
-                SELECT store_id, COUNT(*) AS voucher_count 
-                FROM gift_cards 
-                GROUP BY store_id
-            ) gc ON s.id = gc.store_id
-            ORDER BY s.id ASC
-            LIMIT ? OFFSET ?
-        `, [sanitized.limit, sanitized.offset]);
+        const [totalResult, rowsResult] = await Promise.all([
+            pool.query('SELECT COUNT(*) AS total FROM stores'),
+            pool.query(`
+                SELECT s.id, s.store_name, s.logo, s.status, s.created_at, s.updated_at,
+                       COALESCE(gc.voucher_count, 0) AS voucher_count
+                FROM stores s 
+                LEFT JOIN (
+                    SELECT store_id, COUNT(*) AS voucher_count 
+                    FROM gift_cards 
+                    GROUP BY store_id
+                ) gc ON s.id = gc.store_id
+                ORDER BY s.id ASC
+                LIMIT ? OFFSET ?
+            `, [sanitized.limit, sanitized.offset])
+        ]);
+        const [[{ total }]] = totalResult;
+        const [rows] = rowsResult;
+
         return {
             success: true,
             statusCode: 200,

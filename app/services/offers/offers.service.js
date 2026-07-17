@@ -83,45 +83,80 @@ export const getOffersService = async (filters = {}) => {
         const limitVal = parseInt(limit);
         const offset = (pageVal - 1) * limitVal;
 
-        let countSql = 'SELECT COUNT(*) AS total FROM offers WHERE 1=1';
-        let querySql = 'SELECT * FROM offers WHERE 1=1';
+        let countSql = `
+            SELECT COUNT(*) AS total 
+            FROM offers o
+            LEFT JOIN stores s ON o.store_id = s.id
+            LEFT JOIN gift_cards gc ON o.gift_card_id = gc.id
+            WHERE 1=1
+        `;
+        let querySql = `
+            SELECT o.*, s.store_name, gc.gift_card_name 
+            FROM offers o
+            LEFT JOIN stores s ON o.store_id = s.id
+            LEFT JOIN gift_cards gc ON o.gift_card_id = gc.id
+            WHERE 1=1
+        `;
         const params = [];
 
         if (search) {
-            countSql += ' AND (offer_name LIKE ? OR promo_code LIKE ?)';
-            querySql += ' AND (offer_name LIKE ? OR promo_code LIKE ?)';
+            countSql += ' AND (o.offer_name LIKE ? OR o.promo_code LIKE ?)';
+            querySql += ' AND (o.offer_name LIKE ? OR o.promo_code LIKE ?)';
             params.push(`%${search}%`, `%${search}%`);
         }
 
         if (offer_type) {
-            countSql += ' AND offer_type = ?';
-            querySql += ' AND offer_type = ?';
+            countSql += ' AND o.offer_type = ?';
+            querySql += ' AND o.offer_type = ?';
             params.push(parseInt(offer_type));
         }
 
         if (status) {
-            countSql += ' AND status = ?';
-            querySql += ' AND status = ?';
+            countSql += ' AND o.status = ?';
+            querySql += ' AND o.status = ?';
             params.push(parseInt(status));
         }
 
-        const [[{ total }]] = await pool.query(countSql, params);
-
-        querySql += ' ORDER BY id DESC LIMIT ? OFFSET ?';
+        querySql += ' ORDER BY o.id DESC LIMIT ? OFFSET ?';
         const queryParams = [...params, limitVal, offset];
 
-        const [offers] = await pool.query(querySql, queryParams);
+        const [totalResult, rowsResult, statsResult] = await Promise.all([
+            pool.query(countSql, params),
+            pool.query(querySql, queryParams),
+            pool.query(`
+                SELECT 
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS active,
+                    SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END) AS inactive
+                FROM offers
+            `)
+        ]);
+
+        const [[{ total }]] = totalResult;
+        const [offers] = rowsResult;
+        const [[stats]] = statsResult;
+
+        // Sanitize offers to remove created_at and updated_at
+        const sanitizedOffers = offers.map(o => {
+            const { created_at, updated_at, ...rest } = o;
+            return rest;
+        });
 
         return {
             success: true,
             statusCode: 200,
             message: 'Offers fetched successfully',
-            data: offers,
+            data: sanitizedOffers,
             pagination: {
                 total,
                 page: pageVal,
                 limit: limitVal,
                 totalPages: Math.ceil(total / limitVal)
+            },
+            statistics: {
+                total: Number(stats.total) || 0,
+                active: Number(stats.active) || 0,
+                inactive: Number(stats.inactive) || 0
             }
         };
     } catch (error) {
@@ -480,12 +515,16 @@ export const validateAndCalculateOffer = async (userId, giftCardId, storeId, ord
 export const getActiveOffersService = async () => {
     try {
         const [activeOffers] = await pool.query(
-            `SELECT id, offer_name, offer_type, promo_code, value_type, value, min_order_amount, max_discount, end_date 
-             FROM offers 
-             WHERE status = 1 
-               AND start_date <= NOW() 
-               AND end_date >= NOW()
-             ORDER BY id DESC`
+            `SELECT o.id, o.offer_name, o.offer_type, o.promo_code, o.value_type, o.value, 
+                    o.min_order_amount, o.max_discount, o.end_date, o.store_id, o.gift_card_id,
+                    s.store_name, gc.gift_card_name
+             FROM offers o
+             LEFT JOIN stores s ON o.store_id = s.id
+             LEFT JOIN gift_cards gc ON o.gift_card_id = gc.id
+             WHERE o.status = 1 
+               AND o.start_date <= NOW() 
+               AND o.end_date >= NOW()
+             ORDER BY o.id DESC`
         );
         return {
             success: true,

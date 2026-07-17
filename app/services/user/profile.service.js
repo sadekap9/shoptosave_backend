@@ -136,11 +136,13 @@ const getUserMasterColumns = async () => {
 
 export const listUsersService = async (page, limit) => {
     try {
-        const countResult = await executeQuery('SELECT COUNT(*) AS total FROM user_master WHERE role = 3');
-        const total = countResult[0]?.total || 0;
-
         const sanitized = sanitizePaginationParams(page, limit);
-        const availableCols = await getUserMasterColumns();
+        const [totalCount, availableCols] = await Promise.all([
+            executeQuery('SELECT COUNT(*) AS total FROM user_master WHERE role = 3'),
+            getUserMasterColumns()
+        ]);
+        const total = totalCount[0]?.total || 0;
+
         const selectFields = ['id', 'name', 'email', 'phone', 'dob', 'profile_image', 'is_active'];
 
         if (availableCols.includes('createdAt')) {

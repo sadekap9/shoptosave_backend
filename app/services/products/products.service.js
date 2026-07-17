@@ -282,40 +282,46 @@ export const getProductsByCategoryFromDB = async (categoryId, page, limit) => {
         [categoryId, categoryId]
     );
 
-    const targetId = category ? category.woohoo_category_id : categoryId;
+    if (!category) {
+        throw {
+            statusCode: 404,
+            message: 'Category not found'
+        };
+    }
+
+    const targetId = category.woohoo_category_id;
     const targetIdStr = String(targetId);
     const targetIdNum = Number(targetId);
 
-    // Fetch total count for pagination metadata
-    const [[{ total }]] = await pool.query(
-        `SELECT COUNT(*) AS total FROM woohoo_products 
-         WHERE (
-            JSON_CONTAINS(categories, CAST(? AS JSON)) OR 
-            JSON_CONTAINS(categories, CAST(? AS JSON)) OR
-            JSON_CONTAINS(categories, JSON_OBJECT('id', ?)) OR
-            JSON_CONTAINS(categories, JSON_OBJECT('id', ?))
-         ) AND status = 1`,
-        [targetIdNum, targetIdStr, targetIdNum, targetIdStr]
-    );
-
     const sanitized = sanitizePaginationParams(page, limit);
 
-    // Query woohoo_products filtering on the JSON categories field
-    // We check:
-    // 1. Array of IDs: [54]
-    // 2. Array of objects: [{"id": 54}]
-    // 3. String array of IDs: ["54"]
-    const [rows] = await pool.query(
-        `SELECT id, sku, product_name, brand_name, thumbnail_image FROM woohoo_products 
-         WHERE (
-            JSON_CONTAINS(categories, CAST(? AS JSON)) OR 
-            JSON_CONTAINS(categories, CAST(? AS JSON)) OR
-            JSON_CONTAINS(categories, JSON_OBJECT('id', ?)) OR
-            JSON_CONTAINS(categories, JSON_OBJECT('id', ?))
-         ) AND status = 1 
-         ORDER BY product_name ASC LIMIT ? OFFSET ?`,
-        [targetIdNum, targetIdStr, targetIdNum, targetIdStr, sanitized.limit, sanitized.offset]
-    );
+    // Fetch total count and products list in parallel
+    const [totalResult, rowsResult] = await Promise.all([
+        pool.query(
+            `SELECT COUNT(*) AS total FROM woohoo_products 
+             WHERE (
+                JSON_CONTAINS(categories, CAST(? AS JSON)) OR 
+                JSON_CONTAINS(categories, CAST(? AS JSON)) OR
+                JSON_CONTAINS(categories, JSON_OBJECT('id', ?)) OR
+                JSON_CONTAINS(categories, JSON_OBJECT('id', ?))
+             ) AND status = 1`,
+            [targetIdNum, targetIdStr, targetIdNum, targetIdStr]
+        ),
+        pool.query(
+            `SELECT id, sku, product_name, brand_name, thumbnail_image FROM woohoo_products 
+             WHERE (
+                JSON_CONTAINS(categories, CAST(? AS JSON)) OR 
+                JSON_CONTAINS(categories, CAST(? AS JSON)) OR
+                JSON_CONTAINS(categories, JSON_OBJECT('id', ?)) OR
+                JSON_CONTAINS(categories, JSON_OBJECT('id', ?))
+             ) AND status = 1 
+             ORDER BY product_name ASC LIMIT ? OFFSET ?`,
+            [targetIdNum, targetIdStr, targetIdNum, targetIdStr, sanitized.limit, sanitized.offset]
+        )
+    ]);
+    const [[{ total }]] = totalResult;
+    const [rows] = rowsResult;
+
     return {
         data: rows,
         pagination: buildPagination(total, sanitized.page, sanitized.limit)
@@ -330,7 +336,13 @@ export const getProductBySkuFromDB = async (sku) => {
         'SELECT * FROM woohoo_products WHERE sku = ?',
         [sku]
     );
-    return row || null;
+    if (!row) {
+        throw {
+            statusCode: 404,
+            message: 'Product not found in database'
+        };
+    }
+    return row;
 };
 
 /**

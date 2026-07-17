@@ -31,3 +31,13 @@ export const updateStoreCategorySchema = Joi.object({
         'any.only': 'Status must be 0 or 1'
     })
 });
+
+export const storeCategoryIdParamSchema = Joi.object({
+    id: Joi.number().integer().positive().required().messages({
+        'number.base': 'Category ID must be numeric',
+        'number.integer': 'Category ID must be an integer',
+        'number.positive': 'Category ID must be a positive number',
+        'any.required': 'Category ID is required'
+    })
+});
+

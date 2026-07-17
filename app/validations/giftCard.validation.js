@@ -56,3 +56,13 @@ export const updateGiftCardSchema = Joi.object({
     })
 });
 
+export const giftCardIdParamSchema = Joi.object({
+    id: Joi.number().integer().positive().required().messages({
+        'number.base': 'Gift Card ID must be numeric',
+        'number.integer': 'Gift Card ID must be an integer',
+        'number.positive': 'Gift Card ID must be a positive number',
+        'any.required': 'Gift Card ID is required'
+    })
+});
+
+

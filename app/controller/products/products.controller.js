@@ -19,9 +19,9 @@ export const getProductsByCategory = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in getProductsByCategory', { error: error.message, stack: error.stack });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            message: 'Internal server error',
+            message: error.message || 'Internal server error',
             result: {}
         });
     }
@@ -40,7 +40,7 @@ export const syncProducts = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in syncProducts', { error: error.message, stack: error.stack });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
             message: error.message || 'Product sync failed',
             result: {}
@@ -63,7 +63,7 @@ export const storeProduct = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in storeProduct', { error: error.message, stack: error.stack });
-        return res.status(400).json({
+        return res.status(error.statusCode || 400).json({
             success: false,
             message: error.message || 'Failed to store product(s)',
             result: {}
@@ -92,9 +92,9 @@ export const getProductBySku = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in getProductBySku', { error: error.message, stack: error.stack });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            message: 'Internal server error',
+            message: error.message || 'Internal server error',
             result: {}
         });
     }

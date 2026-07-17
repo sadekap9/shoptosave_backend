@@ -20,9 +20,9 @@ export const getAdminStoreCategories = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in getAdminStoreCategories', { error: error.message });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }
@@ -47,9 +47,9 @@ export const getPublicStoreCategories = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in getPublicStoreCategories', { error: error.message });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }
@@ -74,14 +74,6 @@ export const createStoreCategory = async (req, res) => {
             status
         });
 
-        if (!response.success) {
-            return res.status(response.statusCode).json({
-                success: false,
-                errors: [{ message: response.message }],
-                result: {}
-            });
-        }
-
         return res.status(response.statusCode).json({
             success: true,
             errors: [],
@@ -92,9 +84,9 @@ export const createStoreCategory = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in createStoreCategory', { error: error.message });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }
@@ -119,14 +111,6 @@ export const updateStoreCategory = async (req, res) => {
             status
         });
 
-        if (!response.success) {
-            return res.status(response.statusCode).json({
-                success: false,
-                errors: [{ message: response.message }],
-                result: {}
-            });
-        }
-
         return res.status(response.statusCode).json({
             success: true,
             errors: [],
@@ -137,9 +121,9 @@ export const updateStoreCategory = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in updateStoreCategory', { error: error.message });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }
@@ -153,14 +137,6 @@ export const deleteStoreCategory = async (req, res) => {
         const { id } = req.params;
         const response = await storeCategoriesService.deleteStoreCategoryService(id);
 
-        if (!response.success) {
-            return res.status(response.statusCode).json({
-                success: false,
-                errors: [{ message: response.message }],
-                result: {}
-            });
-        }
-
         return res.status(response.statusCode).json({
             success: true,
             errors: [],
@@ -171,9 +147,9 @@ export const deleteStoreCategory = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in deleteStoreCategory', { error: error.message });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }

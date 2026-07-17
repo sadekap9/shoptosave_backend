@@ -52,3 +52,13 @@ export const giftCardOrderSchema = Joi.object({
     offer_id: Joi.number().integer().positive().optional().allow(null)
 });
 
+export const orderIdParamSchema = Joi.object({
+    orderId: Joi.number().integer().positive().required().messages({
+        'number.base': 'Order ID must be numeric',
+        'number.integer': 'Order ID must be an integer',
+        'number.positive': 'Order ID must be a positive number',
+        'any.required': 'Order ID is required'
+    })
+});
+
+

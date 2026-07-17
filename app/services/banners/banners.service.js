@@ -17,10 +17,15 @@ export const getBannersService = async (userRole = null, page, limit) => {
         query += whereClause;
         query += ' ORDER BY display_order ASC, id DESC LIMIT ? OFFSET ?';
 
-        const [[{ total }]] = await pool.query(countQuery);
         const sanitized = sanitizePaginationParams(page, limit);
 
-        const [rows] = await pool.query(query, [sanitized.limit, sanitized.offset]);
+        const [totalResult, rowsResult] = await Promise.all([
+            pool.query(countQuery),
+            pool.query(query, [sanitized.limit, sanitized.offset])
+        ]);
+        const [[{ total }]] = totalResult;
+        const [rows] = rowsResult;
+
         return {
             success: true,
             statusCode: 200,

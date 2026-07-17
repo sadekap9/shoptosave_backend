@@ -40,7 +40,16 @@ export const createOffer = async (req, res) => {
  */
 export const getOffers = async (req, res) => {
     try {
-        const response = await offersService.getOffersService(req.query);
+        const userRole = req.user?.role;
+        let response;
+
+        if (userRole === 1 || userRole === 2) {
+            // Admin and Sub-admin get all offers with filters
+            response = await offersService.getOffersService(req.query);
+        } else {
+            // Regular users get active/valid offers only
+            response = await offersService.getActiveOffersService();
+        }
 
         return res.status(response.statusCode).json({
             success: true,
@@ -48,14 +57,15 @@ export const getOffers = async (req, res) => {
             result: {
                 message: response.message,
                 data: response.data,
-                pagination: response.pagination
+                pagination: response.pagination,
+                statistics: response.statistics
             }
         });
     } catch (error) {
         logger.error('Error in getOffers controller', { error: error.message, stack: error.stack });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }

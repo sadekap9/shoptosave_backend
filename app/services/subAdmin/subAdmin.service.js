@@ -276,15 +276,16 @@ export const deleteSubAdminService = async (id) => {
  */
 export const listSubAdminsService = async (page, limit) => {
     try {
-        const countResult = await executeQuery('SELECT COUNT(*) AS total FROM user_master WHERE role = 2');
-        const total = countResult[0]?.total || 0;
-        
         const sanitized = sanitizePaginationParams(page, limit);
 
-        const subAdmins = await executeQuery(
-            'SELECT id, name, email, phone, role, menu_access, is_active, createdAt, modifiedAt FROM user_master WHERE role = 2 ORDER BY id DESC LIMIT ? OFFSET ?',
-            [sanitized.limit, sanitized.offset]
-        );
+        const [countResult, subAdmins] = await Promise.all([
+            executeQuery('SELECT COUNT(*) AS total FROM user_master WHERE role = 2'),
+            executeQuery(
+                'SELECT id, name, email, phone, role, menu_access, is_active, createdAt, modifiedAt FROM user_master WHERE role = 2 ORDER BY id DESC LIMIT ? OFFSET ?',
+                [sanitized.limit, sanitized.offset]
+            )
+        ]);
+        const total = countResult[0]?.total || 0;
 
         const mappedSubAdmins = subAdmins.map(sub => {
             let parsedMenuAccess = [];
