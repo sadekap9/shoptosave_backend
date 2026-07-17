@@ -51,14 +51,18 @@ export const getGiftCardsService = async (filters = {}) => {
         }
         
         const countParams = [...params];
-        
-        const [[{ total }]] = await pool.query(countSql, countParams);
         const sanitized = sanitizePaginationParams(page, limit);
         
         querySql += ` ORDER BY gc.id DESC LIMIT ? OFFSET ?`;
-        params.push(sanitized.limit, sanitized.offset);
+        const dataParams = [...params, sanitized.limit, sanitized.offset];
 
-        const [giftCards] = await pool.query(querySql, params);
+        const [countResult, dataResult] = await Promise.all([
+            pool.query(countSql, countParams),
+            pool.query(querySql, dataParams)
+        ]);
+
+        const [[{ total }]] = countResult;
+        const [giftCards] = dataResult;
 
         if (giftCards.length === 0) {
             return {
@@ -69,6 +73,60 @@ export const getGiftCardsService = async (filters = {}) => {
                 pagination: buildPagination(total, sanitized.page, sanitized.limit)
             };
         }
+
+        // ─── Fetch best active offer for each gift card ─────────────────────
+        // Priority: card-specific (gift_card_id match) > store-specific > global
+        const gcIds = giftCards.map(gc => gc.id);
+
+        const [allOffers] = await pool.query(`
+            SELECT 
+                gc.id AS gc_id,
+                o.offer_type,
+                o.value_type,
+                o.value,
+                o.offer_name,
+                o.gift_card_id,
+                o.store_id AS offer_store_id
+            FROM gift_cards gc
+            INNER JOIN offers o ON (
+                o.status = 1 
+                AND o.start_date <= NOW() 
+                AND o.end_date >= NOW()
+                AND (
+                    o.gift_card_id = gc.id
+                    OR (o.gift_card_id IS NULL AND o.store_id = gc.store_id)
+                    OR (o.gift_card_id IS NULL AND o.store_id IS NULL)
+                )
+            )
+            WHERE gc.id IN (?)
+            ORDER BY o.value DESC
+        `, [gcIds]);
+
+        // Build offerMap with specificity priority:
+        // 1 = card-specific (gift_card_id matches), 2 = store-specific, 3 = global
+        const offerMap = {};
+        const getSpecificity = (row) => {
+            if (row.gift_card_id !== null) return 1;       // card-specific
+            if (row.offer_store_id !== null) return 2;     // store-specific
+            return 3;                                       // global
+        };
+
+        allOffers.forEach(row => {
+            const existing = offerMap[row.gc_id];
+            const newSpecificity = getSpecificity(row);
+
+            if (!existing || newSpecificity < existing._specificity) {
+                offerMap[row.gc_id] = { ...row, _specificity: newSpecificity };
+            }
+        });
+
+        // Helper to attach offer fields to a gift card object
+        const attachOfferFields = (gc) => ({
+            max_offer_value: offerMap[gc.id]?.value || null,
+            max_offer_type: offerMap[gc.id]?.offer_type || null,
+            max_offer_value_type: offerMap[gc.id]?.value_type || null,
+            max_offer_name: offerMap[gc.id]?.offer_name || null,
+        });
 
         if (shortResponse) {
             const sanitizedData = giftCards.map(gc => ({
@@ -84,8 +142,8 @@ export const getGiftCardsService = async (filters = {}) => {
                 giftcard_image: gc.gift_card_image || null,
                 store_name: gc.store_name,
                 category_name: gc.category_name,
-                
-                status: gc.status
+                status: gc.status,
+                ...attachOfferFields(gc)
             }));
             return {
                 success: true,
@@ -100,6 +158,8 @@ export const getGiftCardsService = async (filters = {}) => {
             if (gc.gift_card_image !== undefined) {
                 gc.giftcard_image = gc.gift_card_image;
             }
+            const offerFields = attachOfferFields(gc);
+            Object.assign(gc, offerFields);
         });
 
         return {
