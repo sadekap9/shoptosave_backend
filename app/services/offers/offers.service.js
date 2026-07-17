@@ -9,6 +9,62 @@ const isCurrentDateWithinRange = (start, end) => {
     const now = new Date();
     return new Date(start) <= now && now <= new Date(end);
 };
+/**
+ * Helper to check duplicate active offers by target scope (gift_card_id, store_id, global) or promo code
+ */
+const checkDuplicateOffer = async (offerData, excludeId = null) => {
+    const status = offerData.status !== undefined ? Number(offerData.status) : OFFER_STATUS.ACTIVE;
+    if (status !== OFFER_STATUS.ACTIVE) {
+        return null;
+    }
+
+    const { offer_name, offer_type, promo_code, store_id, gift_card_id } = offerData;
+
+    // 1. Promo code check (for promo codes)
+    if (Number(offer_type) === OFFER_TYPE.PROMO_CODE && promo_code && promo_code.trim()) {
+        let promoSql = `SELECT id FROM offers WHERE promo_code = ? AND status = ${OFFER_STATUS.ACTIVE}`;
+        const promoParams = [promo_code.trim()];
+        if (excludeId) {
+            promoSql += ` AND id != ?`;
+            promoParams.push(excludeId);
+        }
+        const [[existingPromo]] = await pool.query(promoSql, promoParams);
+        if (existingPromo) {
+            return `An active offer with the promo code '${promo_code.trim()}' already exists.`;
+        }
+    }
+
+    // 2. Offer name + target scope check (gift_card_id / store_id / global)
+    if (offer_name && offer_name.trim()) {
+        let nameSql = `SELECT id FROM offers WHERE offer_name = ? AND status = ${OFFER_STATUS.ACTIVE}`;
+        const nameParams = [offer_name.trim()];
+
+        if (gift_card_id) {
+            nameSql += ` AND gift_card_id = ?`;
+            nameParams.push(Number(gift_card_id));
+        } else if (store_id) {
+            nameSql += ` AND store_id = ? AND (gift_card_id IS NULL OR gift_card_id = 0)`;
+            nameParams.push(Number(store_id));
+        } else {
+            nameSql += ` AND (store_id IS NULL OR store_id = 0) AND (gift_card_id IS NULL OR gift_card_id = 0)`;
+        }
+
+        if (excludeId) {
+            nameSql += ` AND id != ?`;
+            nameParams.push(excludeId);
+        }
+
+        const [[existingName]] = await pool.query(nameSql, nameParams);
+        if (existingName) {
+            let scopeLabel = 'all stores (global)';
+            if (gift_card_id) scopeLabel = 'this specific gift card';
+            else if (store_id) scopeLabel = 'this specific store';
+            return `An active offer with the name '${offer_name.trim()}' already exists for ${scopeLabel}.`;
+        }
+    }
+
+    return null;
+};
 
 /**
  * Create an offer
@@ -22,31 +78,14 @@ export const createOfferService = async (payload) => {
             start_date, end_date, status
         } = payload;
 
-        // Check for duplicates among active offers
-        if (offer_type === OFFER_TYPE.PROMO_CODE && promo_code) {
-            const [[existingPromo]] = await pool.query(
-                `SELECT id FROM offers WHERE promo_code = ? AND status = ${OFFER_STATUS.ACTIVE}`,
-                [promo_code.trim()]
-            );
-            if (existingPromo) {
-                return {
-                    success: false,
-                    statusCode: 400,
-                    message: `An active offer with the promo code '${promo_code}' already exists.`
-                };
-            }
-        } else {
-            const [[existingName]] = await pool.query(
-                `SELECT id FROM offers WHERE offer_name = ? AND status = ${OFFER_STATUS.ACTIVE}`,
-                [offer_name.trim()]
-            );
-            if (existingName) {
-                return {
-                    success: false,
-                    statusCode: 400,
-                    message: `An active offer with the name '${offer_name}' already exists.`
-                };
-            }
+        // Scope-based duplicate check
+        const dupError = await checkDuplicateOffer(payload);
+        if (dupError) {
+            return {
+                success: false,
+                statusCode: 400,
+                message: dupError
+            };
         }
 
         const [result] = await pool.query(
@@ -195,12 +234,22 @@ export const getOfferByIdService = async (id) => {
  */
 export const updateOfferService = async (id, payload) => {
     try {
-        const [[existing]] = await pool.query('SELECT id FROM offers WHERE id = ?', [id]);
+        const [[existing]] = await pool.query('SELECT * FROM offers WHERE id = ?', [id]);
         if (!existing) {
             return {
                 success: false,
                 statusCode: 404,
                 message: 'Offer not found'
+            };
+        }
+
+        const mergedData = { ...existing, ...payload };
+        const dupError = await checkDuplicateOffer(mergedData, id);
+        if (dupError) {
+            return {
+                success: false,
+                statusCode: 400,
+                message: dupError
             };
         }
 
@@ -269,13 +318,24 @@ export const deleteOfferService = async (id) => {
  */
 export const changeOfferStatusService = async (id, status) => {
     try {
-        const [[existing]] = await pool.query('SELECT id FROM offers WHERE id = ?', [id]);
+        const [[existing]] = await pool.query('SELECT * FROM offers WHERE id = ?', [id]);
         if (!existing) {
             return {
                 success: false,
                 statusCode: 404,
                 message: 'Offer not found'
             };
+        }
+
+        if (Number(status) === OFFER_STATUS.ACTIVE) {
+            const dupError = await checkDuplicateOffer({ ...existing, status }, id);
+            if (dupError) {
+                return {
+                    success: false,
+                    statusCode: 400,
+                    message: dupError
+                };
+            }
         }
 
         await pool.query('UPDATE offers SET status = ? WHERE id = ?', [status, id]);
