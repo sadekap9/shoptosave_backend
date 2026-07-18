@@ -314,7 +314,8 @@ export const placeOrderService = async (userId, orderData) => {
  */
 export const getOrderHistoryService = async (userId) => {
     const [orders] = await pool.query(
-        `SELECT gco.id, gc.brand_name, gco.amount, gco.status, gco.created_at, gco.gift_card_number, gco.expiry_date,
+        `SELECT gco.id, gc.brand_name, gco.amount, gco.discount_amount, gco.cashback_amount, gco.payable_amount,
+                gco.status, gco.created_at, gco.gift_card_number, gco.expiry_date,
                 gco.wallet_amount, gco.online_amount, gco.payment_type
          FROM gift_card_orders gco
          JOIN gift_cards gc ON gco.gift_card_id = gc.id
@@ -322,11 +323,22 @@ export const getOrderHistoryService = async (userId) => {
          ORDER BY gco.id DESC`,
         [userId]
     );
+
+    const formattedOrders = orders.map(o => ({
+        ...o,
+        amount: parseFloat(o.amount) || 0,
+        discount_amount: parseFloat(o.discount_amount) || 0,
+        cashback_amount: parseFloat(o.cashback_amount) || 0,
+        payable_amount: parseFloat(o.payable_amount) || 0,
+        wallet_amount: parseFloat(o.wallet_amount) || 0,
+        online_amount: parseFloat(o.online_amount) || 0
+    }));
+
     return {
         success: true,
         statusCode: 200,
         message: 'Order history fetched successfully',
-        data: orders
+        data: formattedOrders
     };
 };
 
@@ -352,7 +364,18 @@ export const getOrderById = async (userId, orderId) => {
     if (order.user_id !== userId) {
         throw { message: 'Order does not belong to this user', code: 'UNAUTHORIZED', statusCode: 403 };
     }
-    return { success: true, data: order };
+
+    const formattedOrder = {
+        ...order,
+        amount: parseFloat(order.amount) || 0,
+        discount_amount: parseFloat(order.discount_amount) || 0,
+        cashback_amount: parseFloat(order.cashback_amount) || 0,
+        payable_amount: parseFloat(order.payable_amount) || 0,
+        wallet_amount: parseFloat(order.wallet_amount) || 0,
+        online_amount: parseFloat(order.online_amount) || 0
+    };
+
+    return { success: true, data: formattedOrder };
 };
 
 // ─── Place Gift Card Order Flow (3 payment types) ──────────────────────────────
@@ -415,27 +438,46 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
         throw { message: 'Gift card not found', code: 'NOT_FOUND', statusCode: 404 };
     }
 
+    let targetOfferId = offer_id || null;
+    let targetPromoCode = promo_code || null;
+
+    // If no offer or promo code passed explicitly, resolve active offer automatically (gift-card first, then store)
+    if (!targetOfferId && !targetPromoCode) {
+        const { getApplicableOffer } = await import('../offers/offers.service.js');
+        const applicableOffer = await getApplicableOffer(giftcard_id);
+        if (applicableOffer) {
+            targetOfferId = applicableOffer.id;
+        }
+    }
+
     let appliedOfferId = null;
     let discountAmount = 0.00;
     let cashbackAmount = 0.00;
     let payableAmount = totalAmount;
 
     // Validate active offers and calculate final payable amount if selected
-    if (offer_id || promo_code) {
-        const offerResult = await validateOfferForOrder(
-            userId,
-            giftcard_id,
-            giftCard.store_id,
-            totalAmount,
-            offer_id || null,
-            promo_code || null,
-            pool
-        );
+    if (targetOfferId || targetPromoCode) {
+        try {
+            const offerResult = await validateOfferForOrder(
+                userId,
+                giftcard_id,
+                giftCard.store_id,
+                totalAmount,
+                targetOfferId,
+                targetPromoCode,
+                pool
+            );
 
-        appliedOfferId = offerResult.offerId;
-        discountAmount = offerResult.discountAmount;
-        cashbackAmount = offerResult.cashbackAmount;
-        payableAmount = offerResult.payableAmount;
+            appliedOfferId = offerResult.offerId;
+            discountAmount = offerResult.discountAmount;
+            cashbackAmount = offerResult.cashbackAmount;
+            payableAmount = offerResult.payableAmount;
+        } catch (offerErr) {
+            if (offer_id || promo_code) {
+                throw offerErr;
+            }
+            logger.warn(`Auto-applied offer #${targetOfferId} skipped during checkout: ${offerErr.message}`);
+        }
     }
 
     // Pre-flight: check wallet balance for Wallet Only (using payableAmount)
@@ -555,8 +597,6 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
     } catch (apiErr) {
         // Axios error or network timeout
         logger.error(`[Order Flow] Woohoo API call failed or timed out: ${apiErr.message}`);
-        // To prevent money loss, if we don't know if the order succeeded, we leave the order in PENDING status.
-        // The cron job will poll the actual status from Woohoo later.
         throw {
             message: `Order placement timed out or provider is unreachable. Your order is pending resolution. Reference: ${woohooRefNo}`,
             code: 'PROVIDER_TIMEOUT',
@@ -574,8 +614,6 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
                     'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
                     [`Woohoo error: ${woohooResult.error}`, orderId]
                 );
-                
-
 
                 if (deductRes.walletDeducted > 0) {
                     await creditWallet(
@@ -603,8 +641,6 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
     const woohooResponseData = woohooResult.data;
     const statusStr = woohooResponseData.status?.toLowerCase();
 
-    // Check if Woohoo status is actually SUCCESS or COMPLETE. 
-    // If it's PROCESSING or PENDING (async order), do NOT write null card details, leave order in processing/pending.
     if (statusStr === 'processing' || statusStr === 'pending' || !woohooResponseData.cards || woohooResponseData.cards.length === 0) {
         logger.info(`[Order Flow] Woohoo order #${orderId} is processing asynchronously on provider side.`);
         await pool.query(
@@ -650,29 +686,33 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
             // Fetch updated order row
             const [[orderRow]] = await connection.query(
                 `SELECT id, user_id, gift_card_id, amount, status, wallet_amount,
-                        online_amount, cashback_amount, woohoo_reference_no, payment_type
+                        online_amount, discount_amount, cashback_amount, payable_amount,
+                        woohoo_reference_no, payment_type
                  FROM gift_card_orders WHERE id = ?`,
                 [orderId]
             );
 
-            // Credit cashback if cashback_amount > 0
+            // Credit cashback if cashback_amount > 0 with idempotency check
             if (orderRow && parseFloat(orderRow.cashback_amount) > 0) {
-                const creditRes = await creditWallet(
-                    userId,
-                    parseFloat(orderRow.cashback_amount),
-                    WALLET_TRANSACTION_SOURCE.CASHBACK,
-                    orderId,
-                    `Cashback reward for order #${orderId}`,
-                    connection
+                const [[existingTxn]] = await connection.query(
+                    'SELECT id FROM wallet_transactions WHERE order_id = ? AND source = ?',
+                    [orderId, WALLET_TRANSACTION_SOURCE.CASHBACK]
                 );
+                if (!existingTxn) {
+                    await creditWallet(
+                        userId,
+                        parseFloat(orderRow.cashback_amount),
+                        WALLET_TRANSACTION_SOURCE.CASHBACK,
+                        orderId,
+                        `Cashback reward for order #${orderId}`,
+                        connection
+                    );
 
-                // Update total_cashback_earned in user_wallet
-                await connection.query(
-                    'UPDATE user_wallet SET total_cashback_earned = total_cashback_earned + ? WHERE user_id = ?',
-                    [parseFloat(orderRow.cashback_amount), userId]
-                );
-
-
+                    await connection.query(
+                        'UPDATE user_wallet SET total_cashback_earned = total_cashback_earned + ? WHERE user_id = ?',
+                        [parseFloat(orderRow.cashback_amount), userId]
+                    );
+                }
             }
 
             return orderRow;
@@ -682,12 +722,16 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
         return {
             success: true,
             message: 'Order completed successfully',
-            data: finalOrder
+            data: {
+                ...finalOrder,
+                amount: parseFloat(finalOrder.amount) || 0,
+                discount_amount: parseFloat(finalOrder.discount_amount) || 0,
+                cashback_amount: parseFloat(finalOrder.cashback_amount) || 0,
+                payable_amount: parseFloat(finalOrder.payable_amount) || 0
+            }
         };
     } catch (finalErr) {
         logger.error(`[Order Flow] Failed to save completed order details: ${finalErr.message}`);
-        // Even if local DB failed to write the cards, DO NOT refund the wallet automatically since the cards are active!
-        // Throw an error so the support/system can resolve it.
         throw {
             message: `Order completed at provider but failed to save details locally. Please contact support. Ref: ${woohooRefNo}`,
             code: 'LOCAL_SAVE_FAILED',
@@ -710,6 +754,13 @@ export const creditCashback = async (userId, orderId, orderAmount, cashbackPerce
     const cashbackAmount = parseFloat(((parseFloat(orderAmount) * parseFloat(cashbackPercentage)) / 100).toFixed(2));
     if (cashbackAmount <= 0) return;
 
+    const db = connection || pool;
+    const [[existingTxn]] = await db.query(
+        'SELECT id FROM wallet_transactions WHERE order_id = ? AND source = ?',
+        [orderId, WALLET_TRANSACTION_SOURCE.CASHBACK]
+    );
+    if (existingTxn) return;
+
     logger.info(`[Cashback] Crediting ₹${cashbackAmount} cashback for Order #${orderId} (${cashbackPercentage}%)`);
 
     // Credit wallet
@@ -719,11 +770,11 @@ export const creditCashback = async (userId, orderId, orderAmount, cashbackPerce
         WALLET_TRANSACTION_SOURCE.CASHBACK,
         orderId,
         `Cashback ${cashbackPercentage}% for order #${orderId}`,
-        connection
+        db
     );
 
     // Update total_cashback_earned in user_wallet
-    await connection.query(
+    await db.query(
         'UPDATE user_wallet SET total_cashback_earned = total_cashback_earned + ? WHERE user_id = ?',
         [cashbackAmount, userId]
     );

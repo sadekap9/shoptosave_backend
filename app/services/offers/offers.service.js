@@ -66,20 +66,108 @@ const checkDuplicateOffer = async (offerData, excludeId = null) => {
     return null;
 };
 
+const normalizeOfferType = (type) => {
+    if (type === 'instant_discount' || type === 1 || type === '1') return 1;
+    if (type === 'cashback' || type === 2 || type === '2') return 2;
+    return Number(type);
+};
+
+/**
+ * Helper to resolve the applicable offer for a specific gift card.
+ * Priority: 1. Active gift-card-specific offer, 2. Active store-level offer.
+ */
+export const getApplicableOffer = async (giftCardId, connection = null) => {
+    const db = connection || pool;
+    if (!giftCardId) return null;
+
+    const [[gc]] = await db.query(
+        'SELECT id, store_id FROM gift_cards WHERE id = ?',
+        [giftCardId]
+    );
+    if (!gc) return null;
+
+    // 1. Check active gift-card-specific offer
+    const [cardOffers] = await db.query(
+        `SELECT id, offer_name, offer_type, promo_code, value_type, value, store_id, gift_card_id, min_order_amount, max_discount, start_date, end_date
+         FROM offers
+         WHERE status = 1
+           AND gift_card_id = ?
+           AND start_date <= NOW()
+           AND end_date >= NOW()
+         ORDER BY id DESC LIMIT 1`,
+        [giftCardId]
+    );
+
+    let selectedOffer = cardOffers[0] || null;
+
+    // 2. If none exists, check active store-level offer
+    if (!selectedOffer && gc.store_id) {
+        const [storeOffers] = await db.query(
+            `SELECT id, offer_name, offer_type, promo_code, value_type, value, store_id, gift_card_id, min_order_amount, max_discount, start_date, end_date
+             FROM offers
+             WHERE status = 1
+               AND store_id = ?
+               AND (gift_card_id IS NULL OR gift_card_id = 0)
+               AND start_date <= NOW()
+               AND end_date >= NOW()
+             ORDER BY id DESC LIMIT 1`,
+            [gc.store_id]
+        );
+        selectedOffer = storeOffers[0] || null;
+    }
+
+    if (!selectedOffer) return null;
+
+    const offerTypeNum = Number(selectedOffer.offer_type);
+    const valueTypeNum = Number(selectedOffer.value_type);
+    const valNum = parseFloat(selectedOffer.value);
+
+    let display_text = '';
+    if (offerTypeNum === 1) {
+        display_text = valueTypeNum === 2 ? `${valNum}% OFF` : `₹${valNum} OFF`;
+    } else if (offerTypeNum === 2) {
+        display_text = valueTypeNum === 2 ? `${valNum}% Cashback` : `₹${valNum} Cashback`;
+    }
+
+    return {
+        id: selectedOffer.id,
+        offer_name: selectedOffer.offer_name,
+        offer_type: offerTypeNum,
+        value_type: valueTypeNum,
+        value: valNum,
+        display_text,
+        store_id: selectedOffer.store_id,
+        gift_card_id: selectedOffer.gift_card_id,
+        min_order_amount: selectedOffer.min_order_amount ? parseFloat(selectedOffer.min_order_amount) : 0,
+        max_discount: selectedOffer.max_discount ? parseFloat(selectedOffer.max_discount) : null
+    };
+};
+
 /**
  * Create an offer
  */
 export const createOfferService = async (payload) => {
     try {
+        const normalizedOfferType = normalizeOfferType(payload.offer_type);
+        const finalValue = payload.value !== undefined ? payload.value : payload.percentage;
+        const finalValueType = payload.percentage !== undefined ? 2 : (payload.value_type || 2);
+
+        const normalizedPayload = {
+            ...payload,
+            offer_type: normalizedOfferType,
+            value: finalValue,
+            value_type: finalValueType
+        };
+
         const {
             offer_name, offer_type, promo_code, store_id, gift_card_id,
             value_type, value, min_order_amount, max_discount,
             total_usage_limit, per_user_limit, unique_users_only,
             start_date, end_date, status
-        } = payload;
+        } = normalizedPayload;
 
         // Scope-based duplicate check
-        const dupError = await checkDuplicateOffer(payload);
+        const dupError = await checkDuplicateOffer(normalizedPayload);
         if (dupError) {
             return {
                 success: false,
@@ -243,7 +331,17 @@ export const updateOfferService = async (id, payload) => {
             };
         }
 
-        const mergedData = { ...existing, ...payload };
+        const normalizedPayload = { ...payload };
+        if (payload.offer_type !== undefined) {
+            normalizedPayload.offer_type = normalizeOfferType(payload.offer_type);
+        }
+        if (payload.percentage !== undefined) {
+            normalizedPayload.value = payload.percentage;
+            normalizedPayload.value_type = 2;
+            delete normalizedPayload.percentage;
+        }
+
+        const mergedData = { ...existing, ...normalizedPayload };
         const dupError = await checkDuplicateOffer(mergedData, id);
         if (dupError) {
             return {
@@ -256,7 +354,7 @@ export const updateOfferService = async (id, payload) => {
         const fields = [];
         const params = [];
 
-        Object.entries(payload).forEach(([key, value]) => {
+        Object.entries(normalizedPayload).forEach(([key, value]) => {
             fields.push(`${key} = ?`);
             params.push(value === undefined ? null : value);
         });

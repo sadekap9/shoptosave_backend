@@ -6,16 +6,13 @@ import { getWoohooProduct, placeWoohooOrder } from '../woohoo/woohoo.service.js'
 import { saveProductsToDB } from '../products/products.service.js';
 import { sanitizePaginationParams, buildPagination } from '../../helpers/pagination.helper.js';
 import logger from '../../utils/logger.js';
-
-
+import { getApplicableOffer } from '../offers/offers.service.js';
 
 const toTinyInt = (val) => {
     if (val === undefined || val === null) return 0;
     if (val === true || val === 'true' || val === 1 || val === '1') return 1;
     return 0;
 };
-
-
 
 /**
  * Fetch all gift cards (with store and grouped image details)
@@ -75,12 +72,13 @@ export const getGiftCardsService = async (filters = {}) => {
         }
 
         // ─── Fetch best active offer for each gift card ─────────────────────
-        // Priority: card-specific (gift_card_id match) > store-specific > global
+        // Priority: card-specific (gift_card_id match) > store-specific
         const gcIds = giftCards.map(gc => gc.id);
 
         const [allOffers] = await pool.query(`
             SELECT 
                 gc.id AS gc_id,
+                o.id AS offer_id,
                 o.offer_type,
                 o.value_type,
                 o.value,
@@ -95,20 +93,19 @@ export const getGiftCardsService = async (filters = {}) => {
                 AND (
                     o.gift_card_id = gc.id
                     OR (o.gift_card_id IS NULL AND o.store_id = gc.store_id)
-                    OR (o.gift_card_id IS NULL AND o.store_id IS NULL)
                 )
             )
             WHERE gc.id IN (?)
-            ORDER BY o.value DESC
+            ORDER BY o.id DESC
         `, [gcIds]);
 
         // Build offerMap with specificity priority:
-        // 1 = card-specific (gift_card_id matches), 2 = store-specific, 3 = global
+        // 1 = card-specific (gift_card_id matches), 2 = store-specific
         const offerMap = {};
         const getSpecificity = (row) => {
-            if (row.gift_card_id !== null) return 1;       // card-specific
-            if (row.offer_store_id !== null) return 2;     // store-specific
-            return 3;                                       // global
+            if (row.gift_card_id !== null && row.gift_card_id !== 0) return 1; // card-specific
+            if (row.offer_store_id !== null && row.offer_store_id !== 0) return 2; // store-specific
+            return 3;
         };
 
         allOffers.forEach(row => {
@@ -121,12 +118,45 @@ export const getGiftCardsService = async (filters = {}) => {
         });
 
         // Helper to attach offer fields to a gift card object
-        const attachOfferFields = (gc) => ({
-            max_offer_value: offerMap[gc.id]?.value || null,
-            max_offer_type: offerMap[gc.id]?.offer_type || null,
-            max_offer_value_type: offerMap[gc.id]?.value_type || null,
-            max_offer_name: offerMap[gc.id]?.offer_name || null,
-        });
+        const attachOfferFields = (gc) => {
+            const offer = offerMap[gc.id];
+            if (!offer) {
+                return {
+                    max_offer_value: null,
+                    max_offer_type: null,
+                    max_offer_value_type: null,
+                    max_offer_name: null,
+                    applicable_offer: null
+                };
+            }
+            const valNum = parseFloat(offer.value);
+            const offerTypeNum = Number(offer.offer_type);
+            const valueTypeNum = Number(offer.value_type);
+
+            let display_text = '';
+            if (offerTypeNum === 1) {
+                display_text = valueTypeNum === 2 ? `${valNum}% OFF` : `₹${valNum} OFF`;
+            } else if (offerTypeNum === 2) {
+                display_text = valueTypeNum === 2 ? `${valNum}% Cashback` : `₹${valNum} Cashback`;
+            }
+
+            const applicable_offer = {
+                id: offer.offer_id,
+                offer_name: offer.offer_name,
+                offer_type: offerTypeNum,
+                value_type: valueTypeNum,
+                value: valNum,
+                display_text
+            };
+
+            return {
+                max_offer_value: valNum,
+                max_offer_type: offerTypeNum,
+                max_offer_value_type: valueTypeNum,
+                max_offer_name: offer.offer_name,
+                applicable_offer
+            };
+        };
 
         if (shortResponse) {
             const sanitizedData = giftCards.map(gc => ({
@@ -228,6 +258,20 @@ export const getGiftCardByIdService = async (id) => {
         giftCard.mobile_images = mobile_images;
         giftCard.desktop_images = desktop_images;
         giftCard.giftcard_image = giftCard.gift_card_image || null;
+
+        const applicableOffer = await getApplicableOffer(giftCard.id);
+        giftCard.applicable_offer = applicableOffer;
+        if (applicableOffer) {
+            giftCard.max_offer_value = applicableOffer.value;
+            giftCard.max_offer_type = applicableOffer.offer_type;
+            giftCard.max_offer_value_type = applicableOffer.value_type;
+            giftCard.max_offer_name = applicableOffer.offer_name;
+        } else {
+            giftCard.max_offer_value = null;
+            giftCard.max_offer_type = null;
+            giftCard.max_offer_value_type = null;
+            giftCard.max_offer_name = null;
+        }
 
         return {
             success: true,
