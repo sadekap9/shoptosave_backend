@@ -1,6 +1,6 @@
 import pool from '../../config/dbConfig.js';
 import fs from 'fs';
-import { giftCardImageType, uploadFolders } from '../../config/constant/constant.js';
+import { giftCardImageType, uploadFolders, OFFER_TYPE, VALUE_TYPE } from '../../config/constant/constant.js';
 import { getWoohooToken } from '../categories/woohooAuth.service.js';
 import { getWoohooProduct, placeWoohooOrder } from '../woohoo/woohoo.service.js';
 import { saveProductsToDB } from '../products/products.service.js';
@@ -134,10 +134,10 @@ export const getGiftCardsService = async (filters = {}) => {
             const valueTypeNum = Number(offer.value_type);
 
             let display_text = '';
-            if (offerTypeNum === 1) {
-                display_text = valueTypeNum === 2 ? `${valNum}% OFF` : `₹${valNum} OFF`;
-            } else if (offerTypeNum === 2) {
-                display_text = valueTypeNum === 2 ? `${valNum}% Cashback` : `₹${valNum} Cashback`;
+            if (offerTypeNum === OFFER_TYPE.INSTANT_DISCOUNT) {
+                display_text = valueTypeNum === VALUE_TYPE.PERCENTAGE ? `${valNum}% OFF` : `₹${valNum} OFF`;
+            } else if (offerTypeNum === OFFER_TYPE.CASHBACK) {
+                display_text = valueTypeNum === VALUE_TYPE.PERCENTAGE ? `${valNum}% Cashback` : `₹${valNum} Cashback`;
             }
 
             const applicable_offer = {

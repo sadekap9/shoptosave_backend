@@ -2,7 +2,7 @@ import express from 'express';
 import * as offersController from '../controller/offers/offers.controller.js';
 import authMiddleware, { authorizeRole } from '../middlewares/verifyMiddleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
-import { createOfferSchema, updateOfferSchema, changeStatusSchema, applyPromoSchema } from '../validations/offers.validation.js';
+import { createOfferSchema, updateOfferSchema, changeStatusSchema } from '../validations/offers.validation.js';
 
 const router = express.Router();
 
@@ -70,14 +70,6 @@ router.get(
     '/active',
     authMiddleware,
     offersController.getActiveOffers
-);
-
-// Validate and apply promo code
-router.post(
-    '/apply-promo',
-    authMiddleware,
-    validate(applyPromoSchema),
-    offersController.applyPromoCode
 );
 
 export default router;

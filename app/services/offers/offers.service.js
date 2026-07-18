@@ -1,6 +1,6 @@
 import pool from '../../config/dbConfig.js';
 import logger from '../../utils/logger.js';
-import { OFFER_STATUS, OFFER_USAGE_STATUS, OFFER_TYPE } from '../../config/constant/constant.js';
+import { OFFER_STATUS, OFFER_USAGE_STATUS, OFFER_TYPE, VALUE_TYPE, GIFT_CARD_ORDER_STATUS } from '../../config/constant/constant.js';
 
 /**
  * Helper to check date boundaries
@@ -10,7 +10,7 @@ const isCurrentDateWithinRange = (start, end) => {
     return new Date(start) <= now && now <= new Date(end);
 };
 /**
- * Helper to check duplicate active offers by target scope (gift_card_id, store_id, global) or promo code
+ * Helper to check duplicate active offers by target scope (gift_card_id, store_id, global)
  */
 const checkDuplicateOffer = async (offerData, excludeId = null) => {
     const status = offerData.status !== undefined ? Number(offerData.status) : OFFER_STATUS.ACTIVE;
@@ -18,26 +18,11 @@ const checkDuplicateOffer = async (offerData, excludeId = null) => {
         return null;
     }
 
-    const { offer_name, offer_type, promo_code, store_id, gift_card_id } = offerData;
+    const { offer_name, store_id, gift_card_id } = offerData;
 
-    // 1. Promo code check (for promo codes)
-    if (Number(offer_type) === OFFER_TYPE.PROMO_CODE && promo_code && promo_code.trim()) {
-        let promoSql = `SELECT id FROM offers WHERE promo_code = ? AND status = ${OFFER_STATUS.ACTIVE}`;
-        const promoParams = [promo_code.trim()];
-        if (excludeId) {
-            promoSql += ` AND id != ?`;
-            promoParams.push(excludeId);
-        }
-        const [[existingPromo]] = await pool.query(promoSql, promoParams);
-        if (existingPromo) {
-            return `An active offer with the promo code '${promo_code.trim()}' already exists.`;
-        }
-    }
-
-    // 2. Offer name + target scope check (gift_card_id / store_id / global)
-    if (offer_name && offer_name.trim()) {
+    if (offer_name) {
         let nameSql = `SELECT id FROM offers WHERE offer_name = ? AND status = ${OFFER_STATUS.ACTIVE}`;
-        const nameParams = [offer_name.trim()];
+        const nameParams = [offer_name];
 
         if (gift_card_id) {
             nameSql += ` AND gift_card_id = ?`;
@@ -59,7 +44,7 @@ const checkDuplicateOffer = async (offerData, excludeId = null) => {
             let scopeLabel = 'all stores (global)';
             if (gift_card_id) scopeLabel = 'this specific gift card';
             else if (store_id) scopeLabel = 'this specific store';
-            return `An active offer with the name '${offer_name.trim()}' already exists for ${scopeLabel}.`;
+            return `An active offer with the name '${offer_name}' already exists for ${scopeLabel}.`;
         }
     }
 
@@ -67,8 +52,8 @@ const checkDuplicateOffer = async (offerData, excludeId = null) => {
 };
 
 const normalizeOfferType = (type) => {
-    if (type === 'instant_discount' || type === 1 || type === '1') return 1;
-    if (type === 'cashback' || type === 2 || type === '2') return 2;
+    if (type === 'instant_discount' || type === OFFER_TYPE.INSTANT_DISCOUNT || type === String(OFFER_TYPE.INSTANT_DISCOUNT)) return OFFER_TYPE.INSTANT_DISCOUNT;
+    if (type === 'cashback' || type === OFFER_TYPE.CASHBACK || type === String(OFFER_TYPE.CASHBACK)) return OFFER_TYPE.CASHBACK;
     return Number(type);
 };
 
@@ -88,9 +73,10 @@ export const getApplicableOffer = async (giftCardId, connection = null) => {
 
     // 1. Check active gift-card-specific offer
     const [cardOffers] = await db.query(
-        `SELECT id, offer_name, offer_type, promo_code, value_type, value, store_id, gift_card_id, min_order_amount, max_discount, start_date, end_date
+        `SELECT id, offer_name, offer_type, value_type, value, store_id, gift_card_id, 
+                min_order_amount, max_discount, start_date, end_date
          FROM offers
-         WHERE status = 1
+         WHERE status = ${OFFER_STATUS.ACTIVE}
            AND gift_card_id = ?
            AND start_date <= NOW()
            AND end_date >= NOW()
@@ -103,9 +89,10 @@ export const getApplicableOffer = async (giftCardId, connection = null) => {
     // 2. If none exists, check active store-level offer
     if (!selectedOffer && gc.store_id) {
         const [storeOffers] = await db.query(
-            `SELECT id, offer_name, offer_type, promo_code, value_type, value, store_id, gift_card_id, min_order_amount, max_discount, start_date, end_date
+            `SELECT id, offer_name, offer_type, value_type, value, store_id, gift_card_id, 
+                    min_order_amount, max_discount, start_date, end_date
              FROM offers
-             WHERE status = 1
+             WHERE status = ${OFFER_STATUS.ACTIVE}
                AND store_id = ?
                AND (gift_card_id IS NULL OR gift_card_id = 0)
                AND start_date <= NOW()
@@ -123,10 +110,10 @@ export const getApplicableOffer = async (giftCardId, connection = null) => {
     const valNum = parseFloat(selectedOffer.value);
 
     let display_text = '';
-    if (offerTypeNum === 1) {
-        display_text = valueTypeNum === 2 ? `${valNum}% OFF` : `₹${valNum} OFF`;
-    } else if (offerTypeNum === 2) {
-        display_text = valueTypeNum === 2 ? `${valNum}% Cashback` : `₹${valNum} Cashback`;
+    if (offerTypeNum === OFFER_TYPE.INSTANT_DISCOUNT) {
+        display_text = valueTypeNum === VALUE_TYPE.PERCENTAGE ? `${valNum}% OFF` : `₹${valNum} OFF`;
+    } else if (offerTypeNum === OFFER_TYPE.CASHBACK) {
+        display_text = valueTypeNum === VALUE_TYPE.PERCENTAGE ? `${valNum}% Cashback` : `₹${valNum} Cashback`;
     }
 
     return {
@@ -149,22 +136,25 @@ export const getApplicableOffer = async (giftCardId, connection = null) => {
 export const createOfferService = async (payload) => {
     try {
         const normalizedOfferType = normalizeOfferType(payload.offer_type);
-        const finalValue = payload.value !== undefined ? payload.value : payload.percentage;
-        const finalValueType = payload.percentage !== undefined ? 2 : (payload.value_type || 2);
+        const finalValue = parseFloat(payload.value);
+        const finalValueType = payload.value_type || VALUE_TYPE.PERCENTAGE;
 
         const normalizedPayload = {
-            ...payload,
+            offer_name: payload.offer_name,
             offer_type: normalizedOfferType,
+            store_id: payload.store_id || null,
+            gift_card_id: payload.gift_card_id || null,
+            value_type: finalValueType,
             value: finalValue,
-            value_type: finalValueType
+            min_order_amount: payload.min_order_amount !== undefined ? parseFloat(payload.min_order_amount) : 0.00,
+            max_discount: payload.max_discount ? parseFloat(payload.max_discount) : null,
+            total_usage_limit: payload.total_usage_limit ? parseInt(payload.total_usage_limit) : null,
+            per_user_limit: payload.per_user_limit ? parseInt(payload.per_user_limit) : null,
+            unique_users_only: payload.unique_users_only ? Number(payload.unique_users_only) : 0,
+            start_date: payload.start_date,
+            end_date: payload.end_date,
+            status: payload.status !== undefined ? Number(payload.status) : 1
         };
-
-        const {
-            offer_name, offer_type, promo_code, store_id, gift_card_id,
-            value_type, value, min_order_amount, max_discount,
-            total_usage_limit, per_user_limit, unique_users_only,
-            start_date, end_date, status
-        } = normalizedPayload;
 
         // Scope-based duplicate check
         const dupError = await checkDuplicateOffer(normalizedPayload);
@@ -178,13 +168,13 @@ export const createOfferService = async (payload) => {
 
         const [result] = await pool.query(
             `INSERT INTO offers 
-             (offer_name, offer_type, promo_code, store_id, gift_card_id, value_type, value, min_order_amount, max_discount, total_usage_limit, per_user_limit, unique_users_only, start_date, end_date, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (offer_name, offer_type, store_id, gift_card_id, value_type, value, min_order_amount, max_discount, total_usage_limit, per_user_limit, unique_users_only, start_date, end_date, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
-                offer_name, offer_type, promo_code || null, store_id || null, gift_card_id || null,
-                value_type, value, min_order_amount || 0.00, max_discount || null,
-                total_usage_limit || null, per_user_limit || null, unique_users_only || 0,
-                start_date, end_date, status || 1
+                normalizedPayload.offer_name, normalizedPayload.offer_type, normalizedPayload.store_id, normalizedPayload.gift_card_id,
+                normalizedPayload.value_type, normalizedPayload.value, normalizedPayload.min_order_amount, normalizedPayload.max_discount,
+                normalizedPayload.total_usage_limit, normalizedPayload.per_user_limit, normalizedPayload.unique_users_only,
+                normalizedPayload.start_date, normalizedPayload.end_date, normalizedPayload.status
             ]
         );
 
@@ -227,18 +217,18 @@ export const getOffersService = async (filters = {}) => {
         const params = [];
 
         if (search) {
-            countSql += ' AND (o.offer_name LIKE ? OR o.promo_code LIKE ?)';
-            querySql += ' AND (o.offer_name LIKE ? OR o.promo_code LIKE ?)';
-            params.push(`%${search}%`, `%${search}%`);
+            countSql += ` AND o.offer_name LIKE ?`;
+            querySql += ` AND o.offer_name LIKE ?`;
+            params.push(`%${search}%`);
         }
 
-        if (offer_type) {
+        if (offer_type !== undefined && offer_type !== null && offer_type !== '' && offer_type !== 'All') {
             countSql += ' AND o.offer_type = ?';
             querySql += ' AND o.offer_type = ?';
             params.push(parseInt(offer_type));
         }
 
-        if (status) {
+        if (status !== undefined && status !== null && status !== '' && status !== 'All') {
             countSql += ' AND o.status = ?';
             querySql += ' AND o.status = ?';
             params.push(parseInt(status));
@@ -335,11 +325,6 @@ export const updateOfferService = async (id, payload) => {
         if (payload.offer_type !== undefined) {
             normalizedPayload.offer_type = normalizeOfferType(payload.offer_type);
         }
-        if (payload.percentage !== undefined) {
-            normalizedPayload.value = payload.percentage;
-            normalizedPayload.value_type = 2;
-            delete normalizedPayload.percentage;
-        }
 
         const mergedData = { ...existing, ...normalizedPayload };
         const dupError = await checkDuplicateOffer(mergedData, id);
@@ -351,10 +336,18 @@ export const updateOfferService = async (id, payload) => {
             };
         }
 
+        const allowedFields = [
+            'offer_name', 'offer_type', 'store_id', 'gift_card_id',
+            'value_type', 'value', 'min_order_amount', 'max_discount',
+            'total_usage_limit', 'per_user_limit', 'unique_users_only',
+            'start_date', 'end_date', 'status'
+        ];
+
         const fields = [];
         const params = [];
 
         Object.entries(normalizedPayload).forEach(([key, value]) => {
+            if (!allowedFields.includes(key)) return;
             fields.push(`${key} = ?`);
             params.push(value === undefined ? null : value);
         });
@@ -492,14 +485,14 @@ export const getOfferUsageHistoryService = async (filters = {}) => {
             params.push(parseInt(user_id));
         }
 
-        if (status) {
+        if (status !== undefined && status !== null && status !== '' && status !== 'All') {
             const statusVal = parseInt(status);
             if (statusVal === 1) {
-                countSql += ' AND status != 4';
-                querySql += ' AND gco.status != 4';
+                countSql += ` AND status != ${GIFT_CARD_ORDER_STATUS.FAILED}`;
+                querySql += ` AND gco.status != ${GIFT_CARD_ORDER_STATUS.FAILED}`;
             } else if (statusVal === 2) {
-                countSql += ' AND status = 4';
-                querySql += ' AND gco.status = 4';
+                countSql += ` AND status = ${GIFT_CARD_ORDER_STATUS.FAILED}`;
+                querySql += ` AND gco.status = ${GIFT_CARD_ORDER_STATUS.FAILED}`;
             }
         }
 
@@ -617,9 +610,9 @@ export const validateAndCalculateOffer = async (userId, giftCardId, storeId, ord
 
         // Calculate offer value
         let offerCalculatedValue = 0.00;
-        if (offer.value_type === 1) { // Flat
+        if (Number(offer.value_type) === VALUE_TYPE.FLAT) { // Flat
             offerCalculatedValue = parseFloat(offer.value);
-        } else if (offer.value_type === 2) { // Percentage
+        } else if (Number(offer.value_type) === VALUE_TYPE.PERCENTAGE) { // Percentage
             offerCalculatedValue = parseFloat((amountVal * (parseFloat(offer.value) / 100)).toFixed(2));
         }
 
@@ -697,9 +690,9 @@ export const getActiveOffersService = async () => {
 };
 
 /**
- * Validates a single offer or promo code for checkout or validation API.
+ * Validates a single offer for checkout or validation API.
  */
-export const validateOfferForOrder = async (userId, giftCardId, storeId, orderAmount, offerId = null, promoCode = null, connection = null) => {
+export const validateOfferForOrder = async (userId, giftCardId, storeId, orderAmount, offerId = null, connection = null) => {
     const db = connection || pool;
     const amountVal = parseFloat(orderAmount);
 
@@ -708,12 +701,6 @@ export const validateOfferForOrder = async (userId, giftCardId, storeId, orderAm
         const [[foundOffer]] = await db.query(
             `SELECT * FROM offers WHERE id = ? AND status = 1`,
             [offerId]
-        );
-        offer = foundOffer;
-    } else if (promoCode) {
-        const [[foundOffer]] = await db.query(
-            `SELECT * FROM offers WHERE promo_code = ? AND status = 1`,
-            [promoCode.trim()]
         );
         offer = foundOffer;
     }
@@ -748,7 +735,7 @@ export const validateOfferForOrder = async (userId, giftCardId, storeId, orderAm
     // Check global usage limit
     if (offer.total_usage_limit !== null) {
         const [[usageCount]] = await db.query(
-            `SELECT COUNT(*) AS count FROM gift_card_orders WHERE offer_id = ? AND status != 4`,
+            `SELECT COUNT(*) AS count FROM gift_card_orders WHERE offer_id = ? AND status != ${GIFT_CARD_ORDER_STATUS.FAILED}`,
             [offer.id]
         );
         if (usageCount.count >= offer.total_usage_limit) {
@@ -758,7 +745,7 @@ export const validateOfferForOrder = async (userId, giftCardId, storeId, orderAm
 
     // Check per user limit / unique users
     const [[userUsageCount]] = await db.query(
-        `SELECT COUNT(*) AS count FROM gift_card_orders WHERE offer_id = ? AND user_id = ? AND status != 4`,
+        `SELECT COUNT(*) AS count FROM gift_card_orders WHERE offer_id = ? AND user_id = ? AND status != ${GIFT_CARD_ORDER_STATUS.FAILED}`,
         [offer.id, userId]
     );
     if (offer.per_user_limit !== null && userUsageCount.count >= offer.per_user_limit) {
@@ -773,9 +760,9 @@ export const validateOfferForOrder = async (userId, giftCardId, storeId, orderAm
     let cashbackAmount = 0.00;
     let calculatedValue = 0.00;
 
-    if (offer.value_type === 1) { // Flat
+    if (Number(offer.value_type) === VALUE_TYPE.FLAT) { // Flat
         calculatedValue = parseFloat(offer.value);
-    } else if (offer.value_type === 2) { // Percentage
+    } else if (Number(offer.value_type) === VALUE_TYPE.PERCENTAGE) { // Percentage
         calculatedValue = parseFloat((amountVal * (parseFloat(offer.value) / 100)).toFixed(2));
     }
 
@@ -783,9 +770,9 @@ export const validateOfferForOrder = async (userId, giftCardId, storeId, orderAm
         calculatedValue = Math.min(calculatedValue, parseFloat(offer.max_discount));
     }
 
-    if (offer.offer_type === 1 || offer.offer_type === 3) { // Instant Discount or Promo Code
+    if (Number(offer.offer_type) === OFFER_TYPE.INSTANT_DISCOUNT) { // Instant Discount
         discountAmount = calculatedValue;
-    } else if (offer.offer_type === 2) { // Cashback
+    } else if (Number(offer.offer_type) === OFFER_TYPE.CASHBACK) { // Cashback
         cashbackAmount = calculatedValue;
     }
 
@@ -798,51 +785,4 @@ export const validateOfferForOrder = async (userId, giftCardId, storeId, orderAm
         cashbackAmount,
         payableAmount
     };
-};
-
-/**
- * Service to validate and apply a promo code (without placing an order)
- */
-export const applyPromoService = async (userId, promoCode, giftCardId, amount) => {
-    try {
-        // Fetch gift card details first
-        const [[giftCard]] = await pool.query('SELECT store_id FROM gift_cards WHERE id = ?', [giftCardId]);
-        if (!giftCard) {
-            return {
-                success: false,
-                statusCode: 404,
-                message: 'Gift card not found'
-            };
-        }
-
-        const result = await validateOfferForOrder(
-            userId,
-            giftCardId,
-            giftCard.store_id,
-            amount,
-            null,
-            promoCode
-        );
-
-        return {
-            success: true,
-            statusCode: 200,
-            message: 'Promo code applied successfully',
-            data: {
-                offer_id: result.offerId,
-                discount_amount: result.discountAmount,
-                payable_amount: result.payableAmount
-            }
-        };
-    } catch (error) {
-        if (error.statusCode) {
-            return {
-                success: false,
-                statusCode: error.statusCode,
-                message: error.message
-            };
-        }
-        logger.error('Error in applyPromoService', { error: error.message, stack: error.stack });
-        throw error;
-    }
 };

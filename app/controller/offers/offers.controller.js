@@ -27,9 +27,9 @@ export const createOffer = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in createOffer controller', { error: error.message, stack: error.stack });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }
@@ -97,9 +97,9 @@ export const getOfferById = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in getOfferById controller', { error: error.message, stack: error.stack });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }
@@ -131,9 +131,9 @@ export const updateOffer = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in updateOffer controller', { error: error.message, stack: error.stack });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }
@@ -164,9 +164,9 @@ export const deleteOffer = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in deleteOffer controller', { error: error.message, stack: error.stack });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }
@@ -198,9 +198,9 @@ export const changeOfferStatus = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in changeOfferStatus controller', { error: error.message, stack: error.stack });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }
@@ -224,9 +224,9 @@ export const getOfferUsageHistory = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in getOfferUsageHistory controller', { error: error.message, stack: error.stack });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }
@@ -249,45 +249,9 @@ export const getActiveOffers = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in getActiveOffers controller', { error: error.message, stack: error.stack });
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             success: false,
-            errors: [{ message: 'Internal server error' }],
-            result: {}
-        });
-    }
-};
-
-/**
- * Validate and apply a promo code without placing an order
- */
-export const applyPromoCode = async (req, res) => {
-    try {
-        const { promo_code, gift_card_id, amount, user_id } = req.validatedData || req.body;
-        const targetUserId = user_id || req.user.id;
-
-        const response = await offersService.applyPromoService(targetUserId, promo_code, gift_card_id, amount);
-
-        if (!response.success) {
-            return res.status(response.statusCode).json({
-                success: false,
-                errors: [{ message: response.message }],
-                result: {}
-            });
-        }
-
-        return res.status(response.statusCode).json({
-            success: true,
-            errors: [],
-            result: {
-                message: response.message,
-                data: response.data
-            }
-        });
-    } catch (error) {
-        logger.error('Error in applyPromoCode controller', { error: error.message, stack: error.stack });
-        return res.status(500).json({
-            success: false,
-            errors: [{ message: 'Internal server error' }],
+            errors: [{ message: error.message || 'Internal server error' }],
             result: {}
         });
     }

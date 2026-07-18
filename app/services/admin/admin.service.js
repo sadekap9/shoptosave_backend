@@ -32,7 +32,7 @@ export const getTopupRequests = async (filters) => {
         const params = [];
         const countParams = [];
 
-        if (status) {
+        if (status !== undefined && status !== null && status !== '' && status !== 'All') {
             query += ` AND wtr.status = ?`;
             countQuery += ` AND wtr.status = ?`;
             params.push(status);
