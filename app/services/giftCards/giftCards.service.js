@@ -80,9 +80,8 @@ export const getGiftCardsService = async (filters = {}) => {
                 gc.id AS gc_id,
                 o.id AS offer_id,
                 o.offer_type,
-                o.value_type,
                 o.value,
-                o.offer_name,
+                o.title AS offer_name,
                 o.gift_card_id,
                 o.store_id AS offer_store_id
             FROM gift_cards gc
