@@ -70,3 +70,10 @@ export const updateBannerSchema = Joi.object({
         'any.only': 'Status must be 0 or 1'
     })
 });
+
+export const changeBannerStatusSchema = Joi.object({
+    status: Joi.number().valid(0, 1).required().messages({
+        'any.required': 'Status is required',
+        'any.only': 'Status must be 0 or 1'
+    })
+});

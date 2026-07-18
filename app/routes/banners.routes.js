@@ -4,12 +4,13 @@ import {
     getBannerById,
     createBanner,
     updateBanner,
+    updateBannerStatus,
     deleteBanner
 } from '../controller/banners/banners.controller.js';
 import authenticate, { authorizeRole } from '../middlewares/verifyMiddleware.js';
 import upload from '../middlewares/upload.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
-import { createBannerSchema, updateBannerSchema } from '../validations/banner.validation.js';
+import { createBannerSchema, updateBannerSchema, changeBannerStatusSchema } from '../validations/banner.validation.js';
 
 const router = express.Router();
 
@@ -42,6 +43,14 @@ router.delete('/delete/:id',
     authenticate,
     authorizeRole([1, 2]),
     deleteBanner
+);
+
+// Update banner status (Authorized for Role 1 and 2 only)
+router.patch('/status/:id',
+    authenticate,
+    authorizeRole([1, 2]),
+    validate(changeBannerStatusSchema),
+    updateBannerStatus
 );
 
 export default router;

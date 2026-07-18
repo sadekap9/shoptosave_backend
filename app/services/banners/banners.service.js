@@ -268,3 +268,34 @@ export const deleteBannerService = async (id) => {
     };
 };
 
+/**
+ * Update a banner's status
+ */
+export const updateBannerStatusService = async (id, statusData) => {
+    // Check if banner exists
+    const [[banner]] = await pool.query('SELECT id, status FROM banners WHERE id = ?', [id]);
+    if (!banner) {
+        return {
+            success: false,
+            statusCode: 404,
+            message: 'Banner not found'
+        };
+    }
+
+    if (banner.status === statusData.status) {
+        return {
+            success: false,
+            statusCode: 400,
+            message: `Banner status is already ${statusData.status}`
+        };
+    }
+
+    await pool.query('UPDATE banners SET status = ? WHERE id = ?', [statusData.status, id]);
+
+    return {
+        success: true,
+        statusCode: 200,
+        message: 'Banner status updated successfully',
+        data: { id: parseInt(id), status: statusData.status }
+    };
+};

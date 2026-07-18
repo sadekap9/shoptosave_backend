@@ -26,9 +26,9 @@ export const createOfferSchema = Joi.object({
             'number.max': 'Value cannot exceed 100'
         }),
 
-    store_id: Joi.number().integer().positive(),
+    store_id: Joi.number().integer().positive().allow(null, '').optional(),
 
-    gift_card_id: Joi.number().integer().positive(),
+    gift_card_id: Joi.number().integer().positive().allow(null, '').optional(),
 
     start_date: Joi.date()
         .iso()
@@ -75,9 +75,9 @@ export const updateOfferSchema = Joi.object({
             'number.max': 'Value cannot exceed 100'
         }),
 
-    store_id: Joi.number().integer().positive(),
+    store_id: Joi.number().integer().positive().allow(null, '').optional(),
 
-    gift_card_id: Joi.number().integer().positive(),
+    gift_card_id: Joi.number().integer().positive().allow(null, '').optional(),
 
     start_date: Joi.date().iso(),
 

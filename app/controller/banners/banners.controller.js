@@ -176,3 +176,39 @@ export const deleteBanner = async (req, res) => {
         });
     }
 };
+
+/**
+ * Update banner status
+ */
+export const updateBannerStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const statusData = req.body;
+        
+        const response = await bannersService.updateBannerStatusService(id, statusData);
+
+        if (!response.success) {
+            return res.status(response.statusCode).json({
+                success: false,
+                errors: [{ message: response.message }],
+                result: {}
+            });
+        }
+
+        return res.status(response.statusCode).json({
+            success: true,
+            errors: [],
+            result: {
+                message: response.message,
+                data: response.data
+            }
+        });
+    } catch (error) {
+        logger.error(`Error in updateBannerStatus: ${error.message}`);
+        return res.status(500).json({
+            success: false,
+            errors: [{ message: 'Internal server error' }],
+            result: {}
+        });
+    }
+};
