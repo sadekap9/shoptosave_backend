@@ -268,3 +268,27 @@ export const getClientGiftCardById = async (req, res) => {
         });
     }
 };
+
+/**
+ * Get top 6 trending gift cards by total_views - Public/Customer API
+ */
+export const getTrendingGiftCards = async (req, res) => {
+    try {
+        const response = await giftCardsService.getTrendingGiftCardsService();
+        return res.status(response.statusCode).json({
+            success: response.success,
+            errors: response.success ? [] : [{ message: response.message }],
+            result: {
+                message: response.message,
+                data: response.data
+            }
+        });
+    } catch (error) {
+        logger.error('Error in getTrendingGiftCards', { error: error.message, stack: error.stack });
+        return res.status(error.statusCode || 500).json({
+            success: false,
+            errors: [{ message: error.message || 'Internal server error' }],
+            result: {}
+        });
+    }
+};

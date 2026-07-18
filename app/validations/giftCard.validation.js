@@ -18,12 +18,6 @@ export const createGiftCardSchema = Joi.object({
         'number.positive': 'Category ID must be positive',
         'any.required': 'Category ID is required'
     }),
-    featured: Joi.alternatives().try(
-        Joi.number().integer().valid(0, 1),
-        Joi.boolean()
-    ).default(0).optional().messages({
-        'any.only': 'Featured must be 0, 1, true or false'
-    }),
     status: Joi.alternatives().try(
         Joi.number().integer().valid(0, 1),
         Joi.boolean()
@@ -41,12 +35,6 @@ export const updateGiftCardSchema = Joi.object({
     }),
     category_id: Joi.number().integer().positive().optional().messages({
         'number.base': 'Category ID must be a number'
-    }),
-    featured: Joi.alternatives().try(
-        Joi.number().integer().valid(0, 1),
-        Joi.boolean()
-    ).optional().messages({
-        'any.only': 'Featured must be 0, 1, true or false'
     }),
     status: Joi.alternatives().try(
         Joi.number().integer().valid(0, 1),

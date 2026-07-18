@@ -7,6 +7,7 @@ import {
     deleteGiftCard,
     getClientGiftCards,
     getClientGiftCardById,
+    getTrendingGiftCards,
     getGiftCardsByStore
 } from '../controller/giftCards/giftCards.controller.js';
 
@@ -21,6 +22,9 @@ import {
 
 const router = express.Router();
 
+
+// Get top 6 trending gift cards by total_views
+router.get('/trending', getTrendingGiftCards);
 
 // Get all active gift cards for customers
 router.get('/lists', getClientGiftCards);

@@ -1,4 +1,6 @@
 import pool from '../../config/dbConfig.js';
+import { getApplicableOffer } from '../offers/offers.service.js';
+import { OFFER_TYPE } from '../../config/constant/constant.js';
 
 /**
  * Fetch active, scheduled banners (max 3)
@@ -21,128 +23,85 @@ const getBanners = async () => {
 };
 
 /**
- * Fetch trending gift cards by total_views (max 10)
+ * Fetch top 6 trending gift cards by total_views
  */
 const getTrendingGiftCards = async () => {
-    const [giftCards] = await pool.query(`
-        SELECT 
-            gc.id, gc.gift_card_name, gc.brand_name, gc.brand_logo,
-            gc.discount_percentage,
-            gc.total_views,
-            gc.discounts
+    const [rows] = await pool.query(`
+        SELECT gc.id, gc.gift_card_image, gc.store_id
         FROM gift_cards gc
         WHERE gc.status = 1
         ORDER BY gc.total_views DESC, gc.id DESC
-        LIMIT 10
+        LIMIT 6
     `);
 
-    if (giftCards.length === 0) return [];
+    if (rows.length === 0) return [];
 
-    // Fetch primary image for each gift card in a single query
-    const ids = giftCards.map(gc => gc.id);
-    const [images] = await pool.query(
-        `SELECT gift_card_id, image_url, image_type
-         FROM gift_card_images
-         WHERE gift_card_id IN (?)
-         ORDER BY id ASC`,
-        [ids]
-    );
+    return await Promise.all(
+        rows.map(async (gc) => {
+            const applicableOffer = await getApplicableOffer(gc.id);
+            const valNum = applicableOffer ? parseFloat(applicableOffer.value) : 0;
+            const offerTypeNum = applicableOffer ? Number(applicableOffer.offer_type) : 1;
 
-    // Map first image per gift card
-    const imageMap = {};
-    images.forEach(img => {
-        if (!imageMap[img.gift_card_id]) {
-            imageMap[img.gift_card_id] = img.image_url;
-        }
-    });
-
-    return giftCards.map(gc => {
-        let pct = parseFloat(gc.discount_percentage) || 0;
-        if (pct === 0 && gc.discounts) {
-            try {
-                const parsed = typeof gc.discounts === 'string' ? JSON.parse(gc.discounts) : gc.discounts;
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                    const firstVal = parsed[0].value || parsed[0].discount || parsed[0].percentage;
-                    if (firstVal !== undefined) {
-                        pct = parseFloat(firstVal) || 0;
-                    }
-                }
-            } catch (e) {
-                // ignore parsing errors
+            let display_text = '0%';
+            if (applicableOffer) {
+                display_text = offerTypeNum === OFFER_TYPE.INSTANT_DISCOUNT
+                    ? `${valNum}% OFF`
+                    : `${valNum}% Cashback`;
             }
-        }
 
-        const { discounts, ...cleanGc } = gc;
-        return {
-            ...cleanGc,
-            discount_percentage: pct,
-            primary_image: imageMap[gc.id] || null
-        };
-    });
+            return {
+                id: gc.id,
+                gift_card_image: gc.gift_card_image || null,
+                offer_type: offerTypeNum,
+                discount_percentage: valNum,
+                display_text
+            };
+        })
+    );
 };
 
 /**
- * Fetch top discounted gift cards (max 10)
+ * Fetch 6 highest discount gift cards
  */
 const getTopDiscountedGiftCards = async () => {
-    const [giftCards] = await pool.query(`
-        SELECT 
-            gc.id, gc.gift_card_name, gc.brand_name, gc.brand_logo,
-            gc.discount_percentage,
-            gc.discounts
+    const [rows] = await pool.query(`
+        SELECT gc.id, gc.gift_card_image, gc.store_id
         FROM gift_cards gc
-        WHERE gc.status = 1 AND gc.discount_percentage > 0
-        ORDER BY gc.discount_percentage DESC, gc.id DESC
-        LIMIT 10
+        WHERE gc.status = 1
     `);
 
-    if (giftCards.length === 0) return [];
+    if (rows.length === 0) return [];
 
-    // Fetch primary image for each gift card in a single query
-    const ids = giftCards.map(gc => gc.id);
-    const [images] = await pool.query(
-        `SELECT gift_card_id, image_url, image_type
-         FROM gift_card_images
-         WHERE gift_card_id IN (?)
-         ORDER BY id ASC`,
-        [ids]
+    const cardsWithOffers = await Promise.all(
+        rows.map(async (gc) => {
+            const applicableOffer = await getApplicableOffer(gc.id);
+            const valNum = applicableOffer ? parseFloat(applicableOffer.value) : 0;
+            const offerTypeNum = applicableOffer ? Number(applicableOffer.offer_type) : 1;
+
+            let display_text = '0%';
+            if (applicableOffer) {
+                display_text = offerTypeNum === OFFER_TYPE.INSTANT_DISCOUNT
+                    ? `${valNum}% OFF`
+                    : `${valNum}% Cashback`;
+            }
+
+            return {
+                id: gc.id,
+                gift_card_image: gc.gift_card_image || null,
+                offer_type: offerTypeNum,
+                discount_percentage: valNum,
+                display_text
+            };
+        })
     );
 
-    // Map first image per gift card
-    const imageMap = {};
-    images.forEach(img => {
-        if (!imageMap[img.gift_card_id]) {
-            imageMap[img.gift_card_id] = img.image_url;
-        }
-    });
-
-    return giftCards.map(gc => {
-        let pct = parseFloat(gc.discount_percentage) || 0;
-        if (pct === 0 && gc.discounts) {
-            try {
-                const parsed = typeof gc.discounts === 'string' ? JSON.parse(gc.discounts) : gc.discounts;
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                    const firstVal = parsed[0].value || parsed[0].discount || parsed[0].percentage;
-                    if (firstVal !== undefined) {
-                        pct = parseFloat(firstVal) || 0;
-                    }
-                }
-            } catch (e) {
-                // ignore parsing errors
-            }
-        }
-
-        const { discounts, ...cleanGc } = gc;
-        return {
-            ...cleanGc,
-            discount_percentage: pct,
-            primary_image: imageMap[gc.id] || null
-        };
-    });
+    return cardsWithOffers
+        .sort((a, b) => b.discount_percentage - a.discount_percentage || b.id - a.id)
+        .slice(0, 6);
 };
 
 /**
- * Dashboard Service — runs all 3 sections in parallel
+ * Dashboard Service — runs all 3 sections concurrently via Promise.all
  */
 export const getDashboardService = async () => {
     const [banners, trendingGiftCards, topDiscountedGiftCards] = await Promise.all([

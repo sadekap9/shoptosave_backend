@@ -23,7 +23,7 @@ export const getGiftCardsService = async (filters = {}) => {
         
         const selectColumns = `gc.id, gc.category_id, gc.store_id, gc.sku, gc.gift_card_name,
             gc.product_type, gc.min_denomination, gc.max_denomination,
-            gc.validity, gc.gift_card_image, gc.featured, gc.status,
+            gc.validity, gc.gift_card_image, gc.status,
             gc.discounts, gc.brand_name, gc.description, gc.short_description,
             gc.things_to_note, gc.redeem_steps, gc.tnc_link, gc.brand_logo,
             gc.currency_code, gc.currency_symbol, gc.payout_enabled`;
@@ -209,7 +209,7 @@ export const getGiftCardByIdService = async (id) => {
         const [[giftCard]] = await pool.query(`
             SELECT gc.id, gc.category_id, gc.store_id, gc.sku, gc.gift_card_name,
                    gc.product_type, gc.min_denomination, gc.max_denomination,
-                   gc.validity, gc.gift_card_image, gc.featured, gc.status,
+                   gc.validity, gc.gift_card_image, gc.status,
                    gc.discounts, gc.brand_name, gc.brand_code, gc.description,
                    gc.short_description, gc.things_to_note, gc.redeem_steps,
                    gc.tnc_link, gc.brand_logo, gc.currency_code, gc.currency_symbol,
@@ -288,7 +288,6 @@ export const createGiftCardService = async (data) => {
         sku,
         category_id,
         status,
-        featured,
         sort_order,
         home_page_visibility,
         commission_percentage,
@@ -503,7 +502,6 @@ export const createGiftCardService = async (data) => {
             payout_enabled,
             sync_response,
             status: status !== undefined ? toTinyInt(status) : 1,
-            featured: featured !== undefined ? toTinyInt(featured) : 0,
             gift_card_image: data.giftcard_image || null
         };
 
@@ -586,7 +584,6 @@ export const updateGiftCardService = async (id, body) => {
     if (body.store_id !== undefined) updateData.store_id = Number(body.store_id);
     if (body.sku !== undefined) updateData.sku = body.sku.trim();
     if (body.category_id !== undefined) updateData.category_id = Number(body.category_id);
-    if (body.featured !== undefined) updateData.featured = toTinyInt(body.featured);
     if (body.status !== undefined) updateData.status = toTinyInt(body.status);
     if (body.giftcard_image !== undefined) updateData.gift_card_image = body.giftcard_image;
 
@@ -703,7 +700,7 @@ export const getClientGiftCardsService = async (filters = {}) => {
         const querySql = `
             SELECT gc.id, gc.category_id, gc.store_id, gc.sku, gc.gift_card_name,
                    gc.product_type, gc.min_denomination, gc.max_denomination,
-                   gc.validity, gc.gift_card_image, gc.featured, gc.status,
+                   gc.validity, gc.gift_card_image, gc.status,
                    gc.discounts, gc.brand_name, gc.description, gc.short_description,
                    gc.things_to_note, gc.redeem_steps, gc.tnc_link, gc.brand_logo,
                    gc.currency_code, gc.currency_symbol, gc.payout_enabled,
@@ -803,7 +800,7 @@ export const getClientGiftCardByIdService = async (id) => {
         const [[giftCard]] = await pool.query(`
             SELECT gc.id, gc.category_id, gc.store_id, gc.sku, gc.gift_card_name,
                    gc.product_type, gc.min_denomination, gc.max_denomination,
-                   gc.validity, gc.gift_card_image, gc.featured, gc.status,
+                   gc.validity, gc.gift_card_image, gc.status,
                    gc.discounts, gc.brand_name, gc.description, gc.short_description,
                    gc.things_to_note, gc.redeem_steps, gc.tnc_link, gc.brand_logo,
                    gc.currency_code, gc.currency_symbol, gc.payout_enabled, gc.total_views,
@@ -946,5 +943,61 @@ export const placeGiftCardOrder = async ({ sku, price, qty, amount, refno }) => 
             success: false,
             error: errorMsg
         };
+    }
+};
+
+/**
+ * Fetch top 6 trending gift cards by total_views - Public/Customer API
+ */
+export const getTrendingGiftCardsService = async () => {
+    try {
+        const [rows] = await pool.query(`
+            SELECT gc.id, gc.gift_card_image, gc.store_id, gc.gift_card_name, gc.brand_name
+            FROM gift_cards gc
+            WHERE gc.status = 1
+            ORDER BY gc.total_views DESC, gc.id DESC
+            LIMIT 6
+        `);
+
+        if (rows.length === 0) {
+            return {
+                success: true,
+                statusCode: 200,
+                message: 'No trending gift cards found',
+                data: []
+            };
+        }
+
+        const trendingCards = await Promise.all(
+            rows.map(async (gc) => {
+                const applicableOffer = await getApplicableOffer(gc.id);
+                const valNum = applicableOffer ? parseFloat(applicableOffer.value) : 0;
+                const offerTypeNum = applicableOffer ? Number(applicableOffer.offer_type) : 1;
+
+                let display_text = '0%';
+                if (applicableOffer) {
+                    display_text = offerTypeNum === OFFER_TYPE.INSTANT_DISCOUNT
+                        ? `${valNum}% OFF`
+                        : `${valNum}% Cashback`;
+                }
+
+                return {
+                    id: gc.id,
+                    gift_card_image: gc.gift_card_image || null,
+                    offer_type: offerTypeNum,
+                    discount_percentage: valNum,
+                    display_text
+                };
+            })
+        );
+
+        return {
+            success: true,
+            statusCode: 200,
+            message: 'Trending gift cards fetched successfully',
+            data: trendingCards
+        };
+    } catch (error) {
+        throw error;
     }
 };
