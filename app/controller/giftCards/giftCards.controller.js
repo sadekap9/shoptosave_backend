@@ -316,3 +316,28 @@ export const getGiftCardsByCategories = async (req, res) => {
         });
     }
 };
+
+/**
+ * Get active gift cards by category ID with specific fields
+ */
+export const getGiftCardsByCategoryId = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const response = await giftCardsService.getGiftCardsByCategoryIdService(id);
+        return res.status(response.statusCode).json({
+            success: response.success,
+            errors: response.success ? [] : [{ message: response.message }],
+            result: {
+                message: response.message,
+                data: response.data
+            }
+        });
+    } catch (error) {
+        logger.error('Error in getGiftCardsByCategoryId', { error: error.message, stack: error.stack });
+        return res.status(error.statusCode || 500).json({
+            success: false,
+            errors: [{ message: error.message || 'Internal server error' }],
+            result: {}
+        });
+    }
+};

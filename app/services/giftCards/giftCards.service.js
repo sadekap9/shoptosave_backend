@@ -1106,11 +1106,10 @@ export const getGiftCardsByCategoriesService = async () => {
                 }
 
                 return {
-                    ...gc,
-                    mobile_images: grouped.mobile_images,
-                    desktop_images: grouped.desktop_images,
+                    id: gc.id,
+                    category_id: gc.category_id,
+                    image: gc.gift_card_image,
                     offer_type: offerTypeNum,
-                    discount_percentage: pct,
                     display_text
                 };
             })
@@ -1123,7 +1122,8 @@ export const getGiftCardsByCategoriesService = async () => {
                 if (!giftCardsByCategory[gc.category_id]) {
                     giftCardsByCategory[gc.category_id] = [];
                 }
-                giftCardsByCategory[gc.category_id].push(gc);
+                const { category_id, ...gcData } = gc;
+                giftCardsByCategory[gc.category_id].push(gcData);
             }
         });
 
@@ -1138,8 +1138,35 @@ export const getGiftCardsByCategoriesService = async () => {
         return {
             success: true,
             statusCode: 200,
-            message: 'Gift cards grouped by categories fetched successfully',
+            message: 'Gift cards  by categories fetched successfully',
             data: result
+        };
+    } catch (error) {
+        throw error;
+    }
+};
+
+/**
+ * Fetch gift cards by category ID (Simplified response)
+ */
+export const getGiftCardsByCategoryIdService = async (categoryId) => {
+    try {
+        const [giftCards] = await pool.query(`
+            SELECT 
+                id, 
+                gift_card_image as image, 
+                discounts as discount_percent, 
+                gift_card_name as display_text, 
+                product_type as offer_type
+            FROM gift_cards 
+            WHERE category_id = ? AND status = 1
+        `, [categoryId]);
+
+        return {
+            success: true,
+            statusCode: 200,
+            message: 'Gift cards fetched successfully',
+            data: giftCards
         };
     } catch (error) {
         throw error;
