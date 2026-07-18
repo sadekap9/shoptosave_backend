@@ -1001,3 +1001,147 @@ export const getTrendingGiftCardsService = async () => {
         throw error;
     }
 };
+
+/**
+ * Fetch active gift cards grouped by categories - Public/Customer API
+ */
+export const getGiftCardsByCategoriesService = async () => {
+    try {
+        const [categories, giftCards] = await Promise.all([
+            pool.query('SELECT id, category_name, logo FROM categories WHERE status = 1 ORDER BY id DESC'),
+            pool.query(`
+                SELECT gc.id, gc.category_id, gc.store_id, gc.sku, gc.gift_card_name,
+                       gc.product_type, gc.min_denomination, gc.max_denomination,
+                       gc.validity, gc.gift_card_image, gc.status,
+                       gc.discounts, gc.brand_name, gc.description, gc.short_description,
+                       gc.things_to_note, gc.redeem_steps, gc.tnc_link, gc.brand_logo,
+                       gc.currency_code, gc.currency_symbol, gc.payout_enabled,
+                       s.store_name, s.logo as store_logo, c.category_name
+                FROM gift_cards gc
+                LEFT JOIN stores s ON gc.store_id = s.id
+                LEFT JOIN categories c ON gc.category_id = c.id
+                WHERE gc.status = 1 AND s.status = 1
+                ORDER BY gc.id DESC
+            `)
+        ]);
+
+        const categoriesList = categories[0];
+        const giftCardsList = giftCards[0];
+
+        if (giftCardsList.length === 0) {
+            const result = categoriesList.map(cat => ({
+                id: cat.id,
+                category_name: cat.category_name,
+                logo: cat.logo || null,
+                gift_cards: []
+            }));
+            return {
+                success: true,
+                statusCode: 200,
+                message: 'Gift cards grouped by categories fetched successfully',
+                data: result
+            };
+        }
+
+        // Fetch images for all active gift cards
+        const activeGiftCardIds = giftCardsList.map(gc => gc.id);
+        const [images] = await pool.query(
+            'SELECT id, gift_card_id, image_url, image_type, created_at, updated_at FROM gift_card_images WHERE gift_card_id IN (?)',
+            [activeGiftCardIds]
+        );
+
+        // Map images to their respective gift cards, grouped by image_type
+        const imageMap = {};
+        images.forEach(img => {
+            if (!imageMap[img.gift_card_id]) {
+                imageMap[img.gift_card_id] = {
+                    mobile_images: [],
+                    desktop_images: []
+                };
+            }
+            const imgData = {
+                id: img.id,
+                image_url: img.image_url,
+                created_at: img.created_at,
+                updated_at: img.updated_at
+            };
+            if (img.image_type === 'mobile') {
+                imageMap[img.gift_card_id].mobile_images.push(imgData);
+            } else {
+                imageMap[img.gift_card_id].desktop_images.push(imgData);
+            }
+        });
+
+        // Map over giftCardsList and concurrently resolve applicable offer details
+        const formattedGiftCards = await Promise.all(
+            giftCardsList.map(async (gc) => {
+                const grouped = imageMap[gc.id] || { mobile_images: [], desktop_images: [] };
+                
+                // Get applicable offer info
+                const applicableOffer = await getApplicableOffer(gc.id);
+                const valNum = applicableOffer ? parseFloat(applicableOffer.value) : 0;
+                const offerTypeNum = applicableOffer ? Number(applicableOffer.offer_type) : 1;
+
+                let display_text = '0%';
+                if (applicableOffer) {
+                    display_text = offerTypeNum === OFFER_TYPE.INSTANT_DISCOUNT
+                        ? `${valNum}% OFF`
+                        : `${valNum}% Cashback`;
+                }
+
+                // Fallback discount check from discounts field
+                let pct = valNum;
+                if (pct === 0 && gc.discounts) {
+                    try {
+                        const parsed = typeof gc.discounts === 'string' ? JSON.parse(gc.discounts) : gc.discounts;
+                        if (Array.isArray(parsed) && parsed.length > 0) {
+                            const firstVal = parsed[0].value || parsed[0].discount || parsed[0].percentage;
+                            if (firstVal !== undefined) {
+                                pct = parseFloat(firstVal) || 0;
+                            }
+                        }
+                    } catch (e) {
+                        // ignore
+                    }
+                }
+
+                return {
+                    ...gc,
+                    mobile_images: grouped.mobile_images,
+                    desktop_images: grouped.desktop_images,
+                    offer_type: offerTypeNum,
+                    discount_percentage: pct,
+                    display_text
+                };
+            })
+        );
+
+        // Group the formatted gift cards by category ID
+        const giftCardsByCategory = {};
+        formattedGiftCards.forEach(gc => {
+            if (gc.category_id) {
+                if (!giftCardsByCategory[gc.category_id]) {
+                    giftCardsByCategory[gc.category_id] = [];
+                }
+                giftCardsByCategory[gc.category_id].push(gc);
+            }
+        });
+
+        // Combine categories and their mapped gift cards
+        const result = categoriesList.map(cat => ({
+            id: cat.id,
+            category_name: cat.category_name,
+            logo: cat.logo || null,
+            gift_cards: giftCardsByCategory[cat.id] || []
+        }));
+
+        return {
+            success: true,
+            statusCode: 200,
+            message: 'Gift cards grouped by categories fetched successfully',
+            data: result
+        };
+    } catch (error) {
+        throw error;
+    }
+};

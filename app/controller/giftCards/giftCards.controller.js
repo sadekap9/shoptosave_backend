@@ -292,3 +292,27 @@ export const getTrendingGiftCards = async (req, res) => {
         });
     }
 };
+
+/**
+ * Get active gift cards grouped by categories - Public/Customer API
+ */
+export const getGiftCardsByCategories = async (req, res) => {
+    try {
+        const response = await giftCardsService.getGiftCardsByCategoriesService();
+        return res.status(response.statusCode).json({
+            success: response.success,
+            errors: response.success ? [] : [{ message: response.message }],
+            result: {
+                message: response.message,
+                data: response.data
+            }
+        });
+    } catch (error) {
+        logger.error('Error in getGiftCardsByCategories', { error: error.message, stack: error.stack });
+        return res.status(error.statusCode || 500).json({
+            success: false,
+            errors: [{ message: error.message || 'Internal server error' }],
+            result: {}
+        });
+    }
+};

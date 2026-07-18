@@ -8,7 +8,8 @@ import {
     getClientGiftCards,
     getClientGiftCardById,
     getTrendingGiftCards,
-    getGiftCardsByStore
+    getGiftCardsByStore,
+    getGiftCardsByCategories
 } from '../controller/giftCards/giftCards.controller.js';
 
 import authenticate, { authorizeRole } from '../middlewares/verifyMiddleware.js';
@@ -22,6 +23,9 @@ import {
 
 const router = express.Router();
 
+
+// Get active gift cards grouped by categories
+router.get('/by-categories', getGiftCardsByCategories);
 
 // Get top 6 trending gift cards by total_views
 router.get('/trending', getTrendingGiftCards);
