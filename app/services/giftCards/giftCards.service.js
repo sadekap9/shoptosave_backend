@@ -135,16 +135,15 @@ export const getGiftCardsService = async (filters = {}) => {
 
             let display_text = '';
             if (offerTypeNum === OFFER_TYPE.INSTANT_DISCOUNT) {
-                display_text = valueTypeNum === VALUE_TYPE.PERCENTAGE ? `${valNum}% OFF` : `₹${valNum} OFF`;
+                display_text = `${valNum}% OFF`;
             } else if (offerTypeNum === OFFER_TYPE.CASHBACK) {
-                display_text = valueTypeNum === VALUE_TYPE.PERCENTAGE ? `${valNum}% Cashback` : `₹${valNum} Cashback`;
+                display_text = `${valNum}% Cashback`;
             }
 
             const applicable_offer = {
                 id: offer.offer_id,
                 offer_name: offer.offer_name,
                 offer_type: offerTypeNum,
-                value_type: valueTypeNum,
                 value: valNum,
                 display_text
             };
@@ -152,7 +151,6 @@ export const getGiftCardsService = async (filters = {}) => {
             return {
                 max_offer_value: valNum,
                 max_offer_type: offerTypeNum,
-                max_offer_value_type: valueTypeNum,
                 max_offer_name: offer.offer_name,
                 applicable_offer
             };
@@ -264,12 +262,10 @@ export const getGiftCardByIdService = async (id) => {
         if (applicableOffer) {
             giftCard.max_offer_value = applicableOffer.value;
             giftCard.max_offer_type = applicableOffer.offer_type;
-            giftCard.max_offer_value_type = applicableOffer.value_type;
             giftCard.max_offer_name = applicableOffer.offer_name;
         } else {
             giftCard.max_offer_value = null;
             giftCard.max_offer_type = null;
-            giftCard.max_offer_value_type = null;
             giftCard.max_offer_name = null;
         }
 
