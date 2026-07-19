@@ -1,75 +1,87 @@
 import express from 'express';
-import * as offersController from '../controller/offers/offers.controller.js';
+import {
+    getOffers,
+    getOfferById,
+    createOffer,
+    updateOffer,
+    deleteOffer,
+    changeOfferStatus,
+    getOfferUsageHistory,
+    getActiveOffers
+} from '../controller/offers/offers.controller.js';
 import authMiddleware, { authorizeRole } from '../middlewares/verifyMiddleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
-import { createOfferSchema, updateOfferSchema, changeStatusSchema } from '../validations/offers.validation.js';
+import {
+    createOfferSchema,
+    updateOfferSchema,
+    changeStatusSchema
+} from '../validations/offers.validation.js';
 
 const router = express.Router();
 
-// Get all offers (accessible by admin and regular users)
+// Get all offers
 router.get(
     '/list',
     authMiddleware,
-    offersController.getOffers
+    getOffers
 );
 
-// Get single offer details
+// Get offer details
 router.get(
     '/list/:id',
     authMiddleware,
     authorizeRole([1, 2]),
-    offersController.getOfferById
+    getOfferById
 );
 
-// Create a new offer
+// Create offer
 router.post(
     '/add',
     authMiddleware,
     authorizeRole([1, 2]),
     validate(createOfferSchema),
-    offersController.createOffer
+    createOffer
 );
 
-// Update an existing offer
+// Update offer
 router.patch(
     '/update/:id',
     authMiddleware,
     authorizeRole([1, 2]),
     validate(updateOfferSchema),
-    offersController.updateOffer
+    updateOffer
 );
 
-// Delete an offer
-router.delete(
-    '/delete/:id',
-    authMiddleware,
-    authorizeRole([1, 2]),
-    offersController.deleteOffer
-);
-
-// Change status of an offer (Active / Inactive)
+// Update offer status
 router.patch(
     '/update-status/:id',
     authMiddleware,
     authorizeRole([1, 2]),
     validate(changeStatusSchema),
-    offersController.changeOfferStatus
+    changeOfferStatus
 );
 
-// View offer usage history logs
-router.get(
-    '/get-history',
+// Delete offer
+router.delete(
+    '/delete/:id',
     authMiddleware,
     authorizeRole([1, 2]),
-    offersController.getOfferUsageHistory
+    deleteOffer
 );
 
-// --- User Offer Routes ---
-// Get active and valid offers (non-expired)
+// Offer usage history
+router.get(
+    '/history',
+    authMiddleware,
+    authorizeRole([1, 2]),
+    getOfferUsageHistory
+);
+
+// Get active offers
 router.get(
     '/active',
     authMiddleware,
-    offersController.getActiveOffers
+    getActiveOffers
 );
 
 export default router;

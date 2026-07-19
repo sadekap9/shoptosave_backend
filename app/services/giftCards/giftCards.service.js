@@ -624,8 +624,9 @@ export const deleteGiftCardService = async (id) => {
             };
         }
 
-        // Soft delete: disassociate from store by setting store_id to NULL
-        await connection.query('UPDATE gift_cards SET store_id = NULL WHERE id = ?', [id]);
+        // Hard delete: remove associated images then the gift card itself
+        await connection.query('DELETE FROM gift_card_images WHERE gift_card_id = ?', [id]);
+        await connection.query('DELETE FROM gift_cards WHERE id = ?', [id]);
 
         await connection.commit();
 

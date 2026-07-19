@@ -29,6 +29,16 @@ router.get(
 );
 
 /**
+ * GET /api/v1/orders
+ * Fetch authenticated user's gift card orders history (alias to /history)
+ */
+router.get(
+    '/my-orders',
+    authMiddleware,
+    ordersController.getOrderHistory
+);
+
+/**
  * POST /api/v1/orders/gift-card
  * Place a new gift card order (Wallet, Online, or Split payment)
  */
