@@ -113,12 +113,12 @@ export const buildWoohooPayload = (order, giftCard, companyConfig) => {
             }
         ],
         refno,
-        syncOnly: false,
+        syncOnly: (parseInt(order.qty || 1, 10) > 4) ? false : true,
         deliveryMode: 'API',
         products: [
             {
                 sku: giftCard.sku,
-                qty: 1,
+                qty: parseInt(order.qty || 1, 10),
                 price: parseFloat(order.amount),
                 recipient: {
                     name: order.recipient_name,

@@ -881,38 +881,41 @@ export const getClientGiftCardByIdService = async (id) => {
 /**
  * Build Pine Labs / Woohoo API payload using exact static layout requested
  */
-export const buildWoohooPayload = ({ sku, price, qty, amount, refno }) => ({
-  address: {
-    firstname: "John",
-    lastname: "Doe",
-    email: "johndoe@example.com",
-    telephone: "+918884520003",
-    line1: "Koramangala",
-    line2: "Bangalore",
-    city: "bangalore",
-    region: "Karnataka",
-    country: "IN",
-    postcode: "560095",
-    billToThis: true
-  },
-  payments: [
-    {
-      code: "svc",
-      amount: parseFloat(amount) // dynamic — total order amount
-    }
-  ],
-  refno: refno,                 // dynamic — e.g. "ORDER_20260618_1095"
-  syncOnly: true,
-  deliveryMode: "API",
-  products: [
-    {
-      sku: sku,                 // dynamic — e.g. "EGCGBNIK001"
-      price: parseFloat(price), // dynamic — e.g. 1000
-      qty: parseInt(qty),       // dynamic — e.g. 1
-      currency: 356             // static — INR
-    }
-  ]
-});
+export const buildWoohooPayload = ({ sku, price, qty, amount, refno }) => {
+  const qtyInt = parseInt(qty, 10) || 1;
+  return {
+    address: {
+      firstname: "John",
+      lastname: "Doe",
+      email: "johndoe@example.com",
+      telephone: "+918884520003",
+      line1: "Koramangala",
+      line2: "Bangalore",
+      city: "bangalore",
+      region: "Karnataka",
+      country: "IN",
+      postcode: "560095",
+      billToThis: true
+    },
+    payments: [
+      {
+        code: "svc",
+        amount: parseFloat(amount) // dynamic — total order amount
+      }
+    ],
+    refno: refno,                 // dynamic — e.g. "ORDER_20260618_1095"
+    syncOnly: qtyInt > 4 ? false : true,
+    deliveryMode: "API",
+    products: [
+      {
+        sku: sku,                 // dynamic — e.g. "EGCGBNIK001"
+        price: parseFloat(price), // dynamic — e.g. 1000
+        qty: qtyInt,              // dynamic — e.g. 1
+        currency: 356             // static — INR
+      }
+    ]
+  };
+};
 
 /**
  * Connect to Woohoo API and place order
