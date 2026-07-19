@@ -96,6 +96,7 @@ const getTopDiscountedGiftCards = async () => {
     );
 
     return cardsWithOffers
+        .filter((c) => c.discount_percentage > 0)
         .sort((a, b) => b.discount_percentage - a.discount_percentage || b.id - a.id)
         .slice(0, 6);
 };

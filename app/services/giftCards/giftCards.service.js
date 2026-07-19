@@ -1155,16 +1155,34 @@ export const getGiftCardsByCategoriesService = async () => {
  */
 export const getGiftCardsByCategoryIdService = async (categoryId) => {
     try {
-        const [giftCards] = await pool.query(`
-            SELECT 
-                id, 
-                gift_card_image as image, 
-                discounts as discount_percent, 
-                gift_card_name as display_text, 
-                product_type as offer_type
+        const [rows] = await pool.query(`
+            SELECT id, gift_card_image
             FROM gift_cards 
             WHERE category_id = ? AND status = 1
         `, [categoryId]);
+
+        const giftCards = await Promise.all(
+            rows.map(async (gc) => {
+                const applicableOffer = await getApplicableOffer(gc.id);
+                const valNum = applicableOffer ? parseFloat(applicableOffer.value) : 0;
+                const offerTypeNum = applicableOffer ? Number(applicableOffer.offer_type) : 1;
+
+                let display_text = '0%';
+                if (applicableOffer) {
+                    display_text = offerTypeNum === OFFER_TYPE.INSTANT_DISCOUNT
+                        ? `${valNum}% OFF`
+                        : `${valNum}% Cashback`;
+                }
+
+                return {
+                    id: gc.id,
+                    gift_card_image: gc.gift_card_image || null,
+                    offer_type: offerTypeNum,
+                    discount_percentage: valNum,
+                    display_text
+                };
+            })
+        );
 
         return {
             success: true,
