@@ -21,7 +21,7 @@ export const generateAuthorizationCode = async () => {
     logger.info(`[Woohoo API Call] generateAuthorizationCode called on ${AUTH_URL}`);
 
     const headers = getWoohooHeaders('POST', AUTH_URL, payload);
-    const response = await axios.post(AUTH_URL, payload, { headers, timeout: 10000 });
+    const response = await axios.post(AUTH_URL, payload, { headers, timeout: 30000 });
     return response.data;
 };
 
@@ -37,7 +37,7 @@ export const generateBearerToken = async (authorizationCode) => {
 
     logger.info(`[Woohoo API Call] generateBearerToken called on ${TOKEN_URL}`);
 
-    const response = await axios.post(TOKEN_URL, payload, { timeout: 10000 });
+    const response = await axios.post(TOKEN_URL, payload, { timeout: 30000 });
     return response.data;
 };
 
@@ -47,7 +47,7 @@ export const generateBearerToken = async (authorizationCode) => {
 export const getWoohooCategories = async (bearerToken) => {
     const url = `${BASE_URL}/v3/catalog/categories`;
     const headers = getWoohooHeaders('GET', url, null, bearerToken);
-    const response = await axios.get(url, { headers, timeout: 10000 });
+    const response = await axios.get(url, { headers, timeout: 30000 });
     return response.data;
 };
 
@@ -57,7 +57,7 @@ export const getWoohooCategories = async (bearerToken) => {
 export const getWoohooProductsByCategory = async (bearerToken, categoryId) => {
     const url = `${BASE_URL}/v3/catalog/categories/${categoryId}/products`;
     const headers = getWoohooHeaders('GET', url, null, bearerToken);
-    const response = await axios.get(url, { headers, timeout: 10000 });
+    const response = await axios.get(url, { headers, timeout: 30000 });
     return response.data;
 };
 
@@ -67,7 +67,7 @@ export const getWoohooProductsByCategory = async (bearerToken, categoryId) => {
 export const getWoohooProduct = async (bearerToken, sku) => {
     const url = `${BASE_URL}/v3/catalog/products/${sku}`;
     const headers = getWoohooHeaders('GET', url, null, bearerToken);
-    const response = await axios.get(url, { headers, timeout: 10000 });
+    const response = await axios.get(url, { headers, timeout: 30000 });
     return response.data;
 };
 
@@ -77,7 +77,7 @@ export const getWoohooProduct = async (bearerToken, sku) => {
 export const placeWoohooOrder = async (bearerToken, orderPayload) => {
     const url = `${BASE_URL}/v3/orders`;
     const headers = getWoohooHeaders('POST', url, orderPayload, bearerToken);
-    const response = await axios.post(url, orderPayload, { headers, timeout: 10000 });
+    const response = await axios.post(url, orderPayload, { headers, timeout: 60000 });
     return response.data;
 };
 
@@ -87,7 +87,7 @@ export const placeWoohooOrder = async (bearerToken, orderPayload) => {
 export const getWoohooOrderStatus = async (bearerToken, orderId) => {
     const url = `${BASE_URL}/v3/orders/${orderId}/status`;
     const headers = getWoohooHeaders('GET', url, null, bearerToken);
-    const response = await axios.get(url, { headers, timeout: 10000 });
+    const response = await axios.get(url, { headers, timeout: 30000 });
     return response.data;
 };
 
@@ -97,7 +97,7 @@ export const getWoohooOrderStatus = async (bearerToken, orderId) => {
 export const getWoohooOrderByRefNo = async (bearerToken, refno) => {
     const url = `${BASE_URL}/v3/orders?refno=${refno}`;
     const headers = getWoohooHeaders('GET', url, null, bearerToken);
-    const response = await axios.get(url, { headers, timeout: 10000 });
+    const response = await axios.get(url, { headers, timeout: 30000 });
     return response.data;
 };
 
@@ -107,7 +107,7 @@ export const getWoohooOrderByRefNo = async (bearerToken, refno) => {
 export const getActivatedCards = async (bearerToken, orderId, offset = 0, limit = 10) => {
     const url = `${BASE_URL}/v3/orders/${orderId}/cards?offset=${offset}&limit=${limit}`;
     const headers = getWoohooHeaders('GET', url, null, bearerToken);
-    const response = await axios.get(url, { headers, timeout: 10000 });
+    const response = await axios.get(url, { headers, timeout: 30000 });
     return response.data;
 };
 
@@ -117,7 +117,7 @@ export const getActivatedCards = async (bearerToken, orderId, offset = 0, limit 
 export const getWoohooOrderDetails = async (bearerToken, orderId) => {
     const url = `${BASE_URL}/v3/orders/${orderId}`;
     const headers = getWoohooHeaders('GET', url, null, bearerToken);
-    const response = await axios.get(url, { headers, timeout: 10000 });
+    const response = await axios.get(url, { headers, timeout: 30000 });
     return response.data;
 };
 
@@ -130,7 +130,7 @@ export const getWoohooCardBalance = async (bearerToken, cardNumber) => {
     const url = `${BASE_URL}/v3/balance`;
     const payload = { cardNumber };
     const headers = getWoohooHeaders('POST', url, payload, bearerToken);
-    const response = await axios.post(url, payload, { headers, timeout: 10000 });
+    const response = await axios.post(url, payload, { headers, timeout: 30000 });
     return response.data;
 };
 
@@ -143,6 +143,6 @@ export const resendWoohooCards = async (bearerToken, orderId, cards) => {
     const url = `${BASE_URL}/v3/orders/${orderId}/resend`;
     const payload = { cards };
     const headers = getWoohooHeaders('POST', url, payload, bearerToken);
-    const response = await axios.post(url, payload, { headers, timeout: 10000 });
+    const response = await axios.post(url, payload, { headers, timeout: 30000 });
     return response.data;
 };

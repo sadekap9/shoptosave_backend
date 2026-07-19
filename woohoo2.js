@@ -30,7 +30,7 @@ export const runWoohoo2Tests = async () => {
         };
         const headers = getWoohooHeaders('POST', WOOHOO2_AUTH_URL, authPayload, null, WOOHOO2_CLIENT_SECRET);
         
-        const authRes = await axios.post(WOOHOO2_AUTH_URL, authPayload, { headers, timeout: 10000 });
+        const authRes = await axios.post(WOOHOO2_AUTH_URL, authPayload, { headers, timeout: 30000 });
         console.log('Auth Code Response:', authRes.data);
         results.authCode = { success: true, data: authRes.data };
         
@@ -46,7 +46,7 @@ export const runWoohoo2Tests = async () => {
             clientSecret: WOOHOO2_CLIENT_SECRET,
             authorizationCode
         };
-        const tokenRes = await axios.post(WOOHOO2_TOKEN_URL, tokenPayload, { timeout: 10000 });
+        const tokenRes = await axios.post(WOOHOO2_TOKEN_URL, tokenPayload, { timeout: 30000 });
         console.log('Bearer Token Response:', tokenRes.data);
         results.bearerToken = { success: true, data: tokenRes.data };
 
@@ -59,7 +59,7 @@ export const runWoohoo2Tests = async () => {
         console.log('\n[3/8] Fetching Categories List...');
         const categoriesUrl = `${WOOHOO2_API_BASE_URL}/v3/catalog/categories`;
         const catHeaders = getWoohooHeaders('GET', categoriesUrl, null, bearerToken, WOOHOO2_CLIENT_SECRET);
-        const categoriesRes = await axios.get(categoriesUrl, { headers: catHeaders, timeout: 10000 });
+        const categoriesRes = await axios.get(categoriesUrl, { headers: catHeaders, timeout: 30000 });
         console.log(`Fetched ${categoriesRes.data?.length || 0} categories.`);
         results.categories = { success: true, data: categoriesRes.data };
 
@@ -73,7 +73,7 @@ export const runWoohoo2Tests = async () => {
         console.log(`\n[4/8] Fetching Products in Category ${categoryId}...`);
         const productsUrl = `${WOOHOO2_API_BASE_URL}/v3/catalog/categories/${categoryId}/products?offset=0&limit=10`;
         const prodHeaders = getWoohooHeaders('GET', productsUrl, null, bearerToken, WOOHOO2_CLIENT_SECRET);
-        const productsRes = await axios.get(productsUrl, { headers: prodHeaders, timeout: 10000 });
+        const productsRes = await axios.get(productsUrl, { headers: prodHeaders, timeout: 30000 });
         console.log(`Fetched ${productsRes.data?.products?.length || 0} products.`);
         results.productsList = { success: true, data: productsRes.data };
 
@@ -87,7 +87,7 @@ export const runWoohoo2Tests = async () => {
         console.log(`\n[5/8] Fetching Product Details for SKU: ${testSku}...`);
         const productUrl = `${WOOHOO2_API_BASE_URL}/v3/catalog/products/${testSku}`;
         const detailHeaders = getWoohooHeaders('GET', productUrl, null, bearerToken, WOOHOO2_CLIENT_SECRET);
-        const productDetailRes = await axios.get(productUrl, { headers: detailHeaders, timeout: 10000 });
+        const productDetailRes = await axios.get(productUrl, { headers: detailHeaders, timeout: 30000 });
         console.log('Product Name:', productDetailRes.data?.name);
         results.productDetail = { success: true, data: productDetailRes.data };
 
@@ -143,7 +143,7 @@ export const runWoohoo2Tests = async () => {
             ]
         };
         const orderHeaders = getWoohooHeaders('POST', orderUrl, orderPayload, bearerToken, WOOHOO2_CLIENT_SECRET);
-        const orderRes = await axios.post(orderUrl, orderPayload, { headers: orderHeaders, timeout: 10000 });
+        const orderRes = await axios.post(orderUrl, orderPayload, { headers: orderHeaders, timeout: 60000 });
         console.log('Order Response:', orderRes.data);
         results.placeOrder = { success: true, data: orderRes.data };
 
@@ -154,7 +154,7 @@ export const runWoohoo2Tests = async () => {
         console.log(`\n[7/8] Checking Order Status for Order ID: ${woohooOrderId}...`);
         const statusUrl = `${WOOHOO2_API_BASE_URL}/v3/order/${woohooOrderId}/status`;
         const statusHeaders = getWoohooHeaders('GET', statusUrl, null, bearerToken, WOOHOO2_CLIENT_SECRET);
-        const statusRes = await axios.get(statusUrl, { headers: statusHeaders, timeout: 10000 });
+        const statusRes = await axios.get(statusUrl, { headers: statusHeaders, timeout: 30000 });
         console.log('Order Status:', statusRes.data);
         results.orderStatus = { success: true, data: statusRes.data };
 
@@ -162,7 +162,7 @@ export const runWoohoo2Tests = async () => {
         console.log(`\n[8/8] Checking Activated Cards for Order ID: ${woohooOrderId}...`);
         const cardsUrl = `${WOOHOO2_API_BASE_URL}/v3/order/${woohooOrderId}/cards?offset=0&limit=10`;
         const cardsHeaders = getWoohooHeaders('GET', cardsUrl, null, bearerToken, WOOHOO2_CLIENT_SECRET);
-        const cardsRes = await axios.get(cardsUrl, { headers: cardsHeaders, timeout: 10000 });
+        const cardsRes = await axios.get(cardsUrl, { headers: cardsHeaders, timeout: 30000 });
         console.log('Activated Cards Response:', cardsRes.data);
         results.activatedCards = { success: true, data: cardsRes.data };
 

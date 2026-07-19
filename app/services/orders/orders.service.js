@@ -315,7 +315,7 @@ export const placeOrderService = async (userId, orderData) => {
 export const getOrderHistoryService = async (userId) => {
     const [orders] = await pool.query(
         `SELECT gco.id, gc.brand_name, gco.amount, gco.discount_amount, gco.cashback_amount, gco.payable_amount,
-                gco.status, gco.created_at, gco.gift_card_number, gco.expiry_date,
+                gco.status, gco.created_at, gco.gift_card_number, gco.gift_card_pin, gco.expiry_date, gco.woohoo_reference_no,
                 gco.wallet_amount, gco.online_amount, gco.payment_type
          FROM gift_card_orders gco
          JOIN gift_cards gc ON gco.gift_card_id = gc.id
@@ -687,7 +687,8 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
             const [[orderRow]] = await connection.query(
                 `SELECT id, user_id, gift_card_id, amount, status, wallet_amount,
                         online_amount, discount_amount, cashback_amount, payable_amount,
-                        woohoo_reference_no, payment_type
+                        woohoo_reference_no, woohoo_order_id, gift_card_number, gift_card_pin,
+                        expiry_date, payment_type
                  FROM gift_card_orders WHERE id = ?`,
                 [orderId]
             );

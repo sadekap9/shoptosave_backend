@@ -50,9 +50,11 @@ export const createOfferSchema = Joi.object({
         .valid(OFFER_STATUS.ACTIVE, OFFER_STATUS.INACTIVE)
         .default(OFFER_STATUS.ACTIVE)
 })
-.xor('store_id', 'gift_card_id')
-.messages({
-    'object.xor': 'Either store_id or gift_card_id is required, but not both.'
+.custom((value, helpers) => {
+    if (value.store_id && value.gift_card_id) {
+        return helpers.message('Only one of store_id or gift_card_id can be provided.');
+    }
+    return value;
 })
 .unknown(true);
 
@@ -91,9 +93,11 @@ export const updateOfferSchema = Joi.object({
     status: Joi.number()
         .valid(OFFER_STATUS.ACTIVE, OFFER_STATUS.INACTIVE)
 })
-.oxor('store_id', 'gift_card_id')
-.messages({
-    'object.oxor': 'Only one of store_id or gift_card_id can be provided.'
+.custom((value, helpers) => {
+    if (value.store_id && value.gift_card_id) {
+        return helpers.message('Only one of store_id or gift_card_id can be provided.');
+    }
+    return value;
 })
 .unknown(true);
 
