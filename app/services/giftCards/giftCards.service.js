@@ -228,32 +228,6 @@ export const getGiftCardByIdService = async (id) => {
                 message: 'Gift card not found'
             };
         }
-
-        const [images] = await pool.query(`
-            SELECT id, gift_card_id, image_url, image_type, created_at, updated_at
-            FROM gift_card_images WHERE gift_card_id = ?
-        `, [id]);
-
-        const mobile_images = [];
-        const desktop_images = [];
-
-        images.forEach(img => {
-            const imgData = {
-                id: img.id,
-                image_url: img.image_url,
-                created_at: img.created_at,
-                updated_at: img.updated_at
-            };
-
-            if (img.image_type === 'mobile') {
-                mobile_images.push(imgData);
-            } else {
-                desktop_images.push(imgData);
-            }
-        });
-
-        giftCard.mobile_images = mobile_images;
-        giftCard.desktop_images = desktop_images;
         giftCard.giftcard_image = giftCard.gift_card_image || null;
 
         const applicableOffer = await getApplicableOffer(giftCard.id);
@@ -267,6 +241,19 @@ export const getGiftCardByIdService = async (id) => {
             giftCard.max_offer_type = null;
             giftCard.max_offer_name = null;
         }
+
+        const valNum = applicableOffer ? parseFloat(applicableOffer.value) : 0;
+        const offerTypeNum = applicableOffer ? Number(applicableOffer.offer_type) : 1;
+        let display_text = '0%';
+        if (applicableOffer) {
+            display_text = offerTypeNum === OFFER_TYPE.INSTANT_DISCOUNT
+                ? `${valNum}% OFF`
+                : `${valNum}% Cashback`;
+        }
+
+        giftCard.offer_type = offerTypeNum;
+        giftCard.discount_percentage = valNum;
+        giftCard.display_text = display_text;
 
         return {
             success: true,
