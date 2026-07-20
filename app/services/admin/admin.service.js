@@ -154,16 +154,24 @@ export const getOrders = async (filters) => {
  */
 export const getOrderDetails = async (orderId) => {
     try {
-        const [[order]] = await pool.query(
-            `SELECT gco.*, u.name AS user_name, u.email AS user_email, u.phone AS user_phone, 
-                    gc.gift_card_name, gc.brand_name, gc.brand_code, gc.description AS card_description
-             FROM gift_card_orders gco
-             JOIN user_master u ON gco.user_id = u.id
-             JOIN gift_cards gc ON gco.gift_card_id = gc.id
-             WHERE gco.id = ?`,
-            [orderId]
-        );
+        const [orderResult, itemsResult] = await Promise.all([
+            pool.query(
+                `SELECT gco.*, u.name AS user_name, u.email AS user_email, u.phone AS user_phone, 
+                        gc.gift_card_name, gc.brand_name, gc.brand_code, gc.description AS card_description
+                 FROM gift_card_orders gco
+                 JOIN user_master u ON gco.user_id = u.id
+                 JOIN gift_cards gc ON gco.gift_card_id = gc.id
+                 WHERE gco.id = ?`,
+                [orderId]
+            ),
+            pool.query(
+                `SELECT id, woohoo_card_id, sku, product_name, card_number, card_pin, barcode, amount, validity, issuance_date, card_view_identifier, status
+                 FROM gift_card_order_items WHERE order_id = ?`,
+                [orderId]
+            )
+        ]);
 
+        const [[order]] = orderResult;
         if (!order) {
             return {
                 success: false,
@@ -171,6 +179,30 @@ export const getOrderDetails = async (orderId) => {
                 message: 'Order not found'
             };
         }
+
+        const [items] = itemsResult;
+        const formattedCards = items.map(item => ({
+            id: item.id,
+            cardId: item.woohoo_card_id,
+            sku: item.sku,
+            productName: item.product_name,
+            card_number: item.card_number,
+            card_pin: item.card_pin,
+            barcode: item.barcode,
+            amount: parseFloat(item.amount) || 0,
+            validity: item.validity,
+            issuanceDate: item.issuance_date,
+            cardView: {
+                identifier: item.card_view_identifier
+            },
+            status: item.status
+        }));
+
+        // Assign first card details for backward compatibility
+        order.gift_card_number = formattedCards[0]?.card_number || null;
+        order.gift_card_pin = formattedCards[0]?.card_pin || null;
+        order.expiry_date = formattedCards[0]?.validity || null;
+        order.cards = formattedCards;
 
         return {
             success: true,

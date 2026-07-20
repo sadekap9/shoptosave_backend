@@ -252,16 +252,37 @@ export const placeOrderService = async (userId, orderData) => {
         const cards = woohooResponse.cards || [];
         const mainCard = cards[0] || {};
 
-        await pool.query(
-            `UPDATE gift_card_orders 
-             SET status = 2, 
-                 woohoo_order_id = ?, 
-                 gift_card_number = ?, 
-                 gift_card_pin = ?, 
-                 expiry_date = ? 
-             WHERE id = ?`,
-            [woohooResponse.orderId || null, mainCard.cardNumber || null, mainCard.pin || null, mainCard.validity || null, orderId]
-        );
+        await runInTransaction(async (conn) => {
+            await conn.query(
+                `UPDATE gift_card_orders 
+                 SET status = 2, 
+                     woohoo_order_id = ? 
+                 WHERE id = ?`,
+                [woohooResponse.orderId || null, orderId]
+            );
+
+            if (cards.length > 0) {
+                const itemValues = cards.map(c => [
+                    orderId,
+                    c.cardId || null,
+                    c.sku || null,
+                    c.productName || null,
+                    c.cardNumber || null,
+                    c.cardPin || c.pin || null,
+                    c.barcode || null,
+                    c.amount || null,
+                    c.validity || null,
+                    c.issuanceDate || null,
+                    c.cardView?.identifier || null
+                ]);
+                await conn.query(
+                    `INSERT INTO gift_card_order_items 
+                     (order_id, woohoo_card_id, sku, product_name, card_number, card_pin, barcode, amount, validity, issuance_date, card_view_identifier) 
+                     VALUES ?`,
+                    [itemValues]
+                );
+            }
+        });
 
         // Credit cashback if applicable
         const cashbackPct = parseFloat(giftCard.cashback_percentage) || 0;
@@ -283,12 +304,26 @@ export const placeOrderService = async (userId, orderData) => {
                 orderId,
                 woohooOrderId: woohooResponse.orderId,
                 status: 'SUCCESS',
-                gift_card_number: mainCard.cardNumber,
-                gift_card_pin: mainCard.pin,
-                expiry_date: mainCard.validity,
+                gift_card_number: mainCard.cardNumber || null,
+                gift_card_pin: mainCard.cardPin || mainCard.pin || null,
+                expiry_date: mainCard.validity || null,
                 wallet_amount: totalAmount,
                 online_amount: 0,
-                payment_type: GIFT_CARD_ORDER_PAYMENT_TYPE.WALLET_ONLY
+                payment_type: GIFT_CARD_ORDER_PAYMENT_TYPE.WALLET_ONLY,
+                cards: cards.map(c => ({
+                    cardId: c.cardId || null,
+                    sku: c.sku || null,
+                    productName: c.productName || null,
+                    cardNumber: c.cardNumber || null,
+                    cardPin: c.cardPin || c.pin || null,
+                    barcode: c.barcode || null,
+                    amount: c.amount || null,
+                    validity: c.validity || null,
+                    issuanceDate: c.issuanceDate || null,
+                    cardView: {
+                        identifier: c.cardView?.identifier || null
+                    }
+                }))
             }
         };
 
@@ -315,7 +350,7 @@ export const placeOrderService = async (userId, orderData) => {
 export const getOrderHistoryService = async (userId) => {
     const [orders] = await pool.query(
         `SELECT gco.id, gc.brand_name, gco.amount, gco.discount_amount, gco.cashback_amount, gco.payable_amount,
-                gco.status, gco.created_at, gco.gift_card_number, gco.gift_card_pin, gco.expiry_date, gco.woohoo_reference_no,
+                gco.status, gco.created_at, gco.woohoo_reference_no, gco.quantity,
                 gco.wallet_amount, gco.online_amount, gco.payment_type
          FROM gift_card_orders gco
          JOIN gift_cards gc ON gco.gift_card_id = gc.id
@@ -331,7 +366,8 @@ export const getOrderHistoryService = async (userId) => {
         cashback_amount: parseFloat(o.cashback_amount) || 0,
         payable_amount: parseFloat(o.payable_amount) || 0,
         wallet_amount: parseFloat(o.wallet_amount) || 0,
-        online_amount: parseFloat(o.online_amount) || 0
+        online_amount: parseFloat(o.online_amount) || 0,
+        quantity: parseInt(o.quantity) || 0
     }));
 
     return {
@@ -348,22 +384,47 @@ export const getOrderHistoryService = async (userId) => {
  * Get Order Details with Payment Breakdown by ID
  */
 export const getOrderById = async (userId, orderId) => {
-    const [[order]] = await pool.query(
-        `SELECT id, user_id, gift_card_id, amount, sku, qty, status, is_self_purchase,
-                recipient_name, recipient_email, recipient_mobile, gift_message,
-                wallet_amount, online_amount, payment_type, woohoo_order_id,
-                gift_card_number, gift_card_pin, expiry_date, woohoo_reference_no,
-                offer_id, discount_amount, cashback_amount, payable_amount,
-                failure_reason, created_at
-         FROM gift_card_orders WHERE id = ?`,
-        [orderId]
-    );
+    const [orderResult, itemsResult] = await Promise.all([
+        pool.query(
+            `SELECT id, user_id, gift_card_id, amount, sku, quantity, status, is_self_purchase,
+                    recipient_name, recipient_email, recipient_mobile, gift_message,
+                    wallet_amount, online_amount, payment_type, woohoo_order_id,
+                    woohoo_reference_no, offer_id, discount_amount, cashback_amount, 
+                    payable_amount, failure_reason, created_at
+             FROM gift_card_orders WHERE id = ?`,
+            [orderId]
+        ),
+        pool.query(
+            `SELECT id, woohoo_card_id, sku, product_name, card_number, card_pin, barcode, amount, validity, issuance_date, card_view_identifier 
+             FROM gift_card_order_items WHERE order_id = ?`,
+            [orderId]
+        )
+    ]);
+
+    const [[order]] = orderResult;
     if (!order) {
         throw { message: 'Order not found', code: 'NOT_FOUND', statusCode: 404 };
     }
     if (order.user_id !== userId) {
         throw { message: 'Order does not belong to this user', code: 'UNAUTHORIZED', statusCode: 403 };
     }
+
+    const [items] = itemsResult;
+    const formattedCards = items.map(item => ({
+        id: item.id,
+        card_number: item.card_number,
+        card_pin: item.card_pin,
+        amount: parseFloat(item.amount) || 0,
+        validity: item.validity,
+        sku: item.sku,
+        productName: item.product_name,
+        cardId: item.woohoo_card_id,
+        barcode: item.barcode,
+        issuanceDate: item.issuance_date,
+        cardView: {
+            identifier: item.card_view_identifier
+        }
+    }));
 
     const formattedOrder = {
         ...order,
@@ -372,10 +433,21 @@ export const getOrderById = async (userId, orderId) => {
         cashback_amount: parseFloat(order.cashback_amount) || 0,
         payable_amount: parseFloat(order.payable_amount) || 0,
         wallet_amount: parseFloat(order.wallet_amount) || 0,
-        online_amount: parseFloat(order.online_amount) || 0
+        online_amount: parseFloat(order.online_amount) || 0,
+        quantity: parseInt(order.quantity) || 0,
+        // Backward compatibility: provide the first card's details on the order object itself
+        gift_card_number: formattedCards[0]?.card_number || null,
+        gift_card_pin: formattedCards[0]?.card_pin || null,
+        expiry_date: formattedCards[0]?.validity || null
     };
 
-    return { success: true, data: formattedOrder };
+    return {
+        success: true,
+        data: {
+            order: formattedOrder,
+            cards: formattedCards
+        }
+    };
 };
 
 // ─── Place Gift Card Order Flow (3 payment types) ──────────────────────────────
@@ -517,13 +589,14 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
             );
 
             // Insert gift_card_orders in PENDING (0) state
+            // Insert gift_card_orders in PENDING (0) state
             const [orderResult] = await connection.query(
                 `INSERT INTO gift_card_orders 
                  (user_id, gift_card_id, amount, is_self_purchase, recipient_name, recipient_email, recipient_mobile, gift_message,
-                  woohoo_reference_no, status, sku, qty, wallet_amount, online_amount, payment_type,
-                  woohoo_order_id, gift_card_number, gift_card_pin, expiry_date, woohoo_response,
+                  woohoo_reference_no, status, sku, quantity, wallet_amount, online_amount, payment_type,
+                  woohoo_order_id, woohoo_response,
                   offer_id, discount_amount, cashback_amount, payable_amount)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?)`,
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)`,
                 [
                     userId,
                     giftcard_id,
@@ -660,7 +733,6 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
 
     // Direct success with cards available!
     const cards = woohooResponseData.cards || [];
-    const mainCard = cards[0] || {};
 
     try {
         const finalOrder = await runInTransaction(async (connection) => {
@@ -668,30 +740,68 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
                 `UPDATE gift_card_orders 
                  SET status = 2, 
                      woohoo_order_id = ?, 
-                     gift_card_number = ?, 
-                     gift_card_pin = ?, 
-                     expiry_date = ?,
                      woohoo_response = ?
                  WHERE id = ?`,
                 [
                     woohooResponseData.orderId || null,
-                    mainCard.cardNumber || null,
-                    mainCard.pin || null,
-                    mainCard.validity || null,
                     JSON.stringify(woohooResponseData),
                     orderId
                 ]
             );
 
+            // Insert child cards
+            if (cards.length > 0) {
+                const itemValues = cards.map(c => [
+                    orderId,
+                    c.cardId || null,
+                    c.sku || null,
+                    c.productName || null,
+                    c.cardNumber || null,
+                    c.cardPin || c.pin || null,
+                    c.barcode || null,
+                    c.amount || null,
+                    c.validity || null,
+                    c.issuanceDate || null,
+                    c.cardView?.identifier || null
+                ]);
+                await connection.query(
+                    `INSERT INTO gift_card_order_items 
+                     (order_id, woohoo_card_id, sku, product_name, card_number, card_pin, barcode, amount, validity, issuance_date, card_view_identifier) 
+                     VALUES ?`,
+                    [itemValues]
+                );
+            }
+
             // Fetch updated order row
             const [[orderRow]] = await connection.query(
                 `SELECT id, user_id, gift_card_id, amount, status, wallet_amount,
                         online_amount, discount_amount, cashback_amount, payable_amount,
-                        woohoo_reference_no, woohoo_order_id, gift_card_number, gift_card_pin,
-                        expiry_date, payment_type
+                        woohoo_reference_no, woohoo_order_id, quantity, payment_type
                  FROM gift_card_orders WHERE id = ?`,
                 [orderId]
             );
+
+            // Fetch created card items for return
+            const [items] = await connection.query(
+                `SELECT id, woohoo_card_id, sku, product_name, card_number, card_pin, barcode, amount, validity, issuance_date, card_view_identifier 
+                 FROM gift_card_order_items WHERE order_id = ?`,
+                [orderId]
+            );
+            const formattedCards = items.map(item => ({
+                id: item.id,
+                card_number: item.card_number,
+                card_pin: item.card_pin,
+                amount: parseFloat(item.amount) || 0,
+                validity: item.validity,
+                sku: item.sku,
+                productName: item.product_name,
+                cardId: item.woohoo_card_id,
+                barcode: item.barcode,
+                issuanceDate: item.issuance_date,
+                cardView: {
+                    identifier: item.card_view_identifier
+                }
+            }));
 
             // Credit cashback if cashback_amount > 0 with idempotency check
             if (orderRow && parseFloat(orderRow.cashback_amount) > 0) {
@@ -715,6 +825,12 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
                     );
                 }
             }
+
+            // Assign for backward compatibility
+            orderRow.gift_card_number = formattedCards[0]?.card_number || null;
+            orderRow.gift_card_pin = formattedCards[0]?.card_pin || null;
+            orderRow.expiry_date = formattedCards[0]?.validity || null;
+            orderRow.cards = formattedCards;
 
             return orderRow;
         });
@@ -889,20 +1005,38 @@ export const resolvePendingOrdersService = async () => {
                         `UPDATE gift_card_orders 
                          SET status = 2, 
                              woohoo_order_id = ?, 
-                             gift_card_number = ?, 
-                             gift_card_pin = ?, 
-                             expiry_date = ?,
                              woohoo_response = ?
                          WHERE id = ?`,
                         [
                             woohooRes.orderId || null,
-                            mainCard.cardNumber || null,
-                            mainCard.pin || null,
-                            mainCard.validity || null,
                             JSON.stringify(woohooRes),
                             order.id
                         ]
                     );
+
+                    // Insert child cards
+                    if (cards.length > 0) {
+                        const itemValues = cards.map(c => [
+                            order.id,
+                            c.cardId || null,
+                            c.sku || null,
+                            c.productName || null,
+                            c.cardNumber || null,
+                            c.cardPin || c.pin || null,
+                            c.barcode || null,
+                            c.amount || null,
+                            c.validity || null,
+                            c.issuanceDate || null,
+                            c.cardView?.identifier || null
+                        ]);
+                        await connection.query(
+                            `INSERT INTO gift_card_order_items 
+                             (order_id, woohoo_card_id, sku, product_name, card_number, card_pin, barcode, amount, validity, issuance_date, card_view_identifier) 
+                             VALUES ?`,
+                            [itemValues]
+                        );
+                    }
+                });
 
                     // Credit cashback if cashback_amount > 0
                     if (order && parseFloat(order.cashback_amount) > 0) {

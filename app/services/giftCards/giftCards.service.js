@@ -904,7 +904,7 @@ export const buildWoohooPayload = ({ sku, price, qty, amount, refno }) => {
       }
     ],
     refno: refno,                 // dynamic — e.g. "ORDER_20260618_1095"
-    syncOnly: qtyInt > 4 ? false : true,
+    syncOnly: qtyInt > 5 ? false : true,
     deliveryMode: "API",
     products: [
       {

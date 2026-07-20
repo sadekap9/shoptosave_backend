@@ -113,7 +113,7 @@ export const buildWoohooPayload = (order, giftCard, companyConfig) => {
             }
         ],
         refno,
-        syncOnly: (parseInt(order.qty || 1, 10) > 4) ? false : true,
+        syncOnly: (parseInt(order.qty || 1, 10) > 5) ? false : true,
         deliveryMode: 'API',
         products: [
             {
