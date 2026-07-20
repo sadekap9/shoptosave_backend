@@ -231,16 +231,6 @@ export const getGiftCardByIdService = async (id) => {
         giftCard.giftcard_image = giftCard.gift_card_image || null;
 
         const applicableOffer = await getApplicableOffer(giftCard.id);
-        giftCard.applicable_offer = applicableOffer;
-        if (applicableOffer) {
-            giftCard.max_offer_value = applicableOffer.value;
-            giftCard.max_offer_type = applicableOffer.offer_type;
-            giftCard.max_offer_name = applicableOffer.offer_name;
-        } else {
-            giftCard.max_offer_value = null;
-            giftCard.max_offer_type = null;
-            giftCard.max_offer_name = null;
-        }
 
         const valNum = applicableOffer ? parseFloat(applicableOffer.value) : 0;
         const offerTypeNum = applicableOffer ? Number(applicableOffer.offer_type) : 1;
@@ -812,16 +802,6 @@ export const getClientGiftCardByIdService = async (id) => {
         giftCard.total_views = (giftCard.total_views || 0) + 1;
 
         const applicableOffer = await getApplicableOffer(giftCard.id);
-        giftCard.applicable_offer = applicableOffer;
-        if (applicableOffer) {
-            giftCard.max_offer_value = applicableOffer.value;
-            giftCard.max_offer_type = applicableOffer.offer_type;
-            giftCard.max_offer_name = applicableOffer.offer_name;
-        } else {
-            giftCard.max_offer_value = null;
-            giftCard.max_offer_type = null;
-            giftCard.max_offer_name = null;
-        }
 
         const valNum = applicableOffer ? parseFloat(applicableOffer.value) : 0;
         const offerTypeNum = applicableOffer ? Number(applicableOffer.offer_type) : 1;
