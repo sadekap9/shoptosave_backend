@@ -1036,11 +1036,10 @@ export const resolvePendingOrdersService = async () => {
                             [itemValues]
                         );
                     }
-                });
 
                     // Credit cashback if cashback_amount > 0
                     if (order && parseFloat(order.cashback_amount) > 0) {
-                        const creditRes = await creditWallet(
+                        await creditWallet(
                             order.user_id,
                             parseFloat(order.cashback_amount),
                             WALLET_TRANSACTION_SOURCE.CASHBACK,
@@ -1054,8 +1053,6 @@ export const resolvePendingOrdersService = async () => {
                             'UPDATE user_wallet SET total_cashback_earned = total_cashback_earned + ? WHERE user_id = ?',
                             [parseFloat(order.cashback_amount), order.user_id]
                         );
-
-
                     }
                 });
                 logger.info(`[Cron Resolver] Resolved Order #${order.id} as COMPLETE.`);
