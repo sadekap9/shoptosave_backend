@@ -811,48 +811,30 @@ export const getClientGiftCardByIdService = async (id) => {
         await pool.query('UPDATE gift_cards SET total_views = total_views + 1 WHERE id = ?', [id]);
         giftCard.total_views = (giftCard.total_views || 0) + 1;
 
-        const [images] = await pool.query(`
-            SELECT id, gift_card_id, image_url, image_type, created_at, updated_at
-            FROM gift_card_images WHERE gift_card_id = ?
-        `, [id]);
-
-        const mobile_images = [];
-        const desktop_images = [];
-
-        images.forEach(img => {
-            const imgData = {
-                id: img.id,
-                image_url: img.image_url,
-                created_at: img.created_at,
-                updated_at: img.updated_at
-            };
-
-            if (img.image_type === 'mobile') {
-                mobile_images.push(imgData);
-            } else {
-                desktop_images.push(imgData);
-            }
-        });
-
-        giftCard.mobile_images = mobile_images;
-        giftCard.desktop_images = desktop_images;
-
-        // Parse discount percentage
-        let pct = 0;
-        if (giftCard.discounts) {
-            try {
-                const parsed = typeof giftCard.discounts === 'string' ? JSON.parse(giftCard.discounts) : giftCard.discounts;
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                    const firstVal = parsed[0].value || parsed[0].discount || parsed[0].percentage;
-                    if (firstVal !== undefined) {
-                        pct = parseFloat(firstVal) || 0;
-                    }
-                }
-            } catch (e) {
-                // ignore
-            }
+        const applicableOffer = await getApplicableOffer(giftCard.id);
+        giftCard.applicable_offer = applicableOffer;
+        if (applicableOffer) {
+            giftCard.max_offer_value = applicableOffer.value;
+            giftCard.max_offer_type = applicableOffer.offer_type;
+            giftCard.max_offer_name = applicableOffer.offer_name;
+        } else {
+            giftCard.max_offer_value = null;
+            giftCard.max_offer_type = null;
+            giftCard.max_offer_name = null;
         }
-        giftCard.discount_percentage = pct;
+
+        const valNum = applicableOffer ? parseFloat(applicableOffer.value) : 0;
+        const offerTypeNum = applicableOffer ? Number(applicableOffer.offer_type) : 1;
+        let display_text = '0%';
+        if (applicableOffer) {
+            display_text = offerTypeNum === OFFER_TYPE.INSTANT_DISCOUNT
+                ? `${valNum}% OFF`
+                : `${valNum}% Cashback`;
+        }
+
+        giftCard.offer_type = offerTypeNum;
+        giftCard.discount_percentage = valNum;
+        giftCard.display_text = display_text;
 
         return {
             success: true,
