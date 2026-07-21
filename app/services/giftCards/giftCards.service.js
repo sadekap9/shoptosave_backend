@@ -1,8 +1,10 @@
 import pool from '../../config/dbConfig.js';
 import fs from 'fs';
-import { giftCardImageType, uploadFolders, OFFER_TYPE, VALUE_TYPE } from '../../config/constant/constant.js';
+import { giftCardImageType, uploadFolders, OFFER_TYPE, VALUE_TYPE, API_PROVIDER } from '../../config/constant/constant.js';
 import { getWoohooToken } from '../categories/woohooAuth.service.js';
 import { getWoohooProduct, placeWoohooOrder } from '../woohoo/woohoo.service.js';
+import { getWoohoo2Token } from '../categories/woohoo2Auth.service.js';
+import { getWoohooProduct as getWoohoo2Product, placeWoohooOrder as placeWoohoo2Order } from '../woohoo/woohoo2.service.js';
 import { saveProductsToDB } from '../products/products.service.js';
 import { sanitizePaginationParams, buildPagination } from '../../helpers/pagination.helper.js';
 import logger from '../../utils/logger.js';
@@ -296,33 +298,9 @@ export const createGiftCardService = async (data) => {
 
 
 
-    // Verify SKU uniqueness
-    if (sku) {
-        const [[existingSku]] = await pool.query('SELECT id, status, store_id FROM gift_cards WHERE sku = ?', [sku.trim()]);
-        if (existingSku) {
-            if (existingSku.status === 0) {
-                // Reactivate and update instead of throwing unique constraint error
-                await pool.query(
-                    'UPDATE gift_cards SET store_id = ?, category_id = ?, status = 1, gift_card_image = COALESCE(?, gift_card_image) WHERE id = ?',
-                    [store_id, category_id, data.giftcard_image || null, existingSku.id]
-                );
-                return {
-                    success: true,
-                    statusCode: 200,
-                    message: 'Gift card mapped successfully',
-                    data: { id: existingSku.id }
-                };
-            }
-            return {
-                success: false,
-                statusCode: 400,
-                message: 'Gift card SKU must be unique'
-            };
-        }
-    }
-
     // Fetch live product details from Woohoo
     let liveProd = null;
+    let apiProvider = API_PROVIDER.WOOHOO;
     const testSku = sku.trim().toUpperCase();
     if (testSku === 'CNPIN' || testSku === 'ABC3445588') {
         liveProd = {
@@ -366,13 +344,21 @@ export const createGiftCardService = async (data) => {
         try {
             const token = await getWoohooToken();
             liveProd = await getWoohooProduct(token, sku.trim());
+            apiProvider = API_PROVIDER.WOOHOO;
         } catch (err) {
-            console.error(`Failed to fetch Woohoo product for SKU ${sku}:`, err);
-            return {
-                success: false,
-                statusCode: 400,
-                message: 'Selected Woohoo product not found or invalid SKU'
-            };
+            console.warn(`Failed to fetch Woohoo product for SKU ${sku} from Woohoo 1. Trying Woohoo 2...`, err.message);
+            try {
+                const token2 = await getWoohoo2Token();
+                liveProd = await getWoohoo2Product(token2, sku.trim());
+                apiProvider = API_PROVIDER.WOOHOO2;
+            } catch (err2) {
+                console.error(`Failed to fetch Woohoo product for SKU ${sku} from Woohoo 2 as well:`, err2);
+                return {
+                    success: false,
+                    statusCode: 400,
+                    message: 'Selected Woohoo product not found or invalid SKU on both integrations'
+                };
+            }
         }
     }
 
@@ -382,6 +368,31 @@ export const createGiftCardService = async (data) => {
             statusCode: 400,
             message: 'Selected Woohoo product not found or invalid SKU'
         };
+    }
+
+    // Verify SKU uniqueness
+    if (sku) {
+        const [[existingSku]] = await pool.query('SELECT id, status, store_id FROM gift_cards WHERE sku = ?', [sku.trim()]);
+        if (existingSku) {
+            if (existingSku.status === 0) {
+                // Reactivate and update instead of throwing unique constraint error
+                await pool.query(
+                    'UPDATE gift_cards SET store_id = ?, category_id = ?, status = 1, api_provider = ?, gift_card_image = COALESCE(?, gift_card_image) WHERE id = ?',
+                    [store_id, category_id, apiProvider, data.giftcard_image || null, existingSku.id]
+                );
+                return {
+                    success: true,
+                    statusCode: 200,
+                    message: 'Gift card mapped successfully',
+                    data: { id: existingSku.id }
+                };
+            }
+            return {
+                success: false,
+                statusCode: 400,
+                message: 'Gift card SKU must be unique'
+            };
+        }
     }
 
     // Sync to woohoo_products table locally
@@ -478,6 +489,7 @@ export const createGiftCardService = async (data) => {
             corporate_discounts,
             payout_enabled,
             sync_response,
+            api_provider: apiProvider,
             status: status !== undefined ? toTinyInt(status) : 1,
             gift_card_image: data.giftcard_image || null
         };
@@ -873,15 +885,28 @@ export const placeGiftCardOrder = async ({ sku, price, qty, amount, refno }) => 
     try {
         logger.info(`[GiftCard Service] Placing Woohoo order. Ref: ${refno}, SKU: ${sku}`);
         
-        // 1. Fetch Auth Token
-        const bearerToken = await getWoohooToken();
+        // Fetch api_provider from database for the given SKU
+        const [[giftCard]] = await pool.query(
+            'SELECT api_provider FROM gift_cards WHERE sku = ? LIMIT 1',
+            [sku]
+        );
         
-        // 2. Construct Payload
+        const provider = giftCard ? giftCard.api_provider : API_PROVIDER.WOOHOO;
+        logger.info(`[GiftCard Service] Resolved api_provider "${provider}" for SKU: ${sku}`);
+
+        let bearerToken;
+        let responseData;
         const payload = buildWoohooPayload({ sku, price, qty, amount, refno });
         logger.info(`[Woohoo API Request Body]: ${JSON.stringify(payload, null, 2)}`);
         
-        // 3. Post to Woohoo
-        const responseData = await placeWoohooOrder(bearerToken, payload);
+        if (provider === API_PROVIDER.WOOHOO2) {
+            bearerToken = await getWoohoo2Token();
+            responseData = await placeWoohoo2Order(bearerToken, payload);
+        } else {
+            bearerToken = await getWoohooToken();
+            responseData = await placeWoohooOrder(bearerToken, payload);
+        }
+        
         logger.info(`[Woohoo API Response Body]: ${JSON.stringify(responseData, null, 2)}`);
         
         logger.info(`[GiftCard Service] Woohoo response status: ${responseData.status}`);
