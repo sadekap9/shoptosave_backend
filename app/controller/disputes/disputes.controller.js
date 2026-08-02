@@ -145,3 +145,33 @@ export const updateDisputeStatus = async (req, res) => {
         });
     }
 };
+
+/**
+ * Retrieve all disputes with full detailed user/card info (Admin/Sub-Admin only)
+ */
+export const getAdminDisputes = async (req, res) => {
+    try {
+        const { page, limit } = req.query;
+
+        logger.info(`[Disputes Controller] Admin ${req.user.id} is fetching admin disputes (Page: ${page}, Limit: ${limit})`);
+
+        const result = await disputesService.getAdminDisputesService(page, limit);
+
+        return res.status(result.statusCode).json({
+            success: true,
+            errors: [],
+            result: {
+                message: result.message,
+                data: result.data,
+                pagination: result.pagination
+            }
+        });
+    } catch (error) {
+        logger.error('[Disputes Controller] Error in getAdminDisputes', { error: error.message, stack: error.stack });
+        return res.status(500).json({
+            success: false,
+            errors: [{ message: error.message || 'Internal server error' }],
+            result: {}
+        });
+    }
+};

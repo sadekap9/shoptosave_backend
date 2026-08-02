@@ -1,14 +1,6 @@
 import Joi from 'joi';
 
 export const createDisputeSchema = Joi.object({
-    orderId: Joi.number().integer().positive().required().messages({
-        'any.required': 'orderId is required',
-        'number.base': 'orderId must be a number'
-    }),
-    orderItemId: Joi.number().integer().positive().required().messages({
-        'any.required': 'orderItemId is required',
-        'number.base': 'orderItemId must be a number'
-    }),
     subject: Joi.string().max(150).trim().required().messages({
         'any.required': 'subject is required',
         'string.empty': 'subject cannot be empty',

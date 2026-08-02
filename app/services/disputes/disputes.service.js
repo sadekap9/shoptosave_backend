@@ -1,39 +1,11 @@
 import pool from '../../config/dbConfig.js';
 
-/**
- * Create a new dispute for an order item
- */
-export const createDisputeService = async (userId, { orderId, orderItemId, subject, message }) => {
-    // Run order existence and item matching queries in parallel
-    const [orderRows, itemRows] = await Promise.all([
-        pool.query('SELECT id FROM gift_card_orders WHERE id = ? AND user_id = ? LIMIT 1', [orderId, userId]),
-        pool.query('SELECT id FROM gift_card_order_items WHERE id = ? AND order_id = ? LIMIT 1', [orderItemId, orderId])
-    ]);
-
-    const orderExists = orderRows[0].length > 0;
-    const itemExists = itemRows[0].length > 0;
-
-    if (!orderExists) {
-        return {
-            success: false,
-            statusCode: 400,
-            message: 'Invalid order or order does not belong to you'
-        };
-    }
-
-    if (!itemExists) {
-        return {
-            success: false,
-            statusCode: 400,
-            message: 'Invalid order item for the specified order'
-        };
-    }
-
+export const createDisputeService = async (userId, { subject, message }) => {
     // Insert new dispute record
     const [insertResult] = await pool.query(
-        `INSERT INTO disputes (user_id, order_id, order_item_id, subject, message, status) 
-         VALUES (?, ?, ?, ?, ?, 1)`,
-        [userId, orderId, orderItemId, subject, message]
+        `INSERT INTO disputes (user_id, subject, message, status) 
+         VALUES (?, ?, ?, 1)`,
+        [userId, subject, message]
     );
 
     return {
@@ -41,13 +13,7 @@ export const createDisputeService = async (userId, { orderId, orderItemId, subje
         statusCode: 201,
         message: 'Dispute created successfully',
         data: {
-            disputeId: insertResult.insertId,
-            userId,
-            orderId,
-            orderItemId,
-            subject,
-            message,
-            status: 1
+            disputeId: insertResult.insertId
         }
     };
 };
@@ -70,12 +36,8 @@ export const getDisputesService = async (user, page = 1, limit = 10) => {
         countParams = [];
 
         dataSql = `
-            SELECT d.*, u.full_name as user_name, u.email as user_email, 
-                   o.woohoo_reference_no, oi.card_number 
+            SELECT d.id, d.subject, d.message, d.status 
             FROM disputes d 
-            JOIN user_master u ON d.user_id = u.id 
-            JOIN gift_card_orders o ON d.order_id = o.id 
-            JOIN gift_card_order_items oi ON d.order_item_id = oi.id 
             ORDER BY d.id DESC
             LIMIT ? OFFSET ?
         `;
@@ -85,10 +47,8 @@ export const getDisputesService = async (user, page = 1, limit = 10) => {
         countParams = [user.id];
 
         dataSql = `
-            SELECT d.*, o.woohoo_reference_no, oi.card_number 
+            SELECT d.id, d.subject, d.message, d.status 
             FROM disputes d 
-            JOIN gift_card_orders o ON d.order_id = o.id 
-            JOIN gift_card_order_items oi ON d.order_item_id = oi.id 
             WHERE d.user_id = ? 
             ORDER BY d.id DESC
             LIMIT ? OFFSET ?
@@ -126,12 +86,9 @@ export const getDisputeByIdService = async (user, disputeId) => {
     const isAdmin = user.role === 1 || user.role === 2;
 
     const sql = `
-        SELECT d.*, u.full_name as user_name, u.email as user_email, 
-               o.woohoo_reference_no, oi.card_number 
+        SELECT d.*, u.name as user_name, u.email as user_email 
         FROM disputes d 
         JOIN user_master u ON d.user_id = u.id 
-        JOIN gift_card_orders o ON d.order_id = o.id 
-        JOIN gift_card_order_items oi ON d.order_item_id = oi.id 
         WHERE d.id = ? 
         LIMIT 1
     `;
@@ -186,6 +143,46 @@ export const updateDisputeStatusService = async (disputeId, status) => {
         data: {
             disputeId,
             status
+        }
+    };
+};
+
+/**
+ * List all disputes with full detailed user/card info for admin panel (with pagination)
+ */
+export const getAdminDisputesService = async (page = 1, limit = 10) => {
+    const parsedPage = Math.max(1, parseInt(page) || 1);
+    const parsedLimit = Math.max(1, parseInt(limit) || 10);
+    const offset = (parsedPage - 1) * parsedLimit;
+
+    const countSql = `SELECT COUNT(*) as total FROM disputes`;
+    const dataSql = `
+        SELECT d.*, u.name as user_name, u.email as user_email 
+        FROM disputes d 
+        JOIN user_master u ON d.user_id = u.id 
+        ORDER BY d.id DESC
+        LIMIT ? OFFSET ?
+    `;
+
+    // Execute queries concurrently in parallel
+    const [[countResult], [rows]] = await Promise.all([
+        pool.query(countSql),
+        pool.query(dataSql, [parsedLimit, offset])
+    ]);
+
+    const totalDisputes = countResult[0]?.total || 0;
+    const totalPages = Math.ceil(totalDisputes / parsedLimit);
+
+    return {
+        success: true,
+        statusCode: 200,
+        message: 'All disputes retrieved successfully for admin',
+        data: rows,
+        pagination: {
+            total: totalDisputes,
+            page: parsedPage,
+            limit: parsedLimit,
+            totalPages
         }
     };
 };

@@ -15,7 +15,7 @@ async function runTests() {
             password: 'securepassword'    // Update with a valid password
         })
     });
-    
+
     const adminData = await adminLoginRes.json();
     if (!adminData.success) {
         console.error('Admin Login Failed:', adminData.errors);
@@ -26,7 +26,7 @@ async function runTests() {
 
     // 2. Fetch disputes list (Admin view with pagination)
     console.log('[2/5] Fetching disputes (Admin View, Page: 1, Limit: 2)...');
-    const getDisputesRes = await fetch(`${BASE_URL}/disputes/list?page=1&limit=2`, {
+    const getDisputesRes = await fetch(`${BASE_URL}/disputes?page=1&limit=2`, {
         method: 'GET',
         headers: { 'Authorization': `Bearer ${adminToken}` }
     });
@@ -38,7 +38,7 @@ async function runTests() {
 
         // 3. Get single dispute details
         console.log(`[3/5] Fetching Dispute details for ID: ${testDisputeId}...`);
-        const getDetailsRes = await fetch(`${BASE_URL}/disputes/list/${testDisputeId}`, {
+        const getDetailsRes = await fetch(`${BASE_URL}/disputes/${testDisputeId}`, {
             headers: { 'Authorization': `Bearer ${adminToken}` }
         });
         const detailsData = await getDetailsRes.json();
@@ -47,7 +47,7 @@ async function runTests() {
         // 4. Update dispute status
         console.log(`[4/5] Updating status of dispute #${testDisputeId} to In Progress (status = 2)...`);
         const updateStatusRes = await fetch(`${BASE_URL}/disputes/${testDisputeId}/status`, {
-            method: 'PATCH',
+            method: 'PUT',
             headers: {
                 'Authorization': `Bearer ${adminToken}`,
                 'Content-Type': 'application/json'

@@ -21,6 +21,13 @@ router.get(
     authMiddleware,
     disputesController.getDisputes
 );
+
+router.get(
+    '/admin/list',
+    authMiddleware,
+    authorizeRole([1, 2]),
+    disputesController.getAdminDisputes
+);
 router.get(
     '/list/:disputeId',
     authMiddleware,
