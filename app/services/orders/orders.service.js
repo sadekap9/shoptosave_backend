@@ -264,16 +264,16 @@ export const placeOrderService = async (userId, orderData) => {
             if (cards.length > 0) {
                 const itemValues = cards.map(c => [
                     orderId,
-                    c.cardId || null,
+                    c.cardId || c.card_id || c.id || null,
                     c.sku || null,
-                    c.productName || null,
-                    c.cardNumber || null,
-                    c.cardPin || c.pin || null,
+                    c.productName || c.product_name || c.name || null,
+                    c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || "",
+                    c.cardPin || c.card_pin || c.pin || c.activationCode || c.activation_code || "",
                     c.barcode || null,
                     c.amount || null,
-                    c.validity || null,
-                    c.issuanceDate || null,
-                    c.cardView?.identifier || null
+                    c.validity || c.expiryDate || c.expiry_date || c.expiry || null,
+                    c.issuanceDate || c.issuance_date || null,
+                    c.cardView?.identifier || c.card_view?.identifier || null
                 ]);
                 await conn.query(
                     `INSERT INTO gift_card_order_items 
@@ -304,24 +304,24 @@ export const placeOrderService = async (userId, orderData) => {
                 orderId,
                 woohooOrderId: woohooResponse.orderId,
                 status: 'SUCCESS',
-                gift_card_number: mainCard.cardNumber || null,
-                gift_card_pin: mainCard.cardPin || mainCard.pin || null,
-                expiry_date: mainCard.validity || null,
+                gift_card_number: mainCard.cardNumber || mainCard.card_number || mainCard.cardNo || mainCard.number || mainCard.card_no || "",
+                gift_card_pin: mainCard.cardPin || mainCard.card_pin || mainCard.pin || mainCard.activationCode || mainCard.activation_code || "",
+                expiry_date: mainCard.validity || mainCard.expiryDate || mainCard.expiry_date || mainCard.expiry || null,
                 wallet_amount: totalAmount,
                 online_amount: 0,
                 payment_type: GIFT_CARD_ORDER_PAYMENT_TYPE.WALLET_ONLY,
                 cards: cards.map(c => ({
-                    cardId: c.cardId || null,
+                    cardId: c.cardId || c.card_id || c.id || null,
                     sku: c.sku || null,
-                    productName: c.productName || null,
-                    cardNumber: c.cardNumber || null,
-                    cardPin: c.cardPin || c.pin || null,
+                    productName: c.productName || c.product_name || c.name || null,
+                    cardNumber: c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || "",
+                    cardPin: c.cardPin || c.card_pin || c.pin || c.activationCode || c.activation_code || "",
                     barcode: c.barcode || null,
                     amount: c.amount || null,
-                    validity: c.validity || null,
-                    issuanceDate: c.issuanceDate || null,
+                    validity: c.validity || c.expiryDate || c.expiry_date || c.expiry || null,
+                    issuanceDate: c.issuanceDate || c.issuance_date || null,
                     cardView: {
-                        identifier: c.cardView?.identifier || null
+                        identifier: c.cardView?.identifier || c.card_view?.identifier || null
                     }
                 }))
             }
@@ -776,16 +776,16 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
             if (cards.length > 0) {
                 const itemValues = cards.map(c => [
                     orderId,
-                    c.cardId || null,
+                    c.cardId || c.card_id || c.id || null,
                     c.sku || null,
-                    c.productName || null,
-                    c.cardNumber || null,
-                    c.cardPin || c.pin || null,
+                    c.productName || c.product_name || c.name || null,
+                    c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || "",
+                    c.cardPin || c.card_pin || c.pin || c.activationCode || c.activation_code || "",
                     c.barcode || null,
                     c.amount || null,
-                    c.validity || null,
-                    c.issuanceDate || null,
-                    c.cardView?.identifier || null
+                    c.validity || c.expiryDate || c.expiry_date || c.expiry || null,
+                    c.issuanceDate || c.issuance_date || null,
+                    c.cardView?.identifier || c.card_view?.identifier || null
                 ]);
                 await connection.query(
                     `INSERT INTO gift_card_order_items 
@@ -1041,16 +1041,16 @@ export const resolvePendingOrdersService = async () => {
                     if (cards.length > 0) {
                         const itemValues = cards.map(c => [
                             order.id,
-                            c.cardId || null,
+                            c.cardId || c.card_id || c.id || null,
                             c.sku || null,
-                            c.productName || null,
-                            c.cardNumber || null,
-                            c.cardPin || c.pin || null,
+                            c.productName || c.product_name || c.name || null,
+                            c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || "",
+                            c.cardPin || c.card_pin || c.pin || c.activationCode || c.activation_code || "",
                             c.barcode || null,
                             c.amount || null,
-                            c.validity || null,
-                            c.issuanceDate || null,
-                            c.cardView?.identifier || null
+                            c.validity || c.expiryDate || c.expiry_date || c.expiry || null,
+                            c.issuanceDate || c.issuance_date || null,
+                            c.cardView?.identifier || c.card_view?.identifier || null
                         ]);
                         await connection.query(
                             `INSERT INTO gift_card_order_items 
