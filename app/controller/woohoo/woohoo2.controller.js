@@ -2,6 +2,7 @@ import * as woohoo2Service from '../../services/woohoo/woohoo2.service.js';
 import { getWoohoo2Token } from '../../services/categories/woohoo2Auth.service.js';
 import pool from '../../config/dbConfig.js';
 import logger from '../../utils/logger.js';
+import { saveProductsToDB } from '../../services/products/products.service.js';
 
 // ─── AUTHENTICATION ────────────────────────────────────────────────────────────
 
@@ -181,6 +182,49 @@ export const getProduct = async (req, res) => {
         const bearerToken = await getWoohoo2Token();
         const { sku } = req.params;
         const result = await woohoo2Service.getWoohooProduct(bearerToken, sku, req.query);
+
+        // Auto-save/sync fetched product details in woohoo_products table (background) with provider = 2
+        if (result) {
+            (async () => {
+                let woohooCategoryId = null;
+                if (result.category_id) {
+                    woohooCategoryId = result.category_id;
+                } else if (result.categories && result.categories.length > 0) {
+                    const firstCat = result.categories[0];
+                    woohooCategoryId = (firstCat && typeof firstCat === 'object') ? firstCat.id : firstCat;
+                }
+
+                let categoryId = null;
+                if (woohooCategoryId) {
+                    const [[cat]] = await pool.query('SELECT id FROM woohoo_categories WHERE woohoo_category_id = ?', [woohooCategoryId]);
+                    if (cat) {
+                        categoryId = cat.id;
+                    } else {
+                        const [insCat] = await pool.query(
+                            'INSERT INTO woohoo_categories (woohoo_category_id, name, is_active) VALUES (?, ?, 1)',
+                            [woohooCategoryId, `Category ${woohooCategoryId}`]
+                        );
+                        categoryId = insCat.insertId;
+                    }
+                } else {
+                    // Find or insert default category
+                    const [[stubCat]] = await pool.query("SELECT id FROM woohoo_categories LIMIT 1");
+                    if (stubCat) {
+                        categoryId = stubCat.id;
+                    } else {
+                        const [insCat] = await pool.query(
+                            "INSERT INTO woohoo_categories (woohoo_category_id, name, is_active) VALUES ('default-cat', 'Default Category', 1)"
+                        );
+                        categoryId = insCat.insertId;
+                    }
+                }
+
+                await saveProductsToDB([result], categoryId, 2);
+                logger.info(`Auto-saved single fetched Woohoo2 product SKU: ${sku} to DB (Category ID: ${categoryId}) (background)`);
+            })().catch(err => {
+                logger.error(`Woohoo2 product sync failed (background) for SKU: ${sku}`, { error: err.message });
+            });
+        }
 
         return res.status(200).json({
             success: true,

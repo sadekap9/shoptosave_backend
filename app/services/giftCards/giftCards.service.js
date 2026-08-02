@@ -341,23 +341,57 @@ export const createGiftCardService = async (data) => {
             }
         };
     } else {
+        let storedProvider = null;
         try {
-            const token = await getWoohooToken();
-            liveProd = await getWoohooProduct(token, sku.trim());
-            apiProvider = API_PROVIDER.WOOHOO;
-        } catch (err) {
-            console.warn(`Failed to fetch Woohoo product for SKU ${sku} from Woohoo 1. Trying Woohoo 2...`, err.message);
+            const [[localProd]] = await pool.query(
+                'SELECT api_provider FROM woohoo_products WHERE sku = ? LIMIT 1',
+                [sku.trim()]
+            );
+            if (localProd && localProd.api_provider) {
+                storedProvider = localProd.api_provider;
+            }
+        } catch (dbErr) {
+            console.warn('Failed to query local woohoo_products for api_provider lookup:', dbErr.message);
+        }
+
+        if (storedProvider === API_PROVIDER.WOOHOO2) {
             try {
                 const token2 = await getWoohoo2Token();
                 liveProd = await getWoohoo2Product(token2, sku.trim());
                 apiProvider = API_PROVIDER.WOOHOO2;
             } catch (err2) {
-                console.error(`Failed to fetch Woohoo product for SKU ${sku} from Woohoo 2 as well:`, err2);
-                return {
-                    success: false,
-                    statusCode: 400,
-                    message: 'Selected Woohoo product not found or invalid SKU on both integrations'
-                };
+                console.warn(`Failed to fetch Woohoo product for SKU ${sku} from Woohoo 2. Trying Woohoo 1...`, err2.message);
+                try {
+                    const token = await getWoohooToken();
+                    liveProd = await getWoohooProduct(token, sku.trim());
+                    apiProvider = API_PROVIDER.WOOHOO;
+                } catch (err) {
+                    return {
+                        success: false,
+                        statusCode: 400,
+                        message: 'Selected Woohoo product not found or invalid SKU on both integrations'
+                    };
+                }
+            }
+        } else {
+            try {
+                const token = await getWoohooToken();
+                liveProd = await getWoohooProduct(token, sku.trim());
+                apiProvider = API_PROVIDER.WOOHOO;
+            } catch (err) {
+                console.warn(`Failed to fetch Woohoo product for SKU ${sku} from Woohoo 1. Trying Woohoo 2...`, err.message);
+                try {
+                    const token2 = await getWoohoo2Token();
+                    liveProd = await getWoohoo2Product(token2, sku.trim());
+                    apiProvider = API_PROVIDER.WOOHOO2;
+                } catch (err2) {
+                    console.error(`Failed to fetch Woohoo product for SKU ${sku} from Woohoo 2 as well:`, err2);
+                    return {
+                        success: false,
+                        statusCode: 400,
+                        message: 'Selected Woohoo product not found or invalid SKU on both integrations'
+                    };
+                }
             }
         }
     }

@@ -154,7 +154,8 @@ export const withdraw = async (req, res) => {
 export const getBalance = async (req, res) => {
     try {
         const userId = req.user.id;
-        const response = await walletsService.getWalletBalanceAndHistory(userId);
+        const { page, limit } = req.query;
+        const response = await walletsService.getWalletBalanceAndHistory(userId, page, limit);
         return res.status(200).json({
             success: true,
             data: response.data

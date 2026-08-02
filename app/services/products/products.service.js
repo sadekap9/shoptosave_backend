@@ -8,7 +8,7 @@ import { sanitizePaginationParams, buildPagination } from '../../helpers/paginat
 /**
  * Saves a list of products fetched from Woohoo or input manually into local DB
  */
-export const saveProductsToDB = async (products, categoryId) => {
+export const saveProductsToDB = async (products, categoryId, apiProvider = 1) => {
     const productsArray = Array.isArray(products) ? products : [products];
     if (productsArray.length === 0) return;
 
@@ -194,7 +194,7 @@ export const saveProductsToDB = async (products, categoryId) => {
             validation_amount, edit_beneficiary, convenience_charge,
             vpa_penny_drop_required, handling_charges: toJSONString(handling_charges), convenience_charges: toJSONString(convenience_charges),
             travel_pass: toJSONString(travel_pass), order_modes: toJSONString(order_modes), reload_card_number, custom_themes_available,
-            store_locator_url, eta_message, status, sync_response: toJSONString(sync_response)
+            store_locator_url, eta_message, status, sync_response: toJSONString(sync_response), api_provider: Number(apiProvider)
         });
     }
 
@@ -205,7 +205,7 @@ export const saveProductsToDB = async (products, categoryId) => {
         for (let i = 0; i < records.length; i += BATCH_SIZE) {
             const batch = records.slice(i, i + BATCH_SIZE);
             
-            const placeholders = batch.map(() => `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).join(', ');
+            const placeholders = batch.map(() => `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).join(', ');
             
             const values = [];
             for (const item of batch) {
@@ -225,7 +225,7 @@ export const saveProductsToDB = async (products, categoryId) => {
                     item.validation_amount, item.edit_beneficiary, item.convenience_charge,
                     item.vpa_penny_drop_required, item.handling_charges, item.convenience_charges,
                     item.travel_pass, item.order_modes, item.reload_card_number, item.custom_themes_available,
-                    item.store_locator_url, item.eta_message, item.status, item.sync_response
+                    item.store_locator_url, item.eta_message, item.status, item.sync_response, item.api_provider
                 );
             }
 
@@ -246,7 +246,7 @@ export const saveProductsToDB = async (products, categoryId) => {
                     validation_amount, edit_beneficiary, convenience_charge,
                     vpa_penny_drop_required, handling_charges, convenience_charges,
                     travel_pass, order_modes, reload_card_number, custom_themes_available,
-                    store_locator_url, eta_message, status, sync_response
+                    store_locator_url, eta_message, status, sync_response, api_provider
                 ) VALUES ${placeholders}
                 ON DUPLICATE KEY UPDATE
                     woohoo_product_id = VALUES(woohoo_product_id), product_name = VALUES(product_name), brand_name = VALUES(brand_name), brand_code = VALUES(brand_code), slug = VALUES(slug),
@@ -264,7 +264,7 @@ export const saveProductsToDB = async (products, categoryId) => {
                     validation_amount = VALUES(validation_amount), edit_beneficiary = VALUES(edit_beneficiary), convenience_charge = VALUES(convenience_charge),
                     vpa_penny_drop_required = VALUES(vpa_penny_drop_required), handling_charges = VALUES(handling_charges), convenience_charges = VALUES(convenience_charges),
                     travel_pass = VALUES(travel_pass), order_modes = VALUES(order_modes), reload_card_number = VALUES(reload_card_number), custom_themes_available = VALUES(custom_themes_available),
-                    store_locator_url = VALUES(store_locator_url), eta_message = VALUES(eta_message), status = VALUES(status), sync_response = VALUES(sync_response)
+                    store_locator_url = VALUES(store_locator_url), eta_message = VALUES(eta_message), status = VALUES(status), sync_response = VALUES(sync_response), api_provider = VALUES(api_provider)
             `;
 
             await connection.query(sql, values);

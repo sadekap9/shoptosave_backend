@@ -46,14 +46,17 @@ export const placeOrder = async (req, res) => {
 export const getOrderHistory = async (req, res) => {
     try {
         const userId = req.user.id;
-        const response = await ordersService.getOrderHistoryService(userId);
+        const page = req.query.page;
+        const limit = req.query.limit;
+        const response = await ordersService.getOrderHistoryService(userId, page, limit);
 
         return res.status(response.statusCode).json({
             success: response.success,
             errors: [],
             result: {
                 message: response.message,
-                data: response.data
+                data: response.data,
+                pagination: response.pagination
             }
         });
     } catch (error) {

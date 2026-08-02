@@ -347,17 +347,32 @@ export const placeOrderService = async (userId, orderData) => {
 /**
  * Fetch authenticated user's order history
  */
-export const getOrderHistoryService = async (userId) => {
-    const [orders] = await pool.query(
-        `SELECT gco.id, gc.brand_name, gco.amount, gco.discount_amount, gco.cashback_amount, gco.payable_amount,
-                gco.status, gco.created_at, gco.woohoo_reference_no, gco.quantity,
-                gco.wallet_amount, gco.online_amount, gco.payment_type
-         FROM gift_card_orders gco
-         JOIN gift_cards gc ON gco.gift_card_id = gc.id
-         WHERE gco.user_id = ?
-         ORDER BY gco.id DESC`,
-        [userId]
-    );
+export const getOrderHistoryService = async (userId, page = 1, limit = 10) => {
+    const parsedPage = Math.max(1, parseInt(page) || 1);
+    const parsedLimit = Math.max(1, parseInt(limit) || 10);
+    const offset = (parsedPage - 1) * parsedLimit;
+
+    const [[countResult], [orders]] = await Promise.all([
+        pool.query(
+            `SELECT COUNT(*) as total
+             FROM gift_card_orders gco
+             WHERE gco.user_id = ?`,
+            [userId]
+        ),
+        pool.query(
+            `SELECT gco.id, gc.brand_name, gco.amount, gco.discount_amount, gco.cashback_amount, gco.payable_amount,
+                    gco.status, gco.created_at, gco.woohoo_reference_no, gco.quantity,
+                    gco.wallet_amount, gco.online_amount, gco.payment_type
+             FROM gift_card_orders gco
+             JOIN gift_cards gc ON gco.gift_card_id = gc.id
+             WHERE gco.user_id = ?
+             ORDER BY gco.id DESC
+             LIMIT ? OFFSET ?`,
+            [userId, parsedLimit, offset]
+        )
+    ]);
+
+    const totalOrders = countResult[0]?.total || 0;
 
     const formattedOrders = orders.map(o => ({
         ...o,
@@ -370,11 +385,19 @@ export const getOrderHistoryService = async (userId) => {
         quantity: parseInt(o.quantity) || 0
     }));
 
+    const totalPages = Math.ceil(totalOrders / parsedLimit);
+
     return {
         success: true,
         statusCode: 200,
         message: 'Order history fetched successfully',
-        data: formattedOrders
+        data: formattedOrders,
+        pagination: {
+            total: totalOrders,
+            page: parsedPage,
+            limit: parsedLimit,
+            totalPages
+        }
     };
 };
 

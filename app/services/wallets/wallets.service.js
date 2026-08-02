@@ -263,16 +263,24 @@ export const getWalletHistoryService = async (userId) => {
 /**
  * Get available balance and last 10 transactions (for /balance endpoint).
  */
-export const getWalletBalanceAndHistory = async (userId) => {
-    const [wallet, [transactions]] = await Promise.all([
+export const getWalletBalanceAndHistory = async (userId, page = 1, limit = 10) => {
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.max(1, parseInt(limit) || 10);
+    const offset = (pageNum - 1) * limitNum;
+
+    const [wallet, [[{ total }]], [transactions]] = await Promise.all([
         getOrCreateWallet(userId),
+        pool.query(
+            'SELECT COUNT(*) AS total FROM wallet_transactions WHERE user_id = ?',
+            [userId]
+        ),
         pool.query(
             `SELECT id, transaction_no, type, source, amount, balance_before, balance_after, created_at, remarks
              FROM wallet_transactions
              WHERE user_id = ?
              ORDER BY id DESC
-             LIMIT 10`,
-            [userId]
+             LIMIT ? OFFSET ?`,
+            [userId, limitNum, offset]
         )
     ]);
 
@@ -282,7 +290,13 @@ export const getWalletBalanceAndHistory = async (userId) => {
             balance: parseFloat(wallet.balance).toFixed(2),
             total_cashback_earned: parseFloat(wallet.total_cashback_earned).toFixed(2),
             total_cashback_used: parseFloat(wallet.total_cashback_used).toFixed(2),
-            recent_transactions: transactions
+            recent_transactions: transactions,
+            pagination: {
+                total,
+                page: pageNum,
+                limit: limitNum,
+                totalPages: Math.ceil(total / limitNum) || 1
+            }
         }
     };
 };
