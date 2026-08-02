@@ -1,4 +1,5 @@
 import Joi from 'joi';
+import { DISPUTE_STATUS } from '../config/constant/constant.js';
 
 export const createDisputeSchema = Joi.object({
     subject: Joi.string().max(150).trim().required().messages({
@@ -13,11 +14,11 @@ export const createDisputeSchema = Joi.object({
 });
 
 export const updateDisputeStatusSchema = Joi.object({
-    status: Joi.number().integer().min(1).max(4).required().messages({
+    status: Joi.number().integer().min(DISPUTE_STATUS.OPEN).max(DISPUTE_STATUS.CLOSED).required().messages({
         'any.required': 'status is required',
         'number.base': 'status must be a number',
-        'number.min': 'status must be at least 1 (Open)',
-        'number.max': 'status must be at most 4 (Closed)'
+        'number.min': `status must be at least ${DISPUTE_STATUS.OPEN} (Open)`,
+        'number.max': `status must be at most ${DISPUTE_STATUS.CLOSED} (Closed)`
     })
 });
 

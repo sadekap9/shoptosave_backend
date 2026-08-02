@@ -145,3 +145,10 @@ export const API_PROVIDER = {
     WOOHOO: 1,
     WOOHOO2: 2
 };
+
+export const DISPUTE_STATUS = {
+    OPEN: 1,
+    IN_PROGRESS: 2,
+    RESOLVED: 3,
+    CLOSED: 4
+};
