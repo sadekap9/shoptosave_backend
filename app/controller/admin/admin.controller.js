@@ -44,7 +44,8 @@ export const getOrdersList = async (req, res) => {
             result: {
                 message: response.message,
                 data: response.data,
-                pagination: response.pagination
+                pagination: response.pagination,
+                stats: response.stats
             }
         });
     } catch (error) {

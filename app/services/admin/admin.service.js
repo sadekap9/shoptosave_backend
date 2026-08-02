@@ -129,19 +129,36 @@ export const getOrders = async (filters) => {
         query += ` ORDER BY gco.id DESC LIMIT ? OFFSET ?`;
         params.push(limitVal, offset);
 
-        const [totalResult, rowsResult] = await Promise.all([
+        const [totalResult, rowsResult, statsResult] = await Promise.all([
             pool.query(countQuery, countParams),
-            pool.query(query, params)
+            pool.query(query, params),
+            pool.query(`
+                SELECT 
+                    COUNT(*) AS total_orders,
+                    SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END) AS completed_orders,
+                    SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS processing_orders,
+                    SUM(CASE WHEN status = 4 THEN 1 ELSE 0 END) AS failed_orders,
+                    COALESCE(SUM(amount), 0) AS total_volume
+                FROM gift_card_orders
+            `)
         ]);
         const [[{ total }]] = totalResult;
         const [rows] = rowsResult;
+        const [[stats]] = statsResult;
 
         return {
             success: true,
             statusCode: 200,
             message: 'Orders fetched successfully',
             data: rows,
-            pagination: buildPagination(total, page, limitVal)
+            pagination: buildPagination(total, page, limitVal),
+            stats: {
+                totalOrders: stats.total_orders || 0,
+                completeCount: stats.completed_orders || 0,
+                processingCount: stats.processing_orders || 0,
+                failedCount: stats.failed_orders || 0,
+                totalVolume: Number(stats.total_volume || 0)
+            }
         };
     } catch (error) {
         logger.error('Error in getOrders Service', { error: error.message, stack: error.stack });
