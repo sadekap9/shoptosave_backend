@@ -79,7 +79,8 @@ export const WALLET_TRANSACTION_SOURCE = {
     WALLET_TOPUP: 1,
     GIFT_CARD_PURCHASE: 2,
     REFUND: 3,
-    CASHBACK: 4
+    CASHBACK: 4,
+    SELL_GIFT_CARD: 5
 };
 
 export const TRANSACTION_TYPE = {
@@ -91,7 +92,8 @@ export const TRANSACTION_SOURCE = {
     WALLET_TOPUP: 1,
     GIFT_CARD_PURCHASE: 2,
     REFUND: 3,
-    CASHBACK: 4
+    CASHBACK: 4,
+    SELL_GIFT_CARD: 5
 };
 
 export const WALLET_TRANSACTION_STATUS = {

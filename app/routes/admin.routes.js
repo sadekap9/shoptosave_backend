@@ -1,8 +1,10 @@
 import express from 'express';
 import * as adminController from '../controller/admin/admin.controller.js';
+import * as sellGiftCardController from '../controller/sellGiftCard/sellGiftCard.controller.js';
 import authMiddleware, { authorizeRole } from '../middlewares/verifyMiddleware.js';
-import { validate, validateQuery } from '../middlewares/validate.middleware.js';
+import { validate, validateQuery, validateParams } from '../middlewares/validate.middleware.js';
 import { listTopupsSchema, listOrdersSchema, manualRefundSchema } from '../validations/admin.validation.js';
+import { approveSellRequestSchema, rejectSellRequestSchema, requestIdParamSchema } from '../validations/sellGiftCard.validation.js';
 
 const router = express.Router();
 
@@ -39,6 +41,37 @@ router.post(
     authorizeRole([1]),
     validate(manualRefundSchema),
     adminController.manualRefund
+);
+
+// Sell Gift Card Requests Management (Admin / Sub-Admin)
+router.get(
+    '/sell-gift-card',
+    authMiddleware,
+    authorizeRole([1, 2]),
+    sellGiftCardController.adminListRequests
+);
+router.get(
+    '/sell-gift-card/:id',
+    authMiddleware,
+    authorizeRole([1, 2]),
+    validateParams(requestIdParamSchema),
+    sellGiftCardController.adminGetRequestDetails
+);
+router.put(
+    '/sell-gift-card/:id/approve',
+    authMiddleware,
+    authorizeRole([1, 2]),
+    validateParams(requestIdParamSchema),
+    validate(approveSellRequestSchema),
+    sellGiftCardController.adminApproveRequest
+);
+router.put(
+    '/sell-gift-card/:id/reject',
+    authMiddleware,
+    authorizeRole([1, 2]),
+    validateParams(requestIdParamSchema),
+    validate(rejectSellRequestSchema),
+    sellGiftCardController.adminRejectRequest
 );
 
 export default router;
