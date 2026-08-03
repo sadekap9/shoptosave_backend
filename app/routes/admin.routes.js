@@ -57,7 +57,7 @@ router.get(
     validateParams(requestIdParamSchema),
     sellGiftCardController.adminGetRequestDetails
 );
-router.put(
+router.patch(
     '/sell-gift-card/:id/approve',
     authMiddleware,
     authorizeRole([1, 2]),
@@ -65,7 +65,7 @@ router.put(
     validate(approveSellRequestSchema),
     sellGiftCardController.adminApproveRequest
 );
-router.put(
+router.patch(
     '/sell-gift-card/:id/reject',
     authMiddleware,
     authorizeRole([1, 2]),
