@@ -10,7 +10,7 @@ const templateId = process.env.YOURBULKSMS_TEMPLATE_ID || '1777178720432825843';
 // Check if YourBulkSMS is configured
 const isSMSConfigured = 
     authKey && 
-    authKey !== '383474728f6e6536323444' && 
+    authKey !== 'your_yourbulksms_authkey' && 
     authKey.trim() !== '';
 
 if (isSMSConfigured) {
