@@ -14,7 +14,8 @@ const isSMSConfigured =
     authKey.trim() !== '';
 
 if (isSMSConfigured) {
-    logger.info('YourBulkSMS service initialized successfully');
+    const maskedKey = authKey ? `${authKey.substring(0, 4)}...${authKey.substring(authKey.length - 4)}` : 'null';
+    logger.info(`YourBulkSMS service initialized successfully. Loaded Auth Key: ${maskedKey}`);
 } else {
     logger.info('YourBulkSMS credentials missing or placeholder. Running in DUMMY fallback mode.');
 }
