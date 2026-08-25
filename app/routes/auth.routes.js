@@ -2,20 +2,23 @@ import express from 'express';
 import * as authController from '../controller/auth/auth.controller.js';
 import * as otpController from '../controller/auth/otp.controller.js';
 import { validate } from '../middlewares/validate.middleware.js';
-import { requestOTPSchema, verifyOTPSchema, adminRegisterSchema, adminLoginSchema } from '../validations/auth.validation.js';
+import { startAuthSchema, verifyOTPSchema, verifyGeneratedPinSchema, loginPinSchema, adminRegisterSchema, adminLoginSchema } from '../validations/auth.validation.js';
 import { otpLimiter, otpBlocker, verifyOtpLimiter, verifyOtpBlocker, loginBlocker, loginLimiter } from '../config/rateLimiter.js';
 import authMiddleware, { authorizeRole } from '../middlewares/verifyMiddleware.js';
 
 const router = express.Router();
 
-// Request OTP (Users)
-router.post('/request-otp', otpBlocker, otpLimiter, validate(requestOTPSchema), otpController.requestOTP);
+// Start Auth (checks phone, sends OTP if new user)
+router.post('/start', otpBlocker, otpLimiter, validate(startAuthSchema), otpController.startAuth);
 
-// Resend OTP (Users)
-router.post('/resend-otp', otpBlocker, otpLimiter, validate(requestOTPSchema), otpController.resendOTP);
-
-// Verify OTP (Users) - Secured with rate limits
+// Verify OTP (Users)
 router.post('/verify-otp', verifyOtpBlocker, verifyOtpLimiter, validate(verifyOTPSchema), otpController.verifyOTP);
+
+// Verify Generated PIN
+router.post('/verify-generated-pin', loginBlocker, loginLimiter, validate(verifyGeneratedPinSchema), authController.verifyGeneratedPin);
+
+// Login PIN
+router.post('/login-pin', loginBlocker, loginLimiter, validate(loginPinSchema), authController.loginPin);
 
 // Admin / Sub-Admin Register
 router.post('/admin/register', validate(adminRegisterSchema), authController.adminRegister);

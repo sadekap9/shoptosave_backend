@@ -2,11 +2,11 @@ import * as authService from '../../services/auth/auth.service.js';
 import logger from '../../utils/logger.js';
 
 /**
- * Request OTP for Login/Register
+ * Start Authentication (Checks phone and sends OTP if new user)
  */
-export const requestOTP = async (req, res) => {
+export const startAuth = async (req, res) => {
     try {
-        const response = await authService.requestOTPService(req.validatedData);
+        const response = await authService.startAuthService(req.validatedData);
 
         if (!response.success) {
             return res.status(response.statusCode).json({ 
@@ -23,7 +23,7 @@ export const requestOTP = async (req, res) => {
         });
 
     } catch (error) {
-        logger.error("RequestOTP Error", { error: error.message, stack: error.stack });
+        logger.error("startAuth Error", { error: error.message, stack: error.stack });
         return res.status(500).json({ 
             success: false, 
             errors: [{ message: "Internal server error" }], 
@@ -33,7 +33,7 @@ export const requestOTP = async (req, res) => {
 };
 
 /**
- * Verify OTP (Handles both Login and Registration)
+ * Verify OTP (Handles New User OTP Verification)
  */
 export const verifyOTP = async (req, res) => {
     try {

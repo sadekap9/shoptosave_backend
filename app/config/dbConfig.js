@@ -19,9 +19,31 @@ const pool = mysql.createPool({
 
 // Test the connection
 pool.getConnection()
-    .then(connection => {
+    .then(async (connection) => {
         logger.info('Database connected successfully');
         connection.release();
+
+        // Auto-migration for sell_gift_card_requests columns
+        try {
+            const addColumnIfNotExist = async (columnName, definition) => {
+                const [rows] = await pool.query(
+                    `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+                     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'sell_gift_card_requests' AND COLUMN_NAME = ?`,
+                    [process.env.DB_NAME, columnName]
+                );
+                if (rows.length === 0) {
+                    await pool.query(`ALTER TABLE sell_gift_card_requests ADD COLUMN ${columnName} ${definition}`);
+                    logger.info(`Added column ${columnName} to sell_gift_card_requests`);
+                }
+            };
+
+            await addColumnIfNotExist('approved_by', 'INT NULL');
+            await addColumnIfNotExist('approved_at', 'DATETIME NULL');
+            await addColumnIfNotExist('rejected_by', 'INT NULL');
+            await addColumnIfNotExist('rejected_at', 'DATETIME NULL');
+        } catch (migError) {
+            logger.error('Error running migrations', { error: migError.message });
+        }
     })
     .catch(err => {
         logger.error('Database connection failed', { error: err.message });

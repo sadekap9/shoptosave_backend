@@ -1,56 +1,58 @@
-import twilio from 'twilio';
+import axios from 'axios';
 import logger from '../utils/logger.js';
 
 // Retrieve credentials
-const accountSid = process.env.TWILIO_ACCOUNT_SID;
-const authToken = process.env.TWILIO_AUTH_TOKEN;
-const fromNumber = process.env.TWILIO_PHONE_NUMBER;
+const username = process.env.BULKSMS_USERNAME;
+const password = process.env.BULKSMS_PASSWORD;
 
-// Check if valid Twilio keys are configured
-const isTwilioConfigured = 
-    accountSid && 
-    authToken && 
-    fromNumber && 
-    !accountSid.startsWith('ACXXXXXX') && 
-    accountSid.trim() !== '';
+// Check if BulkSMS is configured
+const isBulkSMSConfigured = 
+    username && 
+    password && 
+    username !== 'your_bulksms_username' && 
+    username.trim() !== '';
 
-let client = null;
-
-if (isTwilioConfigured) {
-    try {
-        client = twilio(accountSid, authToken);
-        logger.info(`Twilio client initialized successfully with SID: ${accountSid}`);
-    } catch (error) {
-        logger.error('Twilio client initialization failed', { error: error.message });
-    }
+if (isBulkSMSConfigured) {
+    logger.info('BulkSMS service initialized successfully');
 } else {
-    logger.info('Twilio credentials missing or placeholder. Running in DUMMY fallback mode.');
+    logger.info('BulkSMS credentials missing or placeholder. Running in DUMMY fallback mode.');
 }
 
 /**
- * Send an SMS message using Twilio (Falls back to Console log if unconfigured or fails)
+ * Send an SMS message using BulkSMS (Falls back to Console log if unconfigured or fails)
  * @param {string} to - Recipient phone number (e.g. +919876543210)
  * @param {string} message - Message body content
  * @returns {Promise<{success: boolean, messageId?: string, isDummy: boolean, error?: string}>}
  */
 export const sendSMS = async (to, message) => {
-    if (client) {
+    if (isBulkSMSConfigured) {
         try {
-            const response = await client.messages.create({
-                body: message,
-                from: fromNumber,
-                to: to
-            });
-            logger.info(`Sent Twilio SMS successfully to ${to}. SID: ${response.sid}`);
-            return { success: true, messageId: response.sid, isDummy: false };
+            const authHeader = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
+            const response = await axios.post(
+                'https://api.bulksms.com/v1/messages',
+                {
+                    to: to,
+                    body: message
+                },
+                {
+                    headers: {
+                        'Authorization': authHeader,
+                        'Content-Type': 'application/json'
+                      },
+                      timeout: 15000
+                }
+            );
+            logger.info(`Sent BulkSMS successfully to ${to}. Message ID: ${response.data.id || 'N/A'}`);
+            return { success: true, messageId: response.data.id, isDummy: false };
         } catch (error) {
-            logger.error(`Failed to send Twilio SMS to ${to}`, { error: error.message });
+            const errMsg = error.response?.data?.detail || error.message;
+            logger.error(`Failed to send BulkSMS to ${to}`, { error: errMsg });
             // Fall back to dummy execution so developer remains unblocked!
-            logger.info(`[Twilio SMS FALLBACK] Dummy Mode active. Message meant for ${to}: "${message}"`);
-            return { success: true, isDummy: true, error: error.message };
+            logger.info(`[BulkSMS FALLBACK] Dummy Mode active. Message meant for ${to}: "${message}"`);
+            return { success: true, isDummy: true, error: errMsg };
         }
     } else {
-        // Pure dummy mode (No twilio credentials configured)
+        // Pure dummy mode (No credentials configured)
         logger.info(`📱 [DUMMY SMS SENDER] To: ${to} | Message: ${message}`);
         return { success: true, isDummy: true };
     }

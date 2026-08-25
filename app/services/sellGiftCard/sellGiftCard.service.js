@@ -160,7 +160,7 @@ export const getRequestDetailsService = async (userId, requestId) => {
  * Admin list requests
  */
 export const adminListRequestsService = async (filters = {}) => {
-    const { status, search, page, limit } = filters;
+    const { status, search, brand, user, start_date, end_date, page, limit } = filters;
     const { limit: parsedLimit, offset, page: parsedPage } = sanitizePaginationParams(page, limit);
 
     let countSql = `
@@ -172,13 +172,23 @@ export const adminListRequestsService = async (filters = {}) => {
     let querySql = `
         SELECT 
             sgr.id, 
+            sgr.user_id,
+            sgr.gift_card_id,
             u.name AS user_name, 
             u.email AS user_email, 
+            u.phone AS user_phone,
             gc.brand_name, 
+            sgr.card_number,
+            sgr.card_pin,
             sgr.card_amount, 
             sgr.offered_amount, 
             sgr.status, 
-            sgr.created_at
+            sgr.created_at,
+            sgr.approved_by,
+            sgr.approved_at,
+            sgr.rejected_by,
+            sgr.rejected_at,
+            sgr.rejection_reason
         FROM sell_gift_card_requests sgr
         JOIN user_master u ON sgr.user_id = u.id
         JOIN gift_cards gc ON sgr.gift_card_id = gc.id
@@ -191,10 +201,27 @@ export const adminListRequestsService = async (filters = {}) => {
         queryFilters.push('sgr.status = ?');
         params.push(parseInt(status));
     }
+    if (brand) {
+        queryFilters.push('sgr.gift_card_id = ?');
+        params.push(parseInt(brand));
+    }
+    if (user) {
+        queryFilters.push('sgr.user_id = ?');
+        params.push(parseInt(user));
+    }
+    if (start_date) {
+        queryFilters.push('sgr.created_at >= ?');
+        params.push(`${start_date} 00:00:00`);
+    }
+    if (end_date) {
+        queryFilters.push('sgr.created_at <= ?');
+        params.push(`${end_date} 23:59:59`);
+    }
     if (search) {
-        queryFilters.push('(gc.brand_name LIKE ? OR sgr.card_number LIKE ?)');
+        queryFilters.push('(sgr.id = ? OR u.name LIKE ? OR gc.brand_name LIKE ?)');
         const searchLike = `%${search.trim()}%`;
-        params.push(searchLike, searchLike);
+        const searchId = parseInt(search.trim()) || -1;
+        params.push(searchId, searchLike, searchLike);
     }
 
     if (queryFilters.length > 0) {
@@ -263,7 +290,7 @@ export const adminGetRequestDetailsService = async (requestId) => {
 /**
  * Approve request
  */
-export const adminApproveRequestService = async (requestId, offeredAmount) => {
+export const adminApproveRequestService = async (requestId, offeredAmount, adminId) => {
     return await runInTransaction(async (connection) => {
         // Lock request row
         const [[request]] = await connection.query(
@@ -281,8 +308,8 @@ export const adminApproveRequestService = async (requestId, offeredAmount) => {
 
         // Update status to Approved (2)
         await connection.query(
-            'UPDATE sell_gift_card_requests SET status = 2, offered_amount = ?, updated_at = NOW() WHERE id = ?',
-            [offeredAmount, requestId]
+            'UPDATE sell_gift_card_requests SET status = 2, offered_amount = ?, approved_by = ?, approved_at = NOW(), updated_at = NOW() WHERE id = ?',
+            [offeredAmount, adminId, requestId]
         );
 
         // Credit user's wallet
@@ -307,36 +334,31 @@ export const adminApproveRequestService = async (requestId, offeredAmount) => {
 /**
  * Reject request
  */
-export const adminRejectRequestService = async (requestId, rejectionReason) => {
-    const [[request]] = await pool.query(
-        'SELECT * FROM sell_gift_card_requests WHERE id = ?',
-        [requestId]
-    );
+export const adminRejectRequestService = async (requestId, rejectionReason, adminId) => {
+    return await runInTransaction(async (connection) => {
+        // Lock request row
+        const [[request]] = await connection.query(
+            'SELECT * FROM sell_gift_card_requests WHERE id = ? FOR UPDATE',
+            [requestId]
+        );
 
-    if (!request) {
+        if (!request) {
+            throw { message: 'Sell gift card request not found', statusCode: 404 };
+        }
+
+        if (request.status !== 1) { // 1 = Pending
+            throw { message: 'Only pending requests can be rejected', statusCode: 400 };
+        }
+
+        await connection.query(
+            'UPDATE sell_gift_card_requests SET status = 3, rejection_reason = ?, rejected_by = ?, rejected_at = NOW(), updated_at = NOW() WHERE id = ?',
+            [rejectionReason, adminId, requestId]
+        );
+
         return {
-            success: false,
-            statusCode: 404,
-            message: 'Sell gift card request not found'
+            success: true,
+            statusCode: 200,
+            message: 'Sell gift card request rejected successfully'
         };
-    }
-
-    if (request.status !== 1) { // 1 = Pending
-        return {
-            success: false,
-            statusCode: 400,
-            message: 'Only pending requests can be rejected'
-        };
-    }
-
-    await pool.query(
-        'UPDATE sell_gift_card_requests SET status = 3, rejection_reason = ?, updated_at = NOW() WHERE id = ?',
-        [rejectionReason, requestId]
-    );
-
-    return {
-        success: true,
-        statusCode: 200,
-        message: 'Sell gift card request rejected successfully'
-    };
+    });
 };

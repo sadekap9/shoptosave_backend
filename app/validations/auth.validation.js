@@ -1,24 +1,27 @@
 import Joi from 'joi';
 
-export const requestOTPSchema = Joi.object({
-    phone: Joi.string()
+export const startAuthSchema = Joi.object({
+    mobile: Joi.string()
         .min(10)
+        .max(15)
         .required()
         .messages({
-            'string.empty': 'Phone number is required',
-            'any.required': 'Phone number is required',
-            'string.min': 'Phone number must be at least 10 digits long'
+            'string.empty': 'Mobile number is required',
+            'any.required': 'Mobile number is required',
+            'string.min': 'Mobile number must be at least 10 digits long',
+            'string.max': 'Mobile number must be at most 15 digits long'
         })
 });
 
 export const verifyOTPSchema = Joi.object({
-    phone: Joi.string()
+    mobile: Joi.string()
         .min(10)
+        .max(15)
         .required()
         .messages({
-            'string.empty': 'Phone number is required',
-            'any.required': 'Phone number is required',
-            'string.min': 'Phone number must be at least 10 digits long'
+            'string.empty': 'Mobile number is required',
+            'any.required': 'Mobile number is required',
+            'string.min': 'Mobile number must be at least 10 digits long'
         }),
     otp: Joi.string()
         .length(6)
@@ -30,6 +33,50 @@ export const verifyOTPSchema = Joi.object({
         }),
     platform: Joi.string().valid('w', 'a', 'i').optional(),
     device_token: Joi.string().optional()
+});
+
+export const verifyGeneratedPinSchema = Joi.object({
+    mobile: Joi.string()
+        .min(10)
+        .max(15)
+        .required()
+        .messages({
+            'string.empty': 'Mobile number is required',
+            'any.required': 'Mobile number is required',
+            'string.min': 'Mobile number must be at least 10 digits long'
+        }),
+    pin: Joi.string()
+        .min(4)
+        .max(10)
+        .required()
+        .messages({
+            'string.empty': 'PIN is required',
+            'any.required': 'PIN is required',
+            'string.min': 'PIN must be at least 4 digits long',
+            'string.max': 'PIN must be at most 10 digits long'
+        })
+});
+
+export const loginPinSchema = Joi.object({
+    mobile: Joi.string()
+        .min(10)
+        .max(15)
+        .required()
+        .messages({
+            'string.empty': 'Mobile number is required',
+            'any.required': 'Mobile number is required',
+            'string.min': 'Mobile number must be at least 10 digits long'
+        }),
+    pin: Joi.string()
+        .min(4)
+        .max(10)
+        .required()
+        .messages({
+            'string.empty': 'PIN is required',
+            'any.required': 'PIN is required',
+            'string.min': 'PIN must be at least 4 digits long',
+            'string.max': 'PIN must be at most 10 digits long'
+        })
 });
 
 export const adminRegisterSchema = Joi.object({

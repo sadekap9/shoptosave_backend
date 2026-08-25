@@ -111,24 +111,130 @@ export const requestOTPService = async (data) => {
     }
 };
 
+const otpVerificationSuccessCache = new Map();
+const pinAttemptsCache = new Map();
+
+/**
+ * Start Authentication Service
+ */
+export const startAuthService = async (data) => {
+    const { mobile } = data;
+    const normalizedPhone = normalizePhone(mobile);
+    const isDummy = normalizedPhone === DUMMY_USER.PHONE;
+
+    try {
+        // Check if user exists and has a PIN
+        const users = await executeQuery('SELECT id, is_active, pin FROM user_master WHERE phone = ?', [normalizedPhone]);
+        
+        if (users.length > 0 && users[0].pin !== null && users[0].pin !== '') {
+            // Existing user
+            const user = users[0];
+            if (user.is_active === 0) {
+                return {
+                    success: false,
+                    statusCode: 403,
+                    message: 'Your account is inactive. Please contact support.'
+                };
+            }
+            return {
+                success: true,
+                statusCode: 200,
+                message: 'User found',
+                data: {
+                    exists: true
+                }
+            };
+        }
+
+        // New user (or user without a PIN): Cooldown check
+        const cachedOtp = secureOtpCache.get(normalizedPhone);
+        if (cachedOtp) {
+            const elapsed = (Date.now() - cachedOtp.createdAt) / 1000;
+            if (elapsed < 60) {
+                return {
+                    success: false,
+                    statusCode: 400,
+                    message: `Please wait ${Math.ceil(60 - elapsed)} seconds before requesting another OTP.`
+                };
+            }
+        }
+
+        // Generate 6 digit OTP
+        const otp = isDummy ? DUMMY_USER.OTP : Math.floor(100000 + Math.random() * 900000).toString();
+        const otpHashed = hashOTP(otp);
+        const expiresAt = Date.now() + 5 * 60 * 1000; // 5 mins expiry
+
+        // Store OTP details securely in-memory
+        secureOtpCache.set(normalizedPhone, {
+            otpHash: otpHashed,
+            expiresAt,
+            attempts: 0,
+            createdAt: Date.now()
+        });
+
+        // Insert or update user
+        if (users.length === 0) {
+            await executeQuery(
+                'INSERT INTO user_master (phone, role, is_active, otp) VALUES (?, 3, 1, ?)',
+                [normalizedPhone, otp]
+            );
+        } else {
+            await executeQuery(
+                'UPDATE user_master SET otp = ? WHERE phone = ?',
+                [otp, normalizedPhone]
+            );
+        }
+
+        if (isDummy) {
+            return {
+                success: true,
+                statusCode: 200,
+                message: 'OTP sent successfully (Dummy Bypass Mode)',
+                data: { exists: false }
+            };
+        }
+
+        // Dispatch OTP via SMS Helper
+        const smsResult = await sendSMS(
+            normalizedPhone,
+            `This is from Shop2Save to verify your account. Your OTP is: ${otp}. Valid for 5 minutes. Do not share this code.`
+        );
+
+        return {
+            success: true,
+            statusCode: 200,
+            message: smsResult.isDummy 
+                ? 'OTP sent successfully (Dummy Log Mode)' 
+                : 'OTP sent successfully via SMS',
+            data: { exists: false }
+        };
+
+    } catch (error) {
+        logger.error('startAuthService Error', { error: error.message });
+        return {
+            success: false,
+            statusCode: 500,
+            message: 'Error starting authentication'
+        };
+    }
+};
+
 /**
  * Verify OTP Service (Login/Register)
  */
 export const verifyOTPService = async (data, meta) => {
-    const { phone, otp } = data;
-    const { ip_address, device_token, platform, device_name } = meta;
-    const normalizedPhone = normalizePhone(phone);
+    const { mobile, otp } = data;
+    const normalizedPhone = normalizePhone(mobile);
     const isDummy = normalizedPhone === DUMMY_USER.PHONE && otp === DUMMY_USER.OTP;
 
     try {
-        // Resolve user, auto-create if not found (in case database was modified out-of-band)
         let users = await executeQuery('SELECT * FROM user_master WHERE phone = ?', [normalizedPhone]);
         if (users.length === 0) {
-            const insertResult = await executeQuery(
-                'INSERT INTO user_master (phone, role, is_active, name, email) VALUES (?, 3, 1, NULL, NULL)',
-                [normalizedPhone]
-            );
-            users = await executeQuery('SELECT * FROM user_master WHERE id = ?', [insertResult.insertId]);
+            return {
+                success: false,
+                statusCode: 404,
+                message: 'User not found'
+            };
         }
 
         const user = users[0];
@@ -141,7 +247,6 @@ export const verifyOTPService = async (data, meta) => {
             };
         }
 
-        // Fetch secure OTP configuration from in-memory cache
         const cachedOtp = secureOtpCache.get(normalizedPhone);
 
         if (!isDummy) {
@@ -192,7 +297,87 @@ export const verifyOTPService = async (data, meta) => {
         secureOtpCache.delete(normalizedPhone);
         await executeQuery('UPDATE user_master SET otp = NULL WHERE id = ?', [user.id]);
 
-        // Generate JWT Tokens
+        // Generate a secure cryptographically random 4-digit PIN
+        const pin = crypto.randomInt(1000, 10000).toString();
+
+        // Update user_master.pin in the database
+        await executeQuery('UPDATE user_master SET pin = ? WHERE id = ?', [pin, user.id]);
+
+        // Cache the successful OTP verification session to secure the PIN verification endpoint (expires in 5 minutes)
+        otpVerificationSuccessCache.set(normalizedPhone, Date.now() + 5 * 60 * 1000);
+
+        return {
+            success: true,
+            statusCode: 200,
+            message: 'OTP verified successfully',
+            data: {
+                verified: true,
+                pin: pin
+            }
+        };
+
+    } catch (error) {
+        logger.error('VerifyOTP Service Error', { error: error.message });
+        return {
+            success: false,
+            statusCode: 500,
+            message: 'Error verifying OTP code'
+        };
+    }
+};
+
+/**
+ * Verify Generated PIN Service
+ */
+export const verifyGeneratedPinService = async (data, meta) => {
+    const { mobile, pin } = data;
+    const { ip_address, device_token, platform, device_name } = meta;
+    const normalizedPhone = normalizePhone(mobile);
+
+    try {
+        // 1. Confirm OTP was successfully verified
+        const verifyExpiry = otpVerificationSuccessCache.get(normalizedPhone);
+        if (!verifyExpiry || Date.now() > verifyExpiry) {
+            return {
+                success: false,
+                statusCode: 400,
+                message: 'OTP verification session expired or not found. Please restart authentication.'
+            };
+        }
+
+        // 2. Retrieve user
+        const users = await executeQuery('SELECT * FROM user_master WHERE phone = ?', [normalizedPhone]);
+        if (users.length === 0) {
+            return {
+                success: false,
+                statusCode: 404,
+                message: 'User not found'
+            };
+        }
+
+        const user = users[0];
+
+        if (user.is_active === 0) {
+            return {
+                success: false,
+                statusCode: 403,
+                message: 'Your account is inactive. Please contact support.'
+            };
+        }
+
+        // 3. Compare entered PIN with database PIN
+        if (user.pin !== pin) {
+            return {
+                success: false,
+                statusCode: 400,
+                message: 'Invalid PIN'
+            };
+        }
+
+        // Clean up OTP verification session Cache
+        otpVerificationSuccessCache.delete(normalizedPhone);
+
+        // 4. Generate JWT Tokens
         const accessToken = jwt.sign(
             { id: user.id, phone: user.phone, role: user.role, email: user.email || '' },
             process.env.JWT_SECRET,
@@ -202,10 +387,10 @@ export const verifyOTPService = async (data, meta) => {
         const refreshToken = jwt.sign(
             { id: user.id, phone: user.phone, role: user.role, email: user.email || '' },
             process.env.JWT_REFRESH_SECRET || 'refresh_secret',
-            { expiresIn: '7d' } // 7 days long-lived token
+            { expiresIn: '7d' }
         );
 
-        const tokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days from now
+        const tokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
         // Store Session in session_master
         const sessionQuery = `
@@ -227,26 +412,137 @@ export const verifyOTPService = async (data, meta) => {
         return {
             success: true,
             statusCode: 200,
-            message: 'Login successful',
+            message: 'Registration successful',
             data: {
-                access_token: accessToken,
-                refresh_token: refreshToken,
+                token: accessToken,
+                refreshToken: refreshToken,
                 user: {
                     id: user.id,
-                    phone: user.phone,
-                    name: user.name || '',
-                    email: user.email || '',
-                    role: user.role
+                    mobile: user.phone
                 }
             }
         };
 
     } catch (error) {
-        logger.error('VerifyOTP Service Error', { error: error.message });
+        logger.error('verifyGeneratedPinService Error', { error: error.message });
         return {
             success: false,
             statusCode: 500,
-            message: 'Error verifying OTP code'
+            message: 'Error verifying generated PIN'
+        };
+    }
+};
+
+/**
+ * Login PIN Service
+ */
+export const loginPinService = async (data, meta) => {
+    const { mobile, pin } = data;
+    const { ip_address, device_token, platform, device_name } = meta;
+    const normalizedPhone = normalizePhone(mobile);
+
+    try {
+        const lockoutInfo = pinAttemptsCache.get(normalizedPhone);
+        if (lockoutInfo && lockoutInfo.lockoutUntil && Date.now() < lockoutInfo.lockoutUntil) {
+            return {
+                success: false,
+                statusCode: 400,
+                message: `Too many failed attempts. Try again in ${Math.ceil((lockoutInfo.lockoutUntil - Date.now()) / 1000)} seconds.`
+            };
+        }
+
+        const users = await executeQuery('SELECT * FROM user_master WHERE phone = ?', [normalizedPhone]);
+        if (users.length === 0) {
+            return {
+                success: false,
+                statusCode: 400,
+                message: 'Invalid PIN'
+            };
+        }
+
+        const user = users[0];
+
+        if (user.is_active === 0) {
+            return {
+                success: false,
+                statusCode: 403,
+                message: 'Your account is inactive. Please contact support.'
+            };
+        }
+
+        if (!user.pin || user.pin !== pin) {
+            let current = lockoutInfo || { attempts: 0, lockoutUntil: 0 };
+            current.attempts += 1;
+            if (current.attempts >= 5) {
+                current.lockoutUntil = Date.now() + 15 * 60 * 1000;
+                pinAttemptsCache.set(normalizedPhone, current);
+                return {
+                    success: false,
+                    statusCode: 400,
+                    message: 'Too many invalid PIN attempts. Account locked for 15 minutes.'
+                };
+            } else {
+                pinAttemptsCache.set(normalizedPhone, current);
+                return {
+                    success: false,
+                    statusCode: 400,
+                    message: 'Invalid PIN'
+                };
+            }
+        }
+
+        pinAttemptsCache.delete(normalizedPhone);
+
+        const accessToken = jwt.sign(
+            { id: user.id, phone: user.phone, role: user.role, email: user.email || '' },
+            process.env.JWT_SECRET,
+            { expiresIn: '1h' }
+        );
+
+        const refreshToken = jwt.sign(
+            { id: user.id, phone: user.phone, role: user.role, email: user.email || '' },
+            process.env.JWT_REFRESH_SECRET || 'refresh_secret',
+            { expiresIn: '7d' }
+        );
+
+        const tokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+        const sessionQuery = `
+            INSERT INTO session_master 
+            (user_id, access_token, refresh_token, device_token, device_name, platform, ip_address, expires_at) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+        await executeQuery(sessionQuery, [
+            user.id,
+            accessToken,
+            refreshToken,
+            device_token || null,
+            device_name || null,
+            platform || 'w',
+            ip_address,
+            tokenExpiry
+        ]);
+
+        return {
+            success: true,
+            statusCode: 200,
+            message: 'Login successful',
+            data: {
+                token: accessToken,
+                refreshToken: refreshToken,
+                user: {
+                    id: user.id,
+                    mobile: user.phone
+                }
+            }
+        };
+
+    } catch (error) {
+        logger.error('loginPinService Error', { error: error.message });
+        return {
+            success: false,
+            statusCode: 500,
+            message: 'Error during PIN login'
         };
     }
 };
@@ -255,7 +551,7 @@ export const verifyOTPService = async (data, meta) => {
  * Resend OTP Service
  */
 export const resendOTPService = async (data) => {
-    return requestOTPService(data);
+    return startAuthService(data);
 };
 
 /**

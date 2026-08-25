@@ -181,7 +181,8 @@ export const adminApproveRequest = async (req, res) => {
     try {
         const { id } = req.params;
         const { offered_amount } = req.validatedData;
-        const response = await sellGiftCardService.adminApproveRequestService(id, offered_amount);
+        const adminId = req.user.id;
+        const response = await sellGiftCardService.adminApproveRequestService(id, offered_amount, adminId);
         if (!response.success) {
             return res.status(response.statusCode).json({
                 success: false,
@@ -213,7 +214,8 @@ export const adminRejectRequest = async (req, res) => {
     try {
         const { id } = req.params;
         const { rejection_reason } = req.validatedData;
-        const response = await sellGiftCardService.adminRejectRequestService(id, rejection_reason);
+        const adminId = req.user.id;
+        const response = await sellGiftCardService.adminRejectRequestService(id, rejection_reason, adminId);
         if (!response.success) {
             return res.status(response.statusCode).json({
                 success: false,
