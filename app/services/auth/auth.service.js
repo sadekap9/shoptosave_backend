@@ -89,7 +89,7 @@ export const requestOTPService = async (data) => {
         // Dispatch OTP via SMS Helper
         const smsResult = await sendSMS(
             normalizedPhone,
-            `This is from Shop2Save to verify your account. Your OTP is: ${otp}. Valid for 5 minutes. Do not share this code.`
+            `Your ShopToSave OTP is ${otp}. It is valid for 10 minutes. Do not share this code with anyone. - NEWTRONE`
         );
 
         return {
@@ -197,7 +197,7 @@ export const startAuthService = async (data) => {
         // Dispatch OTP via SMS Helper
         const smsResult = await sendSMS(
             normalizedPhone,
-            `This is from Shop2Save to verify your account. Your OTP is: ${otp}. Valid for 5 minutes. Do not share this code.`
+            `Your ShopToSave OTP is ${otp}. It is valid for 10 minutes. Do not share this code with anyone. - NEWTRONE`
         );
 
         return {
