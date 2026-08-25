@@ -2,10 +2,10 @@ import axios from 'axios';
 import logger from '../utils/logger.js';
 
 // Retrieve credentials
-const authKey = process.env.YOURBULKSMS_AUTHKEY;
-const sender = process.env.YOURBULKSMS_SENDER || 'ABCDEF';
-const route = process.env.YOURBULKSMS_ROUTE || '2';
-const templateId = process.env.YOURBULKSMS_TEMPLATE_ID || '1777178720432825843';
+const authKey = process.env.YOURBULKSMS_AUTHKEY?.trim();
+const sender = (process.env.YOURBULKSMS_SENDER || 'ABCDEF').trim();
+const route = (process.env.YOURBULKSMS_ROUTE || '2').trim();
+const templateId = (process.env.YOURBULKSMS_TEMPLATE_ID || '1777178720432825843').trim();
 
 // Check if YourBulkSMS is configured
 const isSMSConfigured = 
