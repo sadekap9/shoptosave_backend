@@ -32,8 +32,8 @@ export const normalizePhone = (phone) => {
  * Request OTP Service
  */
 export const requestOTPService = async (data) => {
-    const { phone } = data;
-    const normalizedPhone = normalizePhone(phone);
+    const phoneVal = data.phone || data.mobile;
+    const normalizedPhone = normalizePhone(phoneVal);
     const isDummy = normalizedPhone === DUMMY_USER.PHONE;
 
     try {
@@ -223,8 +223,9 @@ export const startAuthService = async (data) => {
  * Verify OTP Service (Login/Register)
  */
 export const verifyOTPService = async (data, meta) => {
-    const { mobile, otp } = data;
-    const normalizedPhone = normalizePhone(mobile);
+    const phoneVal = data.phone || data.mobile;
+    const { otp } = data;
+    const normalizedPhone = normalizePhone(phoneVal);
     const isDummy = normalizedPhone === DUMMY_USER.PHONE && otp === DUMMY_USER.OTP;
 
     try {
@@ -297,22 +298,55 @@ export const verifyOTPService = async (data, meta) => {
         secureOtpCache.delete(normalizedPhone);
         await executeQuery('UPDATE user_master SET otp = NULL WHERE id = ?', [user.id]);
 
-        // Generate a secure cryptographically random 4-digit PIN
-        const pin = crypto.randomInt(1000, 10000).toString();
+        // Generate JWT Tokens
+        const accessToken = jwt.sign(
+            { id: user.id, phone: user.phone, role: user.role, email: user.email || '' },
+            process.env.JWT_SECRET,
+            { expiresIn: '1h' }
+        );
 
-        // Update user_master.pin in the database
-        await executeQuery('UPDATE user_master SET pin = ? WHERE id = ?', [pin, user.id]);
+        const refreshToken = jwt.sign(
+            { id: user.id, phone: user.phone, role: user.role, email: user.email || '' },
+            process.env.JWT_REFRESH_SECRET || 'refresh_secret',
+            { expiresIn: '7d' }
+        );
 
-        // Cache the successful OTP verification session to secure the PIN verification endpoint (expires in 5 minutes)
-        otpVerificationSuccessCache.set(normalizedPhone, Date.now() + 5 * 60 * 1000);
+        const tokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+        // Store Session in session_master
+        const sessionQuery = `
+            INSERT INTO session_master 
+            (user_id, access_token, refresh_token, device_token, device_name, platform, ip_address, expires_at) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+
+        const ip_address = meta.ip_address || '127.0.0.1';
+        const device_token = meta.device_token || null;
+        const platform = meta.platform || 'w';
+        const device_name = meta.device_name || null;
+
+        await executeQuery(sessionQuery, [
+            user.id,
+            accessToken,
+            refreshToken,
+            device_token,
+            device_name,
+            platform,
+            ip_address,
+            tokenExpiry
+        ]);
 
         return {
             success: true,
             statusCode: 200,
-            message: 'OTP verified successfully',
+            message: 'Login successful',
             data: {
-                verified: true,
-                pin: pin
+                token: accessToken,
+                refreshToken: refreshToken,
+                user: {
+                    id: user.id,
+                    mobile: user.phone
+                }
             }
         };
 
@@ -551,7 +585,7 @@ export const loginPinService = async (data, meta) => {
  * Resend OTP Service
  */
 export const resendOTPService = async (data) => {
-    return startAuthService(data);
+    return requestOTPService(data);
 };
 
 /**

@@ -1,26 +1,39 @@
 import Joi from 'joi';
 
-export const startAuthSchema = Joi.object({
+export const requestOTPSchema = Joi.object({
+    phone: Joi.string()
+        .min(10)
+        .max(15)
+        .optional()
+        .messages({
+            'string.min': 'Phone number must be at least 10 digits long',
+            'string.max': 'Phone number must be at most 15 digits long'
+        }),
     mobile: Joi.string()
         .min(10)
         .max(15)
-        .required()
+        .optional()
         .messages({
-            'string.empty': 'Mobile number is required',
-            'any.required': 'Mobile number is required',
             'string.min': 'Mobile number must be at least 10 digits long',
             'string.max': 'Mobile number must be at most 15 digits long'
         })
+}).or('phone', 'mobile').messages({
+    'object.missing': 'Either phone or mobile number is required'
 });
 
 export const verifyOTPSchema = Joi.object({
+    phone: Joi.string()
+        .min(10)
+        .max(15)
+        .optional()
+        .messages({
+            'string.min': 'Phone number must be at least 10 digits long'
+        }),
     mobile: Joi.string()
         .min(10)
         .max(15)
-        .required()
+        .optional()
         .messages({
-            'string.empty': 'Mobile number is required',
-            'any.required': 'Mobile number is required',
             'string.min': 'Mobile number must be at least 10 digits long'
         }),
     otp: Joi.string()
@@ -33,6 +46,42 @@ export const verifyOTPSchema = Joi.object({
         }),
     platform: Joi.string().valid('w', 'a', 'i').optional(),
     device_token: Joi.string().optional()
+}).or('phone', 'mobile').messages({
+    'object.missing': 'Either phone or mobile number is required'
+});
+
+export const resendOTPSchema = Joi.object({
+    phone: Joi.string()
+        .min(10)
+        .max(15)
+        .optional()
+        .messages({
+            'string.min': 'Phone number must be at least 10 digits long',
+            'string.max': 'Phone number must be at most 15 digits long'
+        }),
+    mobile: Joi.string()
+        .min(10)
+        .max(15)
+        .optional()
+        .messages({
+            'string.min': 'Mobile number must be at least 10 digits long',
+            'string.max': 'Mobile number must be at most 15 digits long'
+        })
+}).or('phone', 'mobile').messages({
+    'object.missing': 'Either phone or mobile number is required'
+});
+
+export const startAuthSchema = Joi.object({
+    mobile: Joi.string()
+        .min(10)
+        .max(15)
+        .required()
+        .messages({
+            'string.empty': 'Mobile number is required',
+            'any.required': 'Mobile number is required',
+            'string.min': 'Mobile number must be at least 10 digits long',
+            'string.max': 'Mobile number must be at most 15 digits long'
+        })
 });
 
 export const verifyGeneratedPinSchema = Joi.object({

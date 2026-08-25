@@ -2,14 +2,20 @@ import express from 'express';
 import * as authController from '../controller/auth/auth.controller.js';
 import * as otpController from '../controller/auth/otp.controller.js';
 import { validate } from '../middlewares/validate.middleware.js';
-import { startAuthSchema, verifyOTPSchema, verifyGeneratedPinSchema, loginPinSchema, adminRegisterSchema, adminLoginSchema } from '../validations/auth.validation.js';
+import { requestOTPSchema, verifyOTPSchema, resendOTPSchema, verifyGeneratedPinSchema, loginPinSchema, adminRegisterSchema, adminLoginSchema } from '../validations/auth.validation.js';
 import { otpLimiter, otpBlocker, verifyOtpLimiter, verifyOtpBlocker, loginBlocker, loginLimiter } from '../config/rateLimiter.js';
 import authMiddleware, { authorizeRole } from '../middlewares/verifyMiddleware.js';
 
 const router = express.Router();
 
-// Start Auth (checks phone, sends OTP if new user)
-router.post('/start', otpBlocker, otpLimiter, validate(startAuthSchema), otpController.startAuth);
+// Request OTP (Send OTP to user)
+router.post('/request-otp', otpBlocker, otpLimiter, validate(requestOTPSchema), otpController.requestOTP);
+
+// Resend OTP
+router.post('/resend-otp', otpBlocker, otpLimiter, validate(resendOTPSchema), otpController.resendOTP);
+
+// Start Auth (checks phone, sends OTP if new user) - kept for backward compatibility
+router.post('/start', otpBlocker, otpLimiter, validate(requestOTPSchema), otpController.requestOTP);
 
 // Verify OTP (Users)
 router.post('/verify-otp', verifyOtpBlocker, verifyOtpLimiter, validate(verifyOTPSchema), otpController.verifyOTP);

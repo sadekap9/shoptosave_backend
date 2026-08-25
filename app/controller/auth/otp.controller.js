@@ -2,6 +2,37 @@ import * as authService from '../../services/auth/auth.service.js';
 import logger from '../../utils/logger.js';
 
 /**
+ * Request OTP (Send OTP to user via BulkSMS)
+ */
+export const requestOTP = async (req, res) => {
+    try {
+        const response = await authService.requestOTPService(req.validatedData);
+
+        if (!response.success) {
+            return res.status(response.statusCode).json({ 
+                success: false, 
+                errors: [{ message: response.message }], 
+                result: {} 
+            });
+        }
+
+        return res.status(response.statusCode).json({ 
+            success: true, 
+            errors: [], 
+            result: { message: response.message, data: response.data } 
+        });
+
+    } catch (error) {
+        logger.error("requestOTP Error", { error: error.message, stack: error.stack });
+        return res.status(500).json({ 
+            success: false, 
+            errors: [{ message: "Internal server error" }], 
+            result: {} 
+        });
+    }
+};
+
+/**
  * Start Authentication (Checks phone and sends OTP if new user)
  */
 export const startAuth = async (req, res) => {
