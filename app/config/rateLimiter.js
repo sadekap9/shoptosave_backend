@@ -1,11 +1,30 @@
 import rateLimit from 'express-rate-limit';
 
+const getClientIp = (req) => {
+  let ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+  if (ip.includes(',')) {
+    ip = ip.split(',')[0].trim();
+  }
+  if (ip.includes(':')) {
+    const parts = ip.split(':');
+    if (parts.length > 2) {
+      if (ip.startsWith('[') && ip.includes(']:')) {
+        ip = ip.substring(1, ip.indexOf(']:'));
+      }
+    } else {
+      ip = parts[0];
+    }
+  }
+  return ip || '127.0.0.1';
+};
+
 // 1. General API limiter for all routes
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // Limit each IP to 100 requests per window
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: getClientIp,
   message: { success: false, error: 'Too many requests, please try again later.' }
 });
 
@@ -15,6 +34,7 @@ export const loginLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: getClientIp,
   message: { success: false, error: 'Too many login attempts. Please try again later.' }
 });
 
@@ -23,6 +43,7 @@ export const registerLimiter = rateLimit({
   max: 3,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: getClientIp,
   message: { success: false, error: 'Too many register attempts. Please try again later.' }
 });
 
@@ -31,6 +52,7 @@ export const otpLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: getClientIp,
   message: { success: false, error: 'Too many OTP request attempts. Please try again later.' }
 });
 
@@ -39,6 +61,7 @@ export const verifyOtpLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: getClientIp,
   message: { success: false, error: 'Too many OTP verification attempts. Please try again later.' }
 });
 
