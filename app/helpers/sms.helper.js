@@ -2,15 +2,15 @@ import axios from 'axios';
 import logger from '../utils/logger.js';
 
 // Retrieve credentials
-const username = process.env.BULKSMS_USERNAME;
-const password = process.env.BULKSMS_PASSWORD;
+const tokenId = process.env.BULKSMS_TOKEN_ID;
+const tokenSecret = process.env.BULKSMS_TOKEN_SECRET;
 
 // Check if BulkSMS is configured
 const isBulkSMSConfigured = 
-    username && 
-    password && 
-    username !== 'your_bulksms_username' && 
-    username.trim() !== '';
+    tokenId && 
+    tokenSecret && 
+    tokenId !== 'your_bulksms_token_id' && 
+    tokenId.trim() !== '';
 
 if (isBulkSMSConfigured) {
     logger.info('BulkSMS service initialized successfully');
@@ -27,7 +27,7 @@ if (isBulkSMSConfigured) {
 export const sendSMS = async (to, message) => {
     if (isBulkSMSConfigured) {
         try {
-            const authHeader = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
+            const authHeader = 'Basic ' + Buffer.from(`${tokenId}:${tokenSecret}`).toString('base64');
             const response = await axios.post(
                 'https://api.bulksms.com/v1/messages',
                 {
