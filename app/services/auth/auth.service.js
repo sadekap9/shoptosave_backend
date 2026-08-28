@@ -50,8 +50,8 @@ export const requestOTPService = async (data) => {
             }
         }
 
-        // Generate 6 digit OTP
-        const otp = isDummy ? DUMMY_USER.OTP : Math.floor(100000 + Math.random() * 900000).toString();
+        // Generate 4 digit OTP
+        const otp = isDummy ? DUMMY_USER.OTP : Math.floor(1000 + Math.random() * 9000).toString();
         const otpHashed = hashOTP(otp);
         const expiresAt = Date.now() + 5 * 60 * 1000; // 5 mins expiry
 
@@ -159,8 +159,8 @@ export const startAuthService = async (data) => {
             }
         }
 
-        // Generate 6 digit OTP
-        const otp = isDummy ? DUMMY_USER.OTP : Math.floor(100000 + Math.random() * 900000).toString();
+        // Generate 4 digit OTP
+        const otp = isDummy ? DUMMY_USER.OTP : Math.floor(1000 + Math.random() * 9000).toString();
         const otpHashed = hashOTP(otp);
         const expiresAt = Date.now() + 5 * 60 * 1000; // 5 mins expiry
 

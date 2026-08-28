@@ -37,12 +37,12 @@ export const verifyOTPSchema = Joi.object({
             'string.min': 'Mobile number must be at least 10 digits long'
         }),
     otp: Joi.string()
-        .length(6)
+        .length(4)
         .required()
         .messages({
             'string.empty': 'OTP is required',
             'any.required': 'OTP is required',
-            'string.length': 'OTP must be exactly 6 digits'
+            'string.length': 'OTP must be exactly 4 digits'
         }),
     platform: Joi.string().valid('w', 'a', 'i').optional(),
     device_token: Joi.string().optional()

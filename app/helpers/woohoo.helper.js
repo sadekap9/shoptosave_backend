@@ -89,7 +89,7 @@ export const getWoohooHeaders = (method, url, body = null, token = null, customC
  * Step 13: Build Woohoo Payload from order details, gift card SKU, and company billing configs
  */
 export const buildWoohooPayload = (order, giftCard, companyConfig) => {
-    const refno = `S2S-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const refno = `NEWTRONE_S2S-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
     const companyFirst = companyConfig.name.split(' ')[0] || 'Shop2Save';
     const companyLast = companyConfig.name.split(' ').slice(1).join(' ') || 'Billing';
 
