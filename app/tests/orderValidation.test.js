@@ -81,7 +81,7 @@ try {
     runTest('Test 6: products array with one qty=6, sync_only=true', {
         products: [
             { sku: 'TEST1', qty: 2 },
-            { sku: 'TEST2', qty: 6 }
+            { sku: 'TEST1', qty: 6 }
         ],
         sync_only: true
     }, true, expectedErrorPayload);
@@ -90,7 +90,7 @@ try {
     runTest('Test 7: products array sum qty=6, sync_only=true', {
         products: [
             { sku: 'TEST1', qty: 3 },
-            { sku: 'TEST2', qty: 3 }
+            { sku: 'TEST1', qty: 3 }
         ],
         sync_only: true
     }, true, expectedErrorPayload);
@@ -99,9 +99,30 @@ try {
     runTest('Test 8: products array sum qty=5, sync_only=true', {
         products: [
             { sku: 'TEST1', qty: 2 },
-            { sku: 'TEST2', qty: 3 }
+            { sku: 'TEST1', qty: 3 }
         ],
         sync_only: true
+    }, false);
+
+    // 9. Test Case #27: Multiple different SKUs -> MUST FAIL (Decoding error)
+    runTest('Test 9: multiple different SKUs (CNPIN, CLAIMCODE)', {
+        products: [
+            { sku: 'CNPIN', qty: 1 },
+            { sku: 'CLAIMCODE', qty: 1 }
+        ],
+        sync_only: false
+    }, true, {
+        code: 400,
+        message: "Decoding error"
+    });
+
+    // 10. Test Case #27: Multiple identical SKUs -> MUST PASS
+    runTest('Test 10: multiple identical SKUs', {
+        products: [
+            { sku: 'CNPIN', qty: 1 },
+            { sku: 'CNPIN', qty: 1 }
+        ],
+        sync_only: false
     }, false);
 
     console.log('\nAll order validation middleware tests passed successfully!');

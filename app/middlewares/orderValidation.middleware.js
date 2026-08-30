@@ -4,6 +4,22 @@ export const validateOrderQuantityAndSync = (req, res, next) => {
     try {
         const body = req.body || {};
 
+        // 0. Check for multiple distinct SKUs (Test Case #27)
+        if (Array.isArray(body.products) && body.products.length > 1) {
+            const skus = new Set(
+                body.products
+                    .map(p => p?.sku?.trim()?.toUpperCase())
+                    .filter(Boolean)
+            );
+            if (skus.size > 1) {
+                logger.warn(`Order rejected: Multiple distinct SKUs detected: ${Array.from(skus).join(', ')}`);
+                return res.status(400).json({
+                    code: 400,
+                    message: "Decoding error"
+                });
+            }
+        }
+
         // 1. Extract sync status
         const isSyncOnly = body.sync_only === true || 
                            body.sync_only === 'true' || 
