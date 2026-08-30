@@ -14,8 +14,8 @@ router.post('/request-otp', otpBlocker, otpLimiter, validate(requestOTPSchema), 
 // Resend OTP
 router.post('/resend-otp', otpBlocker, otpLimiter, validate(resendOTPSchema), otpController.resendOTP);
 
-// Start Auth (checks phone, sends OTP if new user) - kept for backward compatibility
-router.post('/start', otpBlocker, otpLimiter, validate(requestOTPSchema), otpController.requestOTP);
+// Start Auth (checks phone, sends OTP if new user)
+router.post('/start', otpBlocker, otpLimiter, validate(startAuthSchema), otpController.startAuth);
 
 // Verify OTP (Users)
 router.post('/verify-otp', verifyOtpBlocker, verifyOtpLimiter, validate(verifyOTPSchema), otpController.verifyOTP);
