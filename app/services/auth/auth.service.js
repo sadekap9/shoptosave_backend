@@ -911,18 +911,7 @@ export const forgotPinService = async (data) => {
             }
         }
 
-        // Generic response for account enumeration prevention if user doesn't exist
-        if (!targetUser || targetUser.is_active === 0) {
-            return {
-                success: true,
-                statusCode: 200,
-                message: 'OTP sent successfully',
-                data: {
-                    otpSent: true,
-                    channel: channel
-                }
-            };
-        }
+        // Send email/SMS even if user doesn't exist in DB (user requested)
 
         // Check if there is an active OTP request cooldown (60 seconds)
         const cacheKey = `forgot-${queryValue}`;
@@ -1004,16 +993,7 @@ export const verifyForgotPinOTPService = async (data) => {
             queryValue = normalizePhone(identifier);
         }
 
-        const users = await executeQuery('SELECT * FROM user_master WHERE phone = ? OR email = ?', [queryValue, queryValue]);
-        if (users.length === 0 || users[0].is_active === 0) {
-            return {
-                success: false,
-                statusCode: 400,
-                message: 'Invalid OTP'
-            };
-        }
-
-        const user = users[0];
+        // Bypass user existence check on verification to allow any email/mobile to verify OTP successfully
         const cacheKey = `forgot-${queryValue}`;
         const cachedOtp = secureOtpCache.get(cacheKey);
         const isDummy = (isEmail && queryValue === 'dummy@shoptosave.in' && otp === '123456') || (!isEmail && queryValue === DUMMY_USER.PHONE && otp === '123456');
