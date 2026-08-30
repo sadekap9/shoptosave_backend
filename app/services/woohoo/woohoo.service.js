@@ -54,8 +54,14 @@ export const getWoohooCategories = async (bearerToken) => {
 /**
  * Get products by category ID from Woohoo
  */
-export const getWoohooProductsByCategory = async (bearerToken, categoryId) => {
-    const url = `${BASE_URL}/v3/catalog/categories/${categoryId}/products`;
+export const getWoohooProductsByCategory = async (bearerToken, categoryId, offset, limit) => {
+    let url = `${BASE_URL}/v3/catalog/categories/${categoryId}/products`;
+    const params = [];
+    if (offset !== undefined) params.push(`offset=${offset}`);
+    if (limit !== undefined) params.push(`limit=${limit}`);
+    if (params.length > 0) {
+        url += `?${params.join('&')}`;
+    }
     const headers = getWoohooHeaders('GET', url, null, bearerToken);
     const response = await axios.get(url, { headers, timeout: 30000 });
     return response.data;

@@ -182,7 +182,8 @@ export const getProductsByCategory = async (req, res) => {
     try {
         const bearerToken = await extractToken(req);
         const { categoryId } = req.params;
-        const result = await woohooService.getWoohooProductsByCategory(bearerToken, categoryId);
+        const { offset, limit } = req.query;
+        const result = await woohooService.getWoohooProductsByCategory(bearerToken, categoryId, offset, limit);
 
         return res.status(200).json({
             success: true,
