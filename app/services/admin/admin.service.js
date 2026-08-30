@@ -1,6 +1,7 @@
 import pool from '../../config/dbConfig.js';
 import { sanitizePaginationParams, buildPagination } from '../../helpers/pagination.helper.js';
 import logger from '../../utils/logger.js';
+import { decrypt } from '../../utils/crypto.js';
 import { creditWallet, generateWalletTxnNo } from '../wallets/wallets.service.js';
 import {
     WALLET_TRANSACTION_TYPE,
@@ -203,8 +204,8 @@ export const getOrderDetails = async (orderId) => {
             cardId: item.woohoo_card_id,
             sku: item.sku,
             productName: item.product_name,
-            card_number: item.card_number,
-            card_pin: item.card_pin,
+            card_number: decrypt(item.card_number),
+            card_pin: decrypt(item.card_pin),
             barcode: item.barcode,
             amount: parseFloat(item.amount) || 0,
             validity: item.validity,

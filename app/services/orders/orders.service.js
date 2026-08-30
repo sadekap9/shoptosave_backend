@@ -14,7 +14,7 @@ import {
 } from '../../config/constant/constant.js';
 import { validateAndCalculateOffer, validateOfferForOrder } from '../offers/offers.service.js';
 import { generateWalletTxnNo } from '../wallets/wallets.service.js';
-
+import { encrypt, decrypt } from '../../utils/crypto.js';
 
 /**
  * Fetch Company details from app_config table, fallback to file config
@@ -267,8 +267,8 @@ export const placeOrderService = async (userId, orderData) => {
                     c.cardId || c.card_id || c.id || null,
                     c.sku || null,
                     c.productName || c.product_name || c.name || null,
-                    c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || "",
-                    c.cardPin || c.card_pin || c.pin || c.activationCode || c.activation_code || "",
+                    encrypt(c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || ""),
+                    encrypt(c.cardPin || c.card_pin || c.pin || c.activationCode || c.activation_code || ""),
                     c.barcode || null,
                     c.amount || null,
                     c.validity || c.expiryDate || c.expiry_date || c.expiry || null,
@@ -435,8 +435,8 @@ export const getOrderById = async (userId, orderId) => {
     const [items] = itemsResult;
     const formattedCards = items.map(item => ({
         id: item.id,
-        card_number: item.card_number,
-        card_pin: item.card_pin,
+        card_number: decrypt(item.card_number),
+        card_pin: decrypt(item.card_pin),
         amount: parseFloat(item.amount) || 0,
         validity: item.validity,
         sku: item.sku,
@@ -805,8 +805,8 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
                     c.cardId || c.card_id || c.id || null,
                     c.sku || null,
                     c.productName || c.product_name || c.name || null,
-                    c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || "",
-                    c.cardPin || c.card_pin || c.pin || c.activationCode || c.activation_code || "",
+                    encrypt(c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || ""),
+                    encrypt(c.cardPin || c.card_pin || c.pin || c.activationCode || c.activation_code || ""),
                     c.barcode || null,
                     c.amount || null,
                     c.validity || c.expiryDate || c.expiry_date || c.expiry || null,
@@ -838,8 +838,8 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
             );
             const formattedCards = items.map(item => ({
                 id: item.id,
-                card_number: item.card_number,
-                card_pin: item.card_pin,
+                card_number: decrypt(item.card_number),
+                card_pin: decrypt(item.card_pin),
                 amount: parseFloat(item.amount) || 0,
                 validity: item.validity,
                 sku: item.sku,
@@ -1070,8 +1070,8 @@ export const resolvePendingOrdersService = async () => {
                             c.cardId || c.card_id || c.id || null,
                             c.sku || null,
                             c.productName || c.product_name || c.name || null,
-                            c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || "",
-                            c.cardPin || c.card_pin || c.pin || c.activationCode || c.activation_code || "",
+                            encrypt(c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || ""),
+                            encrypt(c.cardPin || c.card_pin || c.pin || c.activationCode || c.activation_code || ""),
                             c.barcode || null,
                             c.amount || null,
                             c.validity || c.expiryDate || c.expiry_date || c.expiry || null,
