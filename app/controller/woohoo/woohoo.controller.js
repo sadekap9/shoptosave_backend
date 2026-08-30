@@ -275,14 +275,58 @@ export const getProduct = async (req, res) => {
  * Body: { address, payments, refno, syncOnly, deliveryMode, products }
  */
 export const placeOrder = async (req, res) => {
+    const body = req.body || {};
+    const refno = body.refno;
+    const products = body.products || [];
+    const sku = products[0]?.sku;
+    const qty = products[0]?.qty;
+    const price = products[0]?.price;
+    const payments = body.payments || [];
+    const paymentAmount = payments.reduce((acc, p) => acc + (parseFloat(p.amount) || 0), 0);
+    const syncOnly = body.syncOnly ?? body.sync_only;
+    const deliveryMode = body.deliveryMode;
+
+    logger.info('[Woohoo Controller] Placing order request:', {
+        refno,
+        sku,
+        qty,
+        price,
+        paymentAmount,
+        syncOnly,
+        deliveryMode
+    });
+
     try {
         const bearerToken = await extractToken(req);
-        const result = await woohooService.placeWoohooOrder(bearerToken, req.body);
+        const result = await woohooService.placeWoohooOrder(bearerToken, body);
+        logger.info('[Woohoo Controller] Order successfully placed:', {
+            refno,
+            sku,
+            qty,
+            price,
+            resultCode: result.code,
+            resultMessage: result.message
+        });
         return res.status(200).json(result);
     } catch (error) {
-        logger.error('Error in placeOrder (woohoo)', { error: error.response?.data || error.message });
+        const errorData = error.response?.data;
+        const errorStatus = error.response?.status || 500;
+        
+        logger.error('[Woohoo Controller] Order failed downstream:', {
+            refno,
+            sku,
+            qty,
+            price,
+            paymentAmount,
+            syncOnly,
+            deliveryMode,
+            errorMsg: error.message,
+            statusCode: errorStatus,
+            errorDetails: errorData
+        });
+
         if (error.response) {
-            return res.status(error.response.status).json(error.response.data);
+            return res.status(errorStatus).json(errorData);
         }
         return res.status(500).json({
             success: false,

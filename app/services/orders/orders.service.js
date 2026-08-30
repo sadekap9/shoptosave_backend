@@ -681,6 +681,14 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
     }
 
     // Stage 2: Call external Woohoo API
+    logger.info('[Order Flow] Sending request to downstream placeGiftCardOrder:', {
+        woohooRefNo,
+        sku,
+        qty,
+        price,
+        totalAmount
+    });
+
     let woohooResult;
     try {
         woohooResult = await placeGiftCardOrder({
@@ -691,10 +699,21 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
             refno: woohooRefNo
         });
     } catch (apiErr) {
-        // Axios error or network timeout
-        logger.error(`[Order Flow] Woohoo API call failed or timed out: ${apiErr.message}`);
+        const errorData = apiErr.response?.data;
+        const errorStatus = apiErr.response?.status || 500;
+
+        logger.error(`[Order Flow] Woohoo API call failed or timed out: ${apiErr.message}`, {
+            refno: woohooRefNo,
+            sku,
+            qty,
+            price,
+            totalAmount,
+            statusCode: errorStatus,
+            errorDetails: errorData
+        });
+        
         throw {
-            message: `Order placement timed out or provider is unreachable. Your order is pending resolution. Reference: ${woohooRefNo}`,
+            message: `Order placement timed out or provider is unreachable. Your order is pending resolution. Reference: ${woohooRefNo}. Downstream message: ${JSON.stringify(errorData || apiErr.message)}`,
             code: 'PROVIDER_TIMEOUT',
             statusCode: 504
         };
@@ -703,7 +722,14 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
     // Stage 3: Resolve order based on Woohoo response
     if (!woohooResult.success) {
         // Clear rejection -> refund wallet portion and fail order
-        logger.warn(`[Order Flow] Woohoo rejected the order: ${woohooResult.error}. Refunding...`);
+        logger.warn(`[Order Flow] Woohoo rejected the order: ${woohooResult.error}. Refunding...`, {
+            refno: woohooRefNo,
+            sku,
+            qty,
+            price,
+            totalAmount,
+            error: woohooResult.error
+        });
         try {
             await runInTransaction(async (connection) => {
                 await connection.query(
