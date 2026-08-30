@@ -298,55 +298,20 @@ export const verifyOTPService = async (data, meta) => {
         secureOtpCache.delete(normalizedPhone);
         await executeQuery('UPDATE user_master SET otp = NULL WHERE id = ?', [user.id]);
 
-        // Generate JWT Tokens
-        const accessToken = jwt.sign(
-            { id: user.id, phone: user.phone, role: user.role, email: user.email || '' },
-            process.env.JWT_SECRET,
-            { expiresIn: '1h' }
-        );
+        // Generate a secure 4-digit PIN automatically
+        const pin = crypto.randomInt(1000, 9999).toString();
+        await executeQuery('UPDATE user_master SET pin = ? WHERE id = ?', [pin, user.id]);
 
-        const refreshToken = jwt.sign(
-            { id: user.id, phone: user.phone, role: user.role, email: user.email || '' },
-            process.env.JWT_REFRESH_SECRET || 'refresh_secret',
-            { expiresIn: '7d' }
-        );
-
-        const tokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
-        // Store Session in session_master
-        const sessionQuery = `
-            INSERT INTO session_master 
-            (user_id, access_token, refresh_token, device_token, device_name, platform, ip_address, expires_at) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `;
-
-        const ip_address = meta.ip_address || '127.0.0.1';
-        const device_token = meta.device_token || null;
-        const platform = meta.platform || 'w';
-        const device_name = meta.device_name || null;
-
-        await executeQuery(sessionQuery, [
-            user.id,
-            accessToken,
-            refreshToken,
-            device_token,
-            device_name,
-            platform,
-            ip_address,
-            tokenExpiry
-        ]);
+        // Set OTP verification success state in cache (valid for 15 minutes)
+        otpVerificationSuccessCache.set(normalizedPhone, Date.now() + 15 * 60 * 1000);
 
         return {
             success: true,
             statusCode: 200,
-            message: 'Login successful',
+            message: 'OTP verified successfully',
             data: {
-                token: accessToken,
-                refreshToken: refreshToken,
-                user: {
-                    id: user.id,
-                    mobile: user.phone
-                }
+                verified: true,
+                pin: pin
             }
         };
 

@@ -2,7 +2,7 @@ import express from 'express';
 import * as authController from '../controller/auth/auth.controller.js';
 import * as otpController from '../controller/auth/otp.controller.js';
 import { validate } from '../middlewares/validate.middleware.js';
-import { requestOTPSchema, verifyOTPSchema, resendOTPSchema, verifyGeneratedPinSchema, loginPinSchema, adminRegisterSchema, adminLoginSchema } from '../validations/auth.validation.js';
+import { requestOTPSchema, verifyOTPSchema, resendOTPSchema, startAuthSchema, verifyGeneratedPinSchema, loginPinSchema, adminRegisterSchema, adminLoginSchema } from '../validations/auth.validation.js';
 import { otpLimiter, otpBlocker, verifyOtpLimiter, verifyOtpBlocker, loginBlocker, loginLimiter } from '../config/rateLimiter.js';
 import authMiddleware, { authorizeRole } from '../middlewares/verifyMiddleware.js';
 

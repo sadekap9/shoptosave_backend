@@ -24,7 +24,6 @@ export const apiLimiter = rateLimit({
   max: 100, // Limit each IP to 100 requests per window
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: getClientIp,
   message: { success: false, error: 'Too many requests, please try again later.' }
 });
 
@@ -34,7 +33,6 @@ export const loginLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: getClientIp,
   message: { success: false, error: 'Too many login attempts. Please try again later.' }
 });
 
@@ -43,7 +41,6 @@ export const registerLimiter = rateLimit({
   max: 3,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: getClientIp,
   message: { success: false, error: 'Too many register attempts. Please try again later.' }
 });
 
@@ -52,7 +49,6 @@ export const otpLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: getClientIp,
   message: { success: false, error: 'Too many OTP request attempts. Please try again later.' }
 });
 
@@ -61,7 +57,6 @@ export const verifyOtpLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: getClientIp,
   message: { success: false, error: 'Too many OTP verification attempts. Please try again later.' }
 });
 
