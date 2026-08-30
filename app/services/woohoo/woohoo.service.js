@@ -77,7 +77,7 @@ export const getWoohooProduct = async (bearerToken, sku) => {
 export const placeWoohooOrder = async (bearerToken, orderPayload) => {
     const url = `${BASE_URL}/v3/order`;
     const headers = getWoohooHeaders('POST', url, orderPayload, bearerToken);
-    const response = await axios.post(url, orderPayload, { headers, timeout: 60000 });
+    const response = await axios.post(url, orderPayload, { headers, timeout: 10000 });
     return response.data;
 };
 
