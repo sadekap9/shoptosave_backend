@@ -12,43 +12,43 @@ import {
 const router = express.Router();
 
 // Generate Authorization Code from Woohoo
-router.post('/auth/generate-code', woohooController.generateAuthCode);
+router.post('/auth/generate-code', authMiddleware, woohooController.generateAuthCode);
 
 // Exchange Authorization Code for a Bearer Token
-router.post('/auth/generate-token', validate(generateTokenSchema), woohooController.generateBearerToken);
+router.post('/auth/generate-token', authMiddleware, validate(generateTokenSchema), woohooController.generateBearerToken);
 
 // Fetch all gift card categories from Woohoo
-router.get('/catalog/categories', woohooController.getCategories);
+router.get('/catalog/categories', authMiddleware, woohooController.getCategories);
 
 // Fetch all gift card categories from local database
-router.get('/catalog/db-categories', woohooController.getDBCategories);
+router.get('/catalog/db-categories', authMiddleware, woohooController.getDBCategories);
 
 // Fetch all gift card categories from local database (alternative route)
-router.get('/catalog/categories/db', woohooController.getDBCategories);
+router.get('/catalog/categories/db', authMiddleware, woohooController.getDBCategories);
 
 // Fetch products in a given category
-router.get('/catalog/categories/:categoryId/products', woohooController.getProductsByCategory);
+router.get('/catalog/categories/:categoryId/products', authMiddleware, woohooController.getProductsByCategory);
 
 // Fetch a single product by SKU
-router.get('/catalog/products/:sku', woohooController.getProduct);
+router.get('/catalog/products/:sku', authMiddleware, woohooController.getProduct);
 
 // Place a new gift card order
-router.post('/orders', validate(placeOrderSchema), woohooController.placeOrder);
+router.post('/orders', authMiddleware, validate(placeOrderSchema), woohooController.placeOrder);
 
 // Get the status of an order
-router.get('/orders/:orderId/status', woohooController.getOrderStatus);
+router.get('/orders/:orderId/status', authMiddleware, woohooController.getOrderStatus);
 
 // Get activated cards for an order
-router.get('/orders/:orderId/cards', woohooController.getActivatedCards);
+router.get('/orders/:orderId/cards', authMiddleware, woohooController.getActivatedCards);
 
 // Get full order details
-router.get('/orders/:orderId', woohooController.getOrderDetails);
+router.get('/orders/:orderId', authMiddleware, woohooController.getOrderDetails);
 
 // Check gift card balance
-router.post('/balance', validate(checkBalanceSchema), woohooController.getCardBalance);
+router.post('/balance', authMiddleware, validate(checkBalanceSchema), woohooController.getCardBalance);
 
 // Resend gift cards to recipients
-router.post('/orders/:orderId/resend', validate(resendCardsSchema), woohooController.resendCards);
+router.post('/orders/:orderId/resend', authMiddleware, validate(resendCardsSchema), woohooController.resendCards);
 
 // Synced Woohoo products endpoints (restricted to admin/subadmin)
 router.get('/products', authMiddleware, authorizeRole([1, 2]), woohooController.getSyncedProductsList);
