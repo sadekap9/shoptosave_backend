@@ -42,6 +42,7 @@ export const placeOrderSchema = Joi.object({
     refno: Joi.string().required(),
     syncOnly: Joi.boolean().optional(),
     deliveryMode: Joi.string().optional(),
+    billing: Joi.object().optional(),
     products: Joi.array().items(
         Joi.object({
             sku: Joi.string().required(),
