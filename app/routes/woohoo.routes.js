@@ -2,6 +2,7 @@ import express from 'express';
 import * as woohooController from '../controller/woohoo/woohoo.controller.js';
 import authMiddleware, { authorizeRole } from '../middlewares/verifyMiddleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
+import { validateOrderQuantityAndSync } from '../middlewares/orderValidation.middleware.js';
 import {
     generateTokenSchema,
     placeOrderSchema,
@@ -33,7 +34,7 @@ router.get('/catalog/categories/:categoryId/products', woohooController.getProdu
 router.get('/catalog/products/:sku', woohooController.getProduct);
 
 // Place a new gift card order
-router.post('/orders', validate(placeOrderSchema), woohooController.placeOrder);
+router.post('/orders', validateOrderQuantityAndSync, validate(placeOrderSchema), woohooController.placeOrder);
 
 // Get the status of an order
 router.get('/orders/:orderId/status', woohooController.getOrderStatus);

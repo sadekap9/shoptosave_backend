@@ -1,6 +1,7 @@
 import express from 'express';
 import * as woohoo2Controller from '../controller/woohoo/woohoo2.controller.js';
 import { runWoohoo2Tests } from '../../woohoo2.js';
+import { validateOrderQuantityAndSync } from '../middlewares/orderValidation.middleware.js';
 
 const router = express.Router();
 
@@ -20,7 +21,7 @@ router.get('/catalog/categories/:categoryId/products', woohoo2Controller.getProd
 router.get('/catalog/products/:sku', woohoo2Controller.getProduct);
 
 // Place a new gift card order
-router.post('/orders', woohoo2Controller.placeOrder);
+router.post('/orders', validateOrderQuantityAndSync, woohoo2Controller.placeOrder);
 
 // Get the status of an order
 router.get('/orders/:orderId/status', woohoo2Controller.getOrderStatus);

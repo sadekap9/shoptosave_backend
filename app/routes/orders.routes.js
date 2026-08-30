@@ -2,6 +2,7 @@ import express from 'express';
 import * as ordersController from '../controller/orders/orders.controller.js';
 import authMiddleware from '../middlewares/verifyMiddleware.js';
 import { validate, validateParams } from '../middlewares/validate.middleware.js';
+import { validateOrderQuantityAndSync } from '../middlewares/orderValidation.middleware.js';
 import { placeOrderSchema, giftCardOrderSchema, orderIdParamSchema } from '../validations/order.validation.js';
 
 const router = express.Router();
@@ -14,6 +15,7 @@ const router = express.Router();
 router.post(
     '/',
     authMiddleware,
+    validateOrderQuantityAndSync,
     validate(placeOrderSchema),
     ordersController.placeOrder
 );
@@ -42,7 +44,7 @@ router.get(
  * POST /api/v1/orders/gift-card
  * Place a new gift card order (Wallet, Online, or Split payment)
  */
-router.post('/gift-card', authMiddleware, validate(giftCardOrderSchema), ordersController.placeGiftCardOrder);
+router.post('/gift-card', authMiddleware, validateOrderQuantityAndSync, validate(giftCardOrderSchema), ordersController.placeGiftCardOrder);
 
 /**
  * POST /api/v1/orders/:orderId/refund

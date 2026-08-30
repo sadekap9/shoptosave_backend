@@ -278,11 +278,7 @@ export const placeOrder = async (req, res) => {
     try {
         const bearerToken = await extractToken(req);
         const result = await woohooService.placeWoohooOrder(bearerToken, req.body);
-        return res.status(200).json({
-            success: true,
-            message: 'Order placed successfully',
-            result,
-        });
+        return res.status(200).json(result);
     } catch (error) {
         logger.error('Error in placeOrder (woohoo)', { error: error.response?.data || error.message });
         if (error.response) {
