@@ -31,9 +31,23 @@ export const generateSignature = (method, url, body, clientSecret) => {
         // 1. Normalize Method
         const normalizedMethod = method.toUpperCase();
 
-        // 2. Normalize URL (Remove protocol and host for the base string if needed, 
-        // but Postman uses the full URL encoded. We will follow Postman logic.)
-        const encodedUrl = encodeURIComponent(url);
+        // 2. Normalize URL and sort query parameters alphabetically
+        let signatureUrl = url;
+        if (url.includes('?')) {
+            const [baseUrl, queryString] = url.split('?');
+            const searchParams = new URLSearchParams(queryString);
+            const sortedParams = {};
+            const keys = Array.from(searchParams.keys()).sort();
+            for (const key of keys) {
+                sortedParams[key] = searchParams.get(key);
+            }
+            const newQueryString = Object.keys(sortedParams)
+                .map(key => `${key}=${sortedParams[key]}`)
+                .join('&');
+            signatureUrl = `${baseUrl}?${newQueryString}`;
+        }
+
+        const encodedUrl = encodeURIComponent(signatureUrl);
 
         let baseString = `${normalizedMethod}&${encodedUrl}`;
 
