@@ -4,6 +4,15 @@ import pool from '../../config/dbConfig.js';
 import logger from '../../utils/logger.js';
 import { saveProductsToDB } from '../../services/products/products.service.js';
 
+// Helper to extract Woohoo2 token from Authorization header
+const extractToken = async (req) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        return authHeader.split(' ')[1];
+    }
+    return '';
+};
+
 // ─── AUTHENTICATION ────────────────────────────────────────────────────────────
 
 /**
@@ -120,7 +129,7 @@ export const generateBearerToken = async (req, res) => {
  */
 export const getCategories = async (req, res) => {
     try {
-        const bearerToken = req.headers['x-woohoo-token'] || await getWoohoo2Token();
+        const bearerToken = await extractToken(req);
         const result = await woohoo2Service.getWoohooCategories(bearerToken);
 
         return res.status(200).json({
@@ -155,7 +164,7 @@ export const getCategories = async (req, res) => {
  */
 export const getProductsByCategory = async (req, res) => {
     try {
-        const bearerToken = req.headers['x-woohoo-token'] || await getWoohoo2Token();
+        const bearerToken = await extractToken(req);
         const { categoryId } = req.params;
         const result = await woohoo2Service.getWoohooProductsByCategory(bearerToken, categoryId, req.query);
 
@@ -179,7 +188,7 @@ export const getProductsByCategory = async (req, res) => {
  */
 export const getProduct = async (req, res) => {
     try {
-        const bearerToken = req.headers['x-woohoo-token'] || await getWoohoo2Token();
+        const bearerToken = await extractToken(req);
         const { sku } = req.params;
         const result = await woohoo2Service.getWoohooProduct(bearerToken, sku, req.query);
 
@@ -248,7 +257,7 @@ export const getProduct = async (req, res) => {
  */
 export const placeOrder = async (req, res) => {
     try {
-        const bearerToken = req.headers['x-woohoo-token'] || await getWoohoo2Token();
+        const bearerToken = await extractToken(req);
         const result = await woohoo2Service.placeWoohooOrder(bearerToken, req.body);
         return res.status(200).json({
             success: true,
@@ -273,7 +282,7 @@ export const placeOrder = async (req, res) => {
  */
 export const getOrderStatus = async (req, res) => {
     try {
-        const bearerToken = req.headers['x-woohoo-token'] || await getWoohoo2Token();
+        const bearerToken = await extractToken(req);
         const { orderId } = req.params;
         const result = await woohoo2Service.getWoohooOrderStatus(bearerToken, orderId);
         return res.status(200).json({
@@ -299,7 +308,7 @@ export const getOrderStatus = async (req, res) => {
  */
 export const getActivatedCards = async (req, res) => {
     try {
-        const bearerToken = req.headers['x-woohoo-token'] || await getWoohoo2Token();
+        const bearerToken = await extractToken(req);
         const { orderId } = req.params;
         const { offset = 0, limit = 10 } = req.query;
         const result = await woohoo2Service.getActivatedCards(bearerToken, orderId, offset, limit);
