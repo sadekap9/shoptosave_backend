@@ -117,7 +117,7 @@ export const generateBearerToken = async (req, res) => {
  */
 export const getCategories = async (req, res) => {
     try {
-        const bearerToken = await getWoohooToken();
+        const bearerToken = req.headers['x-woohoo-token'] || await getWoohooToken();
         const result = await woohooService.getWoohooCategories(bearerToken);
 
         // Save categories to database in the background (fire-and-forget)
@@ -171,7 +171,7 @@ export const getDBCategories = async (req, res) => {
  */
 export const getProductsByCategory = async (req, res) => {
     try {
-        const bearerToken = await getWoohooToken();
+        const bearerToken = req.headers['x-woohoo-token'] || await getWoohooToken();
         const { categoryId } = req.params;
         const result = await woohooService.getWoohooProductsByCategory(bearerToken, categoryId);
 
@@ -196,7 +196,7 @@ export const getProductsByCategory = async (req, res) => {
  */
 export const getProduct = async (req, res) => {
     try {
-        const bearerToken = await getWoohooToken();
+        const bearerToken = req.headers['x-woohoo-token'] || await getWoohooToken();
         const { sku } = req.params;
         const result = await woohooService.getWoohooProduct(bearerToken, sku);
 
@@ -267,7 +267,7 @@ export const getProduct = async (req, res) => {
  */
 export const placeOrder = async (req, res) => {
     try {
-        const bearerToken = await getWoohooToken();
+        const bearerToken = req.headers['x-woohoo-token'] || await getWoohooToken();
         const result = await woohooService.placeWoohooOrder(bearerToken, req.body);
         return res.status(200).json({
             success: true,
@@ -290,7 +290,7 @@ export const placeOrder = async (req, res) => {
  */
 export const getOrderStatus = async (req, res) => {
     try {
-        const bearerToken = await getWoohooToken();
+        const bearerToken = req.headers['x-woohoo-token'] || await getWoohooToken();
         const { orderId } = req.params;
         const result = await woohooService.getWoohooOrderStatus(bearerToken, orderId);
         return res.status(200).json({
@@ -315,7 +315,7 @@ export const getOrderStatus = async (req, res) => {
  */
 export const getActivatedCards = async (req, res) => {
     try {
-        const bearerToken = await getWoohooToken();
+        const bearerToken = req.headers['x-woohoo-token'] || await getWoohooToken();
         const { orderId } = req.params;
         const { offset = 0, limit = 10 } = req.query;
         const result = await woohooService.getActivatedCards(bearerToken, orderId, offset, limit);
@@ -340,7 +340,7 @@ export const getActivatedCards = async (req, res) => {
  */
 export const getOrderDetails = async (req, res) => {
     try {
-        const bearerToken = await getWoohooToken();
+        const bearerToken = req.headers['x-woohoo-token'] || await getWoohooToken();
         const { orderId } = req.params;
         const result = await woohooService.getWoohooOrderDetails(bearerToken, orderId);
         return res.status(200).json({
@@ -367,7 +367,7 @@ export const getOrderDetails = async (req, res) => {
  */
 export const getCardBalance = async (req, res) => {
     try {
-        const bearerToken = await getWoohooToken();
+        const bearerToken = req.headers['x-woohoo-token'] || await getWoohooToken();
         const { cardNumber } = req.body;
         if (!cardNumber) {
             return res.status(400).json({ success: false, message: 'cardNumber is required', result: {} });
@@ -397,7 +397,7 @@ export const getCardBalance = async (req, res) => {
  */
 export const resendCards = async (req, res) => {
     try {
-        const bearerToken = await getWoohooToken();
+        const bearerToken = req.headers['x-woohoo-token'] || await getWoohooToken();
         const { orderId } = req.params;
         const { cards } = req.body;
         if (!cards || !Array.isArray(cards) || cards.length === 0) {
