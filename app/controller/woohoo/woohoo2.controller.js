@@ -257,10 +257,13 @@ export const placeOrder = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in placeOrder (woohoo2)', { error: error.response?.data || error.message });
-        return res.status(error.response?.status || 500).json({
+        if (error.response) {
+            return res.status(error.response.status).json(error.response.data);
+        }
+        return res.status(500).json({
             success: false,
-            message: error.response?.data?.message || 'Failed to place order',
-            result: error.response?.data || {},
+            message: error.message || 'Failed to place order',
+            result: {},
         });
     }
 };
@@ -280,10 +283,13 @@ export const getOrderStatus = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in getOrderStatus (woohoo2)', { error: error.response?.data || error.message });
-        return res.status(error.response?.status || 500).json({
+        if (error.response) {
+            return res.status(error.response.status).json(error.response.data);
+        }
+        return res.status(500).json({
             success: false,
-            message: error.response?.data?.message || 'Failed to fetch order status',
-            result: error.response?.data || {},
+            message: error.message || 'Failed to fetch order status',
+            result: {},
         });
     }
 };
@@ -304,10 +310,13 @@ export const getActivatedCards = async (req, res) => {
         });
     } catch (error) {
         logger.error('Error in getActivatedCards (woohoo2)', { error: error.response?.data || error.message });
-        return res.status(error.response?.status || 500).json({
+        if (error.response) {
+            return res.status(error.response.status).json(error.response.data);
+        }
+        return res.status(500).json({
             success: false,
-            message: error.response?.data?.message || 'Failed to fetch activated cards',
-            result: error.response?.data || {},
+            message: error.message || 'Failed to fetch activated cards',
+            result: {},
         });
     }
 };
