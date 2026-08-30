@@ -106,6 +106,38 @@ export const verifyGeneratedPinSchema = Joi.object({
         })
 });
 
+export const createPinSchema = Joi.object({
+    mobile: Joi.string()
+        .min(10)
+        .max(15)
+        .required()
+        .messages({
+            'string.empty': 'Mobile number is required',
+            'any.required': 'Mobile number is required',
+            'string.min': 'Mobile number must be at least 10 digits long'
+        }),
+    pin: Joi.string()
+        .length(4)
+        .pattern(/^\d+$/)
+        .required()
+        .messages({
+            'string.empty': 'PIN is required',
+            'any.required': 'PIN is required',
+            'string.length': 'PIN must be exactly 4 digits long',
+            'string.pattern.base': 'PIN must contain only digits'
+        }),
+    confirmPin: Joi.string()
+        .length(4)
+        .pattern(/^\d+$/)
+        .required()
+        .messages({
+            'string.empty': 'Confirm PIN is required',
+            'any.required': 'Confirm PIN is required',
+            'string.length': 'Confirm PIN must be exactly 4 digits long',
+            'string.pattern.base': 'Confirm PIN must contain only digits'
+        })
+});
+
 export const loginPinSchema = Joi.object({
     mobile: Joi.string()
         .min(10)
@@ -156,4 +188,61 @@ export const adminLoginSchema = Joi.object({
         'string.empty': 'Password is required',
         'any.required': 'Password is required'
     })
+});
+
+export const forgotPinSchema = Joi.object({
+    identifier: Joi.string()
+        .required()
+        .messages({
+            'string.empty': 'Identifier is required',
+            'any.required': 'Identifier is required'
+        })
+});
+
+export const forgotPinVerifyOTPSchema = Joi.object({
+    identifier: Joi.string()
+        .required()
+        .messages({
+            'string.empty': 'Identifier is required',
+            'any.required': 'Identifier is required'
+        }),
+    otp: Joi.string()
+        .length(6)
+        .pattern(/^\d+$/)
+        .required()
+        .messages({
+            'string.empty': 'OTP is required',
+            'any.required': 'OTP is required',
+            'string.length': 'OTP must be exactly 6 digits long',
+            'string.pattern.base': 'OTP must contain only digits'
+        })
+});
+
+export const forgotPinResetSchema = Joi.object({
+    identifier: Joi.string()
+        .required()
+        .messages({
+            'string.empty': 'Identifier is required',
+            'any.required': 'Identifier is required'
+        }),
+    pin: Joi.string()
+        .length(4)
+        .pattern(/^\d+$/)
+        .required()
+        .messages({
+            'string.empty': 'PIN is required',
+            'any.required': 'PIN is required',
+            'string.length': 'PIN must be exactly 4 digits long',
+            'string.pattern.base': 'PIN must contain only digits'
+        }),
+    confirmPin: Joi.string()
+        .length(4)
+        .pattern(/^\d+$/)
+        .required()
+        .messages({
+            'string.empty': 'Confirm PIN is required',
+            'any.required': 'Confirm PIN is required',
+            'string.length': 'Confirm PIN must be exactly 4 digits long',
+            'string.pattern.base': 'Confirm PIN must contain only digits'
+        })
 });

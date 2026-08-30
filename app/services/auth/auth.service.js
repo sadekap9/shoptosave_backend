@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { executeQuery } from '../../config/dbConfig.js';
 import { sendSMS } from '../../helpers/sms.helper.js';
+import { sendEmailOTP } from '../../helpers/email.helper.js';
 import logger from '../../utils/logger.js';
 import { DUMMY_USER } from '../../config/constant/constant.js';
 
@@ -298,10 +299,6 @@ export const verifyOTPService = async (data, meta) => {
         secureOtpCache.delete(normalizedPhone);
         await executeQuery('UPDATE user_master SET otp = NULL WHERE id = ?', [user.id]);
 
-        // Generate a secure 4-digit PIN automatically
-        const pin = crypto.randomInt(1000, 9999).toString();
-        await executeQuery('UPDATE user_master SET pin = ? WHERE id = ?', [pin, user.id]);
-
         // Set OTP verification success state in cache (valid for 15 minutes)
         otpVerificationSuccessCache.set(normalizedPhone, Date.now() + 15 * 60 * 1000);
 
@@ -310,8 +307,7 @@ export const verifyOTPService = async (data, meta) => {
             statusCode: 200,
             message: 'OTP verified successfully',
             data: {
-                verified: true,
-                pin: pin
+                verified: true
             }
         };
 
@@ -326,10 +322,10 @@ export const verifyOTPService = async (data, meta) => {
 };
 
 /**
- * Verify Generated PIN Service
+ * Create PIN Service (handles User PIN Creation after successful OTP verification)
  */
-export const verifyGeneratedPinService = async (data, meta) => {
-    const { mobile, pin } = data;
+export const createPinService = async (data, meta) => {
+    const { mobile, pin, confirmPin } = data;
     const { ip_address, device_token, platform, device_name } = meta;
     const normalizedPhone = normalizePhone(mobile);
 
@@ -344,7 +340,16 @@ export const verifyGeneratedPinService = async (data, meta) => {
             };
         }
 
-        // 2. Retrieve user
+        // 2. Validate matching PIN and confirm PIN
+        if (pin !== confirmPin) {
+            return {
+                success: false,
+                statusCode: 400,
+                message: 'PIN and confirm PIN do not match'
+            };
+        }
+
+        // 3. Retrieve user
         const users = await executeQuery('SELECT * FROM user_master WHERE phone = ?', [normalizedPhone]);
         if (users.length === 0) {
             return {
@@ -364,19 +369,13 @@ export const verifyGeneratedPinService = async (data, meta) => {
             };
         }
 
-        // 3. Compare entered PIN with database PIN
-        if (user.pin !== pin) {
-            return {
-                success: false,
-                statusCode: 400,
-                message: 'Invalid PIN'
-            };
-        }
+        // 4. Update the user record with the chosen PIN
+        await executeQuery('UPDATE user_master SET pin = ? WHERE id = ?', [pin, user.id]);
 
         // Clean up OTP verification session Cache
         otpVerificationSuccessCache.delete(normalizedPhone);
 
-        // 4. Generate JWT Tokens
+        // 5. Generate JWT Tokens
         const accessToken = jwt.sign(
             { id: user.id, phone: user.phone, role: user.role, email: user.email || '' },
             process.env.JWT_SECRET,
@@ -423,11 +422,11 @@ export const verifyGeneratedPinService = async (data, meta) => {
         };
 
     } catch (error) {
-        logger.error('verifyGeneratedPinService Error', { error: error.message });
+        logger.error('createPinService Error', { error: error.message });
         return {
             success: false,
             statusCode: 500,
-            message: 'Error verifying generated PIN'
+            message: 'Error during PIN creation'
         };
     }
 };
@@ -869,6 +868,342 @@ export const adminLoginService = async (data, meta) => {
             success: false,
             statusCode: 500,
             message: 'Error during admin login authentication'
+        };
+    }
+};
+
+const forgotPinSuccessCache = new Map();
+
+/**
+ * Forgot PIN Service
+ */
+export const forgotPinService = async (data) => {
+    const { identifier } = data;
+    if (!identifier) {
+        return {
+            success: false,
+            statusCode: 400,
+            message: 'Identifier is required'
+        };
+    }
+
+    const isEmail = identifier.includes('@');
+    let channel = 'mobile';
+    let targetUser = null;
+    let queryValue = identifier;
+
+    try {
+        if (isEmail) {
+            channel = 'email';
+            const normalizedEmail = identifier.toLowerCase().trim();
+            queryValue = normalizedEmail;
+            const users = await executeQuery('SELECT * FROM user_master WHERE email = ?', [normalizedEmail]);
+            if (users.length > 0) {
+                targetUser = users[0];
+            }
+        } else {
+            channel = 'mobile';
+            const normalizedPhone = normalizePhone(identifier);
+            queryValue = normalizedPhone;
+            const users = await executeQuery('SELECT * FROM user_master WHERE phone = ?', [normalizedPhone]);
+            if (users.length > 0) {
+                targetUser = users[0];
+            }
+        }
+
+        // Generic response for account enumeration prevention if user doesn't exist
+        if (!targetUser || targetUser.is_active === 0) {
+            return {
+                success: true,
+                statusCode: 200,
+                message: 'OTP sent successfully',
+                data: {
+                    otpSent: true,
+                    channel: channel
+                }
+            };
+        }
+
+        // Check if there is an active OTP request cooldown (60 seconds)
+        const cacheKey = `forgot-${queryValue}`;
+        const cachedOtp = secureOtpCache.get(cacheKey);
+        if (cachedOtp) {
+            const elapsed = (Date.now() - cachedOtp.createdAt) / 1000;
+            if (elapsed < 60) {
+                return {
+                    success: false,
+                    statusCode: 400,
+                    message: `Please wait ${Math.ceil(60 - elapsed)} seconds before requesting another OTP.`
+                };
+            }
+        }
+
+        // Generate 6 digit OTP
+        const isDummy = (channel === 'mobile' && queryValue === DUMMY_USER.PHONE) || (channel === 'email' && queryValue === 'dummy@shoptosave.in');
+        const otp = isDummy ? '123456' : Math.floor(100000 + Math.random() * 900000).toString();
+        const otpHashed = hashOTP(otp);
+        const expiresAt = Date.now() + 5 * 60 * 1000; // 5 mins expiry
+
+        secureOtpCache.set(cacheKey, {
+            otpHash: otpHashed,
+            expiresAt,
+            attempts: 0,
+            createdAt: Date.now()
+        });
+
+        // Dispatch via the selected channel
+        if (channel === 'mobile') {
+            await sendSMS(
+                queryValue,
+                `Your ShopToSave OTP is ${otp}. It is valid for 10 minutes. Do not share this code with anyone. - NEWTRONE`
+            );
+        } else {
+            await sendEmailOTP(queryValue, otp);
+        }
+
+        return {
+            success: true,
+            statusCode: 200,
+            message: 'OTP sent successfully',
+            data: {
+                otpSent: true,
+                channel: channel
+            }
+        };
+
+    } catch (error) {
+        logger.error('forgotPinService Error', { error: error.message });
+        return {
+            success: false,
+            statusCode: 500,
+            message: 'Error during forgot PIN initialization'
+        };
+    }
+};
+
+/**
+ * Verify Forgot PIN OTP Service
+ */
+export const verifyForgotPinOTPService = async (data) => {
+    const { identifier, otp } = data;
+    if (!identifier || !otp) {
+        return {
+            success: false,
+            statusCode: 400,
+            message: 'Identifier and OTP are required'
+        };
+    }
+
+    const isEmail = identifier.includes('@');
+    let queryValue = identifier;
+
+    try {
+        if (isEmail) {
+            queryValue = identifier.toLowerCase().trim();
+        } else {
+            queryValue = normalizePhone(identifier);
+        }
+
+        const users = await executeQuery('SELECT * FROM user_master WHERE phone = ? OR email = ?', [queryValue, queryValue]);
+        if (users.length === 0 || users[0].is_active === 0) {
+            return {
+                success: false,
+                statusCode: 400,
+                message: 'Invalid OTP'
+            };
+        }
+
+        const user = users[0];
+        const cacheKey = `forgot-${queryValue}`;
+        const cachedOtp = secureOtpCache.get(cacheKey);
+        const isDummy = (isEmail && queryValue === 'dummy@shoptosave.in' && otp === '123456') || (!isEmail && queryValue === DUMMY_USER.PHONE && otp === '123456');
+
+        if (!isDummy) {
+            if (!cachedOtp || Date.now() > cachedOtp.expiresAt) {
+                secureOtpCache.delete(cacheKey);
+                return {
+                    success: false,
+                    statusCode: 400,
+                    message: 'OTP has expired. Please request a new one.'
+                };
+            }
+
+            if (cachedOtp.attempts >= 3) {
+                secureOtpCache.delete(cacheKey);
+                return {
+                    success: false,
+                    statusCode: 400,
+                    message: 'Too many failed attempts. Please request a new OTP.'
+                };
+            }
+
+            const inputHash = hashOTP(otp);
+            if (cachedOtp.otpHash !== inputHash) {
+                cachedOtp.attempts += 1;
+                secureOtpCache.set(cacheKey, cachedOtp);
+                const remaining = 3 - cachedOtp.attempts;
+                if (remaining <= 0) {
+                    secureOtpCache.delete(cacheKey);
+                    return {
+                        success: false,
+                        statusCode: 400,
+                        message: 'Invalid OTP. This code has now been locked.'
+                    };
+                }
+                return {
+                    success: false,
+                    statusCode: 400,
+                    message: `Invalid OTP. You have ${remaining} attempts remaining.`
+                };
+            }
+        }
+
+        // Clean up OTP from cache
+        secureOtpCache.delete(cacheKey);
+
+        // Store verification state (expires in 15 minutes)
+        forgotPinSuccessCache.set(`reset-${queryValue}`, Date.now() + 15 * 60 * 1000);
+
+        return {
+            success: true,
+            statusCode: 200,
+            message: 'OTP verified successfully',
+            data: {
+                verified: true
+            }
+        };
+
+    } catch (error) {
+        logger.error('verifyForgotPinOTPService Error', { error: error.message });
+        return {
+            success: false,
+            statusCode: 500,
+            message: 'Error verifying OTP'
+        };
+    }
+};
+
+/**
+ * Reset PIN Service
+ */
+export const resetPinService = async (data, meta) => {
+    const { identifier, pin, confirmPin } = data;
+    const { ip_address, device_token, platform, device_name } = meta;
+    if (!identifier || !pin || !confirmPin) {
+        return {
+            success: false,
+            statusCode: 400,
+            message: 'All fields are required'
+        };
+    }
+
+    if (pin !== confirmPin) {
+        return {
+            success: false,
+            statusCode: 400,
+            message: 'PIN and confirm PIN do not match'
+        };
+    }
+
+    const isEmail = identifier.includes('@');
+    let queryValue = identifier;
+
+    try {
+        if (isEmail) {
+            queryValue = identifier.toLowerCase().trim();
+        } else {
+            queryValue = normalizePhone(identifier);
+        }
+
+        // Check if reset session is valid
+        const resetExpiry = forgotPinSuccessCache.get(`reset-${queryValue}`);
+        if (!resetExpiry || Date.now() > resetExpiry) {
+            return {
+                success: false,
+                statusCode: 400,
+                message: 'Reset session expired or not found. Please restart the Forgot PIN flow.'
+            };
+        }
+
+        const users = await executeQuery('SELECT * FROM user_master WHERE phone = ? OR email = ?', [queryValue, queryValue]);
+        if (users.length === 0) {
+            return {
+                success: false,
+                statusCode: 404,
+                message: 'User not found'
+            };
+        }
+
+        const user = users[0];
+        if (user.is_active === 0) {
+            return {
+                success: false,
+                statusCode: 403,
+                message: 'Your account is inactive. Please contact support.'
+            };
+        }
+
+        // Update database with the new PIN
+        await executeQuery('UPDATE user_master SET pin = ? WHERE id = ?', [pin, user.id]);
+
+        // Invalidate forgot session cache
+        forgotPinSuccessCache.delete(`reset-${queryValue}`);
+
+        // Invalidate existing sessions in session_master for security
+        await executeQuery('DELETE FROM session_master WHERE user_id = ?', [user.id]);
+
+        // Generate new JWT tokens
+        const accessToken = jwt.sign(
+            { id: user.id, phone: user.phone, role: user.role, email: user.email || '' },
+            process.env.JWT_SECRET,
+            { expiresIn: '1h' }
+        );
+
+        const refreshToken = jwt.sign(
+            { id: user.id, phone: user.phone, role: user.role, email: user.email || '' },
+            process.env.JWT_REFRESH_SECRET || 'refresh_secret',
+            { expiresIn: '7d' }
+        );
+
+        const tokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+        // Store new session
+        const sessionQuery = `
+            INSERT INTO session_master 
+            (user_id, access_token, refresh_token, device_token, device_name, platform, ip_address, expires_at) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+        await executeQuery(sessionQuery, [
+            user.id,
+            accessToken,
+            refreshToken,
+            device_token || null,
+            device_name || null,
+            platform || 'w',
+            ip_address,
+            tokenExpiry
+        ]);
+
+        return {
+            success: true,
+            statusCode: 200,
+            message: 'PIN reset successfully',
+            data: {
+                token: accessToken,
+                refreshToken: refreshToken,
+                user: {
+                    id: user.id,
+                    mobile: user.phone
+                }
+            }
+        };
+
+    } catch (error) {
+        logger.error('resetPinService Error', { error: error.message });
+        return {
+            success: false,
+            statusCode: 500,
+            message: 'Error resetting PIN'
         };
     }
 };

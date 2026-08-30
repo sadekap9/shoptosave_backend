@@ -2,7 +2,7 @@ import express from 'express';
 import * as authController from '../controller/auth/auth.controller.js';
 import * as otpController from '../controller/auth/otp.controller.js';
 import { validate } from '../middlewares/validate.middleware.js';
-import { requestOTPSchema, verifyOTPSchema, resendOTPSchema, startAuthSchema, verifyGeneratedPinSchema, loginPinSchema, adminRegisterSchema, adminLoginSchema } from '../validations/auth.validation.js';
+import { requestOTPSchema, verifyOTPSchema, resendOTPSchema, startAuthSchema, createPinSchema, loginPinSchema, adminRegisterSchema, adminLoginSchema, forgotPinSchema, forgotPinVerifyOTPSchema, forgotPinResetSchema } from '../validations/auth.validation.js';
 import { otpLimiter, otpBlocker, verifyOtpLimiter, verifyOtpBlocker, loginBlocker, loginLimiter } from '../config/rateLimiter.js';
 import authMiddleware, { authorizeRole } from '../middlewares/verifyMiddleware.js';
 
@@ -20,8 +20,8 @@ router.post('/start', otpBlocker, otpLimiter, validate(startAuthSchema), otpCont
 // Verify OTP (Users)
 router.post('/verify-otp', verifyOtpBlocker, verifyOtpLimiter, validate(verifyOTPSchema), otpController.verifyOTP);
 
-// Verify Generated PIN
-router.post('/verify-generated-pin', loginBlocker, loginLimiter, validate(verifyGeneratedPinSchema), authController.verifyGeneratedPin);
+// Create PIN
+router.post('/create-pin', loginBlocker, loginLimiter, validate(createPinSchema), authController.createPin);
 
 // Login PIN
 router.post('/login-pin', loginBlocker, loginLimiter, validate(loginPinSchema), authController.loginPin);
@@ -37,5 +37,14 @@ router.post('/logout', authMiddleware, authController.logOut);
 
 // Refresh Token
 router.post('/refresh-token', authController.refreshToken);
+
+// Forgot PIN (Request OTP)
+router.post('/forgot-pin', otpBlocker, otpLimiter, validate(forgotPinSchema), authController.forgotPin);
+
+// Verify Forgot PIN OTP
+router.post('/forgot-pin/verify-otp', verifyOtpBlocker, verifyOtpLimiter, validate(forgotPinVerifyOTPSchema), authController.verifyForgotPinOTP);
+
+// Reset PIN
+router.post('/forgot-pin/reset', loginBlocker, loginLimiter, validate(forgotPinResetSchema), authController.resetPin);
 
 export default router;
