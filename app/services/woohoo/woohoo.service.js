@@ -75,7 +75,7 @@ export const getWoohooProduct = async (bearerToken, sku) => {
  * Place an order on Woohoo
  */
 export const placeWoohooOrder = async (bearerToken, orderPayload) => {
-    const url = `${BASE_URL}/v3/orders`;
+    const url = `${BASE_URL}/v3/order`;
     const headers = getWoohooHeaders('POST', url, orderPayload, bearerToken);
     const response = await axios.post(url, orderPayload, { headers, timeout: 60000 });
     return response.data;
@@ -85,7 +85,7 @@ export const placeWoohooOrder = async (bearerToken, orderPayload) => {
  * Get order status by order ID
  */
 export const getWoohooOrderStatus = async (bearerToken, orderId) => {
-    const url = `${BASE_URL}/v3/orders/${orderId}/status`;
+    const url = `${BASE_URL}/v3/order/${orderId}/status`;
     const headers = getWoohooHeaders('GET', url, null, bearerToken);
     const response = await axios.get(url, { headers, timeout: 30000 });
     return response.data;
@@ -95,7 +95,7 @@ export const getWoohooOrderStatus = async (bearerToken, orderId) => {
  * Get order details by reference number (refno)
  */
 export const getWoohooOrderByRefNo = async (bearerToken, refno) => {
-    const url = `${BASE_URL}/v3/orders?refno=${refno}`;
+    const url = `${BASE_URL}/v3/order?refno=${refno}`;
     const headers = getWoohooHeaders('GET', url, null, bearerToken);
     const response = await axios.get(url, { headers, timeout: 30000 });
     return response.data;
@@ -105,7 +105,7 @@ export const getWoohooOrderByRefNo = async (bearerToken, refno) => {
  * Get activated cards for an order
  */
 export const getActivatedCards = async (bearerToken, orderId, offset = 0, limit = 10) => {
-    const url = `${BASE_URL}/v3/orders/${orderId}/cards?offset=${offset}&limit=${limit}`;
+    const url = `${BASE_URL}/v3/order/${orderId}/cards?offset=${offset}&limit=${limit}`;
     const headers = getWoohooHeaders('GET', url, null, bearerToken);
     const response = await axios.get(url, { headers, timeout: 30000 });
     return response.data;
@@ -115,7 +115,7 @@ export const getActivatedCards = async (bearerToken, orderId, offset = 0, limit 
  * Get order details by order ID
  */
 export const getWoohooOrderDetails = async (bearerToken, orderId) => {
-    const url = `${BASE_URL}/v3/orders/${orderId}`;
+    const url = `${BASE_URL}/v3/order/${orderId}`;
     const headers = getWoohooHeaders('GET', url, null, bearerToken);
     const response = await axios.get(url, { headers, timeout: 30000 });
     return response.data;
@@ -140,7 +140,7 @@ export const getWoohooCardBalance = async (bearerToken, cardNumber) => {
  * Resend gift cards for an order
  */
 export const resendWoohooCards = async (bearerToken, orderId, cards) => {
-    const url = `${BASE_URL}/v3/orders/${orderId}/resend`;
+    const url = `${BASE_URL}/v3/order/${orderId}/resend`;
     const payload = { cards };
     const headers = getWoohooHeaders('POST', url, payload, bearerToken);
     const response = await axios.post(url, payload, { headers, timeout: 30000 });
