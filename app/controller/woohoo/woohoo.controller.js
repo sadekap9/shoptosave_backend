@@ -275,6 +275,8 @@ export const getProduct = async (req, res) => {
  * Place a new order on Woohoo
  * Body: { address, payments, refno, syncOnly, deliveryMode, products }
  */
+import { persistExternalOrder } from '../../services/orders/orders.service.js';
+
 export const placeOrder = async (req, res) => {
     const body = req.body || {};
     const refno = body.refno;
@@ -299,8 +301,32 @@ export const placeOrder = async (req, res) => {
 
     try {
         const bearerToken = await extractToken(req);
+
+        // Authenticate/verify Bearer token as JWT
+        let userId = null;
+        try {
+            const jwt = (await import('jsonwebtoken')).default;
+            const decoded = jwt.verify(bearerToken, process.env.JWT_SECRET);
+            userId = decoded.id;
+
+            // Verify session in session_master
+            const [sessions] = await pool.query(
+                'SELECT id FROM session_master WHERE access_token = ? AND user_id = ? AND expires_at > NOW()',
+                [bearerToken, userId]
+            );
+            if (sessions.length === 0) {
+                return res.status(401).send('oauth_problem=signature_invalid');
+            }
+        } catch (jwtErr) {
+            return res.status(401).send('oauth_problem=signature_invalid');
+        }
+
         const result = await woohooService.placeWoohooOrder(bearerToken, body);
-        logger.info('[Woohoo Controller] Order successfully placed:', {
+
+        // Persist external order if downstream placement succeeded
+        await persistExternalOrder(userId, body, result);
+
+        logger.info('[Woohoo Controller] Order successfully placed and persisted:', {
             refno,
             sku,
             qty,

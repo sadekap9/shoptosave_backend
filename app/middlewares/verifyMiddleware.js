@@ -73,11 +73,7 @@ export const verifyToken = async (req, res, next) => {
 
             next();
         } catch (err) {
-            return res.status(401).json({
-                success: false,
-                errors: [{ message: 'Invalid or expired token' }],
-                result: {}
-            });
+            return res.status(401).send('oauth_problem=signature_invalid');
         }
     } catch (error) {
         logger.error('Auth Middleware Error', { error: error.message });

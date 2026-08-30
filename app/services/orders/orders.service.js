@@ -612,14 +612,13 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
             );
 
             // Insert gift_card_orders in PENDING (0) state
-            // Insert gift_card_orders in PENDING (0) state
             const [orderResult] = await connection.query(
                 `INSERT INTO gift_card_orders 
                  (user_id, gift_card_id, amount, is_self_purchase, recipient_name, recipient_email, recipient_mobile, gift_message,
-                  woohoo_reference_no, status, sku, quantity, wallet_amount, online_amount, payment_type,
+                  woohoo_reference_no, status, quantity, wallet_amount, online_amount, payment_type,
                   woohoo_order_id, woohoo_response,
                   offer_id, discount_amount, cashback_amount, payable_amount)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)`,
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)`,
                 [
                     userId,
                     giftcard_id,
@@ -630,7 +629,6 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
                     isSelf === 1 ? null : finalRecipientMobile,
                     isSelf === 1 ? null : (gift_message || null),
                     woohooRefNo,
-                    sku,
                     qty,
                     deduct.walletDeducted,
                     deduct.onlineDeducted,
@@ -1165,5 +1163,103 @@ export const resolvePendingOrdersService = async () => {
                 logger.error(`[Cron Resolver] Error checking Order #${order.id}: ${err.message}`);
             }
         }
+    }
+};
+
+/**
+ * Persist an externally placed order (e.g. via direct Woohoo/Spend proxy endpoint)
+ */
+export const persistExternalOrder = async (userId, body, woohooResponse) => {
+    const refno = body.refno;
+    const products = body.products || [];
+    const sku = products[0]?.sku;
+    const qty = parseInt(products[0]?.qty) || 1;
+    const price = parseFloat(products[0]?.price) || 0;
+    const totalAmount = price * qty;
+
+    const payments = body.payments || [];
+    const walletAmount = payments.find(p => p.code?.toLowerCase() === 'wallet')?.amount || 0;
+    const onlineAmount = payments.find(p => p.code?.toLowerCase() === 'online' || p.code?.toLowerCase() === 'pg' || p.code?.toLowerCase() === 'card')?.amount || 0;
+
+    // Resolve gift card
+    const [[giftCard]] = await pool.query(
+        'SELECT id, gift_card_name FROM gift_cards WHERE sku = ? LIMIT 1',
+        [sku]
+    );
+    const giftCardId = giftCard ? giftCard.id : null;
+
+    // Check if order already exists (idempotency/duplicate prevention)
+    const [[existingOrder]] = await pool.query(
+        'SELECT id FROM gift_card_orders WHERE woohoo_reference_no = ?',
+        [refno]
+    );
+    if (existingOrder) {
+        logger.info(`[Order System] External order already persisted. ID: ${existingOrder.id}`);
+        return existingOrder.id;
+    }
+
+    // Save to database in a transaction
+    const connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    try {
+        // Insert gift_card_orders
+        const [orderResult] = await connection.query(
+            `INSERT INTO gift_card_orders 
+              (user_id, gift_card_id, amount, is_self_purchase, recipient_name, recipient_email, recipient_mobile, gift_message, 
+               wallet_transaction_id, woohoo_reference_no, woohoo_order_id, status, wallet_amount, online_amount, payment_type, quantity, cashback_amount, payable_amount)
+             VALUES (?, ?, ?, 1, null, null, null, null, null, ?, ?, 2, ?, ?, 1, ?, 0.00, ?)`,
+            [
+                userId,
+                giftCardId,
+                totalAmount,
+                refno,
+                woohooResponse.orderId || null,
+                walletAmount,
+                onlineAmount,
+                qty,
+                totalAmount
+            ]
+        );
+        const orderId = orderResult.insertId;
+
+        // Insert items
+        const cards = woohooResponse.cards || [];
+        if (cards.length > 0) {
+            const itemValues = cards.map(c => {
+                const parsedCardId = parseInt(c.cardId || c.card_id || c.id);
+                const cardIdVal = isNaN(parsedCardId) ? null : parsedCardId;
+                return [
+                    orderId,
+                    cardIdVal,
+                    c.sku || sku || null,
+                    c.productName || c.product_name || c.name || (giftCard ? giftCard.gift_card_name : null),
+                    encrypt(c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || ""),
+                    encrypt(c.cardPin || c.card_pin || c.pin || c.activationCode || c.activation_code || ""),
+                    c.barcode || null,
+                    c.amount || price || null,
+                    c.validity || c.expiryDate || c.expiry_date || c.expiry || null,
+                    c.issuanceDate || c.issuance_date || null,
+                    c.cardView?.identifier || c.card_view?.identifier || null
+                ];
+            });
+
+            await connection.query(
+                `INSERT INTO gift_card_order_items 
+                  (order_id, woohoo_card_id, sku, product_name, card_number, card_pin, barcode, amount, validity, issuance_date, card_view_identifier) 
+                  VALUES ?`,
+                [itemValues]
+            );
+        }
+
+        await connection.commit();
+        logger.info(`[Order System] Successfully persisted external order ID: ${orderId}`);
+        return orderId;
+    } catch (err) {
+        await connection.rollback();
+        logger.error('[Order System] Failed to persist external order:', err);
+        throw err;
+    } finally {
+        connection.release();
     }
 };

@@ -101,7 +101,11 @@ export const placeGiftCardOrder = async (req, res) => {
 
         return res.status(200).json({
             success: true,
-            result: response.data
+            errors: [],
+            result: {
+                message: response.message || 'Order completed successfully',
+                data: response.data
+            }
         });
 
     } catch (error) {
@@ -110,8 +114,8 @@ export const placeGiftCardOrder = async (req, res) => {
         const statusCode = error.statusCode || 500;
         return res.status(statusCode).json({
             success: false,
-            error: error.message || 'Internal server error during order placement',
-            code: error.code || 'INTERNAL_ERROR'
+            errors: [{ message: error.message || 'Internal server error during order placement' }],
+            result: {}
         });
     }
 };
