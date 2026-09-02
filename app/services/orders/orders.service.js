@@ -15,6 +15,7 @@ import {
 import { validateAndCalculateOffer, validateOfferForOrder } from '../offers/offers.service.js';
 import { generateWalletTxnNo } from '../wallets/wallets.service.js';
 import { encrypt, decrypt } from '../../utils/crypto.js';
+import { sendOrderCompletionEmail } from '../../helpers/email.helper.js';
 
 /**
  * Fetch Company details from app_config table, fallback to file config
@@ -295,6 +296,9 @@ export const placeOrderService = async (userId, orderData) => {
                 logger.error('[Order System] Cashback credit failed (non-critical)', { error: cbErr.message });
             }
         }
+
+        // Trigger order completion email (non-blocking)
+        sendOrderCompletionEmailByOrderId(orderId).catch(err => logger.error('[Order System] Email notification error:', err));
 
         return {
             success: true,
@@ -883,6 +887,10 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
         });
 
         logger.info(`[Order Flow] Order #${finalOrder.id} completed successfully`);
+
+        // Trigger order completion email (non-blocking)
+        sendOrderCompletionEmailByOrderId(finalOrder.id).catch(err => logger.error('[Order Flow] Email notification error:', err));
+
         return {
             success: true,
             message: 'Order completed successfully',
@@ -1103,6 +1111,9 @@ export const resolvePendingOrdersService = async () => {
                     }
                 });
                 logger.info(`[Cron Resolver] Resolved Order #${order.id} as COMPLETE.`);
+
+                // Trigger order completion email (non-blocking)
+                sendOrderCompletionEmailByOrderId(order.id).catch(err => logger.error('[Cron Resolver] Email notification error:', err));
             } else if (statusStr === 'failed' || statusStr === 'cancelled') {
                 // Clear rejection or cancelled by provider -> fail order and refund wallet
                 await runInTransaction(async (connection) => {
@@ -1254,6 +1265,10 @@ export const persistExternalOrder = async (userId, body, woohooResponse) => {
 
         await connection.commit();
         logger.info(`[Order System] Successfully persisted external order ID: ${orderId}`);
+
+        // Trigger order completion email (non-blocking)
+        sendOrderCompletionEmailByOrderId(orderId).catch(err => logger.error('[Order System] Email notification error:', err));
+
         return orderId;
     } catch (err) {
         await connection.rollback();
@@ -1263,3 +1278,72 @@ export const persistExternalOrder = async (userId, body, woohooResponse) => {
         connection.release();
     }
 };
+
+/**
+ * Helper to fetch order details and trigger order completion email
+ * @param {number} orderId
+ */
+export const sendOrderCompletionEmailByOrderId = async (orderId) => {
+    try {
+        const [[orderRow]] = await pool.query(
+            `SELECT id, user_id, gift_card_id, recipient_email, recipient_name, is_self_purchase, amount
+             FROM gift_card_orders WHERE id = ?`,
+            [orderId]
+        );
+        if (!orderRow) return;
+
+        // Run independent queries in parallel using Promise.all per AGENTS.md performance guidelines
+        const [[userRes], [cardInfoRes], [cardItems]] = await Promise.all([
+            pool.query('SELECT name, email FROM user_master WHERE id = ?', [orderRow.user_id]),
+            orderRow.gift_card_id 
+                ? pool.query('SELECT gift_card_name, brand_name, tnc_link, things_to_note, redeem_steps, description FROM gift_cards WHERE id = ?', [orderRow.gift_card_id])
+                : Promise.resolve([[]]),
+            pool.query(
+                `SELECT card_number, card_pin, validity, amount, product_name 
+                 FROM gift_card_order_items WHERE order_id = ?`,
+                [orderId]
+            )
+        ]);
+
+        const user = userRes[0] || {};
+        const giftCard = cardInfoRes[0] || {};
+
+        // Recipient email if provided (and not self purchase), else purchaser user email
+        const targetEmail = (orderRow.recipient_email && orderRow.is_self_purchase === 0) 
+            ? orderRow.recipient_email 
+            : user.email;
+
+        if (!targetEmail) {
+            logger.warn(`[Order Flow] Cannot send completion email for Order #${orderId}: No target email address found.`);
+            return;
+        }
+
+        const customerName = (orderRow.recipient_name && orderRow.is_self_purchase === 0)
+            ? orderRow.recipient_name
+            : (user.name || 'Customer');
+
+        // Decrypt card number & pin for each item
+        const formattedCards = cardItems.map(item => ({
+            cardNumber: decrypt(item.card_number),
+            cardPin: decrypt(item.card_pin),
+            validity: item.validity,
+            amount: parseFloat(item.amount) || 0,
+            productName: item.product_name
+        }));
+
+        const tncContent = giftCard.things_to_note || giftCard.redeem_steps || giftCard.description || null;
+
+        await sendOrderCompletionEmail({
+            to: targetEmail,
+            customerName,
+            orderId: orderRow.id,
+            giftCardName: giftCard.gift_card_name || giftCard.brand_name || 'Gift Card',
+            cards: formattedCards,
+            tncLink: giftCard.tnc_link || null,
+            tncContent
+        });
+    } catch (err) {
+        logger.error(`[Order Flow] Failed to process completion email for Order #${orderId}: ${err.message}`);
+    }
+};
+
