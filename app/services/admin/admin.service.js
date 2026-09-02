@@ -85,7 +85,23 @@ export const getOrders = async (filters) => {
         const { offset, limit: limitVal } = sanitizePaginationParams(page, limit);
 
         let query = `
-            SELECT gco.*, u.name AS user_name, u.email AS user_email, u.phone AS user_phone, gc.gift_card_name, gc.brand_name
+            SELECT 
+                gco.id,
+                gco.user_id,
+                gco.gift_card_id,
+                gco.quantity,
+                gco.amount,
+                gco.discount_amount,
+                gco.cashback_amount,
+                gco.payable_amount,
+                gco.status,
+                gco.woohoo_reference_no,
+                gco.created_at,
+                u.name AS user_name,
+                u.email AS user_email,
+                u.phone AS user_phone,
+                gc.gift_card_name,
+                gc.brand_name
             FROM gift_card_orders gco
             JOIN user_master u ON gco.user_id = u.id
             JOIN gift_cards gc ON gco.gift_card_id = gc.id
@@ -215,6 +231,15 @@ export const getOrderDetails = async (orderId) => {
             },
             status: item.status
         }));
+
+        // Safely parse woohoo_response if it is a JSON string
+        if (typeof order.woohoo_response === 'string') {
+            try {
+                order.woohoo_response = JSON.parse(order.woohoo_response);
+            } catch (e) {
+                // leave as string if not valid JSON
+            }
+        }
 
         // Assign first card details for backward compatibility
         order.gift_card_number = formattedCards[0]?.card_number || null;

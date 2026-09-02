@@ -16,6 +16,10 @@ import { validateAndCalculateOffer, validateOfferForOrder } from '../offers/offe
 import { generateWalletTxnNo } from '../wallets/wallets.service.js';
 import { encrypt, decrypt } from '../../utils/crypto.js';
 import { sendOrderCompletionEmail } from '../../helpers/email.helper.js';
+import { ensureActivationSchema, processConditionalOrderActivation } from '../activation/activation.service.js';
+
+// Auto-initialize schema
+ensureActivationSchema().catch(err => logger.error('[Order Service] Schema initialization error:', err.message));
 
 /**
  * Fetch Company details from app_config table, fallback to file config
@@ -299,6 +303,9 @@ export const placeOrderService = async (userId, orderData) => {
 
         // Trigger order completion email (non-blocking)
         sendOrderCompletionEmailByOrderId(orderId).catch(err => logger.error('[Order System] Email notification error:', err));
+
+        // Trigger conditional activation API flow (backend only)
+        processConditionalOrderActivation(orderId).catch(err => logger.error('[Order System] Activation flow error:', err.message));
 
         return {
             success: true,
@@ -761,11 +768,43 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
         };
     }
 
-    // Woohoo order was successful! Update order to COMPLETE (status = 2)
-    const woohooResponseData = woohooResult.data;
-    const statusStr = woohooResponseData.status?.toLowerCase();
+    // Resolve Woohoo response status
+    const woohooResponseData = woohooResult.data || {};
+    const statusStr = (woohooResponseData.status || '').toLowerCase();
 
-    if (statusStr === 'processing' || statusStr === 'pending' || !woohooResponseData.cards || woohooResponseData.cards.length === 0) {
+    if (statusStr === 'failed' || statusStr === 'cancelled' || statusStr === 'rejected') {
+        const errorReason = woohooResponseData.message || woohooResponseData.error || 'Rejected by provider';
+        logger.warn(`[Order Flow] Woohoo order #${orderId} rejected with status '${statusStr}': ${errorReason}. Refunding...`);
+        try {
+            await runInTransaction(async (connection) => {
+                await connection.query(
+                    'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
+                    [`Woohoo error: ${errorReason}`, orderId]
+                );
+
+                if (deductRes.walletDeducted > 0) {
+                    await creditWallet(
+                        userId,
+                        deductRes.walletDeducted,
+                        WALLET_TRANSACTION_SOURCE.REFUND,
+                        orderId,
+                        `Refund for failed order #${orderId}`,
+                        connection
+                    );
+                }
+            });
+        } catch (refundErr) {
+            logger.error(`[Order Flow] Refund failed for order #${orderId}: ${refundErr.message}`);
+        }
+
+        throw {
+            message: `Woohoo provider order failed: ${errorReason}. Wallet portion refunded if applicable.`,
+            code: 'WOOHOO_FAILED',
+            statusCode: 424
+        };
+    }
+
+    if (statusStr === 'processing' || statusStr === 'pending') {
         logger.info(`[Order Flow] Woohoo order #${orderId} is processing asynchronously on provider side.`);
         await pool.query(
             'UPDATE gift_card_orders SET status = 1, woohoo_order_id = ?, woohoo_response = ? WHERE id = ?',
@@ -782,8 +821,8 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
         };
     }
 
-    // Direct success with cards available!
-    const cards = woohooResponseData.cards || [];
+    // Direct success with cards available or completed status!
+    const cards = woohooResponseData.cards || (woohooResponseData.card ? [woohooResponseData.card] : []);
 
     try {
         const finalOrder = await runInTransaction(async (connection) => {
@@ -890,6 +929,9 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
 
         // Trigger order completion email (non-blocking)
         sendOrderCompletionEmailByOrderId(finalOrder.id).catch(err => logger.error('[Order Flow] Email notification error:', err));
+
+        // Trigger conditional activation API flow (backend only)
+        processConditionalOrderActivation(finalOrder.id).catch(err => logger.error('[Order Flow] Activation flow error:', err.message));
 
         return {
             success: true,
@@ -1049,11 +1091,11 @@ export const resolvePendingOrdersService = async () => {
             logger.info(`[Cron Resolver] Checking status of Order #${order.id} (Ref: ${order.woohoo_reference_no})`);
             const woohooRes = await getWoohooOrderByRefNo(token, order.woohoo_reference_no);
 
-            // If the order has status 'COMPLETE' or 'SUCCESS'
-            const statusStr = woohooRes.status?.toLowerCase();
-            const cards = woohooRes.cards || [];
+            // If the order has status 'COMPLETE' or 'SUCCESS' or 'COMPLETED'
+            const statusStr = (woohooRes.status || '').toLowerCase();
+            const cards = woohooRes.cards || (woohooRes.card ? [woohooRes.card] : []);
             
-            if ((statusStr === 'complete' || statusStr === 'success') && cards.length > 0) {
+            if (statusStr === 'complete' || statusStr === 'success' || statusStr === 'completed') {
                 const mainCard = cards[0];
                 await runInTransaction(async (connection) => {
                     await connection.query(
@@ -1114,6 +1156,9 @@ export const resolvePendingOrdersService = async () => {
 
                 // Trigger order completion email (non-blocking)
                 sendOrderCompletionEmailByOrderId(order.id).catch(err => logger.error('[Cron Resolver] Email notification error:', err));
+
+                // Trigger conditional activation API flow (backend only)
+                processConditionalOrderActivation(order.id).catch(err => logger.error('[Cron Resolver] Activation flow error:', err.message));
             } else if (statusStr === 'failed' || statusStr === 'cancelled') {
                 // Clear rejection or cancelled by provider -> fail order and refund wallet
                 await runInTransaction(async (connection) => {

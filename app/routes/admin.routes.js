@@ -45,20 +45,20 @@ router.post(
 
 // Sell Gift Card Requests Management (Admin / Sub-Admin)
 router.get(
-    '/sell-gift-cards',
+    ['/sell-gift-cards', '/sell-gift-card'],
     authMiddleware,
     authorizeRole([1, 2]),
     sellGiftCardController.adminListRequests
 );
 router.get(
-    '/sell-gift-cards/:id',
+    ['/sell-gift-cards/:id', '/sell-gift-card/:id'],
     authMiddleware,
     authorizeRole([1, 2]),
     validateParams(requestIdParamSchema),
     sellGiftCardController.adminGetRequestDetails
 );
 router.patch(
-    '/sell-gift-cards/:id/approve',
+    ['/sell-gift-cards/:id/approve', '/sell-gift-card/:id/approve'],
     authMiddleware,
     authorizeRole([1, 2]),
     validateParams(requestIdParamSchema),
@@ -66,7 +66,7 @@ router.patch(
     sellGiftCardController.adminApproveRequest
 );
 router.patch(
-    '/sell-gift-cards/:id/reject',
+    ['/sell-gift-cards/:id/reject', '/sell-gift-card/:id/reject'],
     authMiddleware,
     authorizeRole([1, 2]),
     validateParams(requestIdParamSchema),
