@@ -1,8 +1,7 @@
 import pool, { runInTransaction } from '../../config/dbConfig.js';
 import { getWoohooToken } from '../categories/woohooAuth.service.js';
 import { placeWoohooOrder, getWoohooOrderByRefNo } from '../woohoo/woohoo.service.js';
-import { getOrCreateWallet, creditWallet } from '../wallets/wallets.service.js';
-import { companyConfig } from '../../config/companyConfig.js';
+import { creditWallet } from '../wallets/wallets.service.js';
 import { buildWoohooPayload } from '../../helpers/woohoo.helper.js';
 import logger from '../../utils/logger.js';
 import { placeGiftCardOrder } from '../giftCards/giftCards.service.js';
@@ -12,14 +11,9 @@ import {
     PAYMENT_METHOD,
     GIFT_CARD_ORDER_PAYMENT_TYPE
 } from '../../config/constant/constant.js';
-import { validateAndCalculateOffer, validateOfferForOrder } from '../offers/offers.service.js';
-import { generateWalletTxnNo } from '../wallets/wallets.service.js';
+import { validateOfferForOrder } from '../offers/offers.service.js';
 import { encrypt, decrypt } from '../../utils/crypto.js';
-import { sendOrderCompletionEmail } from '../../helpers/email.helper.js';
-import { ensureActivationSchema, processConditionalOrderActivation } from '../activation/activation.service.js';
-
-// Auto-initialize schema
-ensureActivationSchema().catch(err => logger.error('[Order Service] Schema initialization error:', err.message));
+import { processConditionalOrderActivation } from '../activation/activation.service.js';
 
 /**
  * Fetch Company details from app_config table, fallback to file config

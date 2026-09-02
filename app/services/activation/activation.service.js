@@ -1,14 +1,13 @@
-import pool, { runInTransaction } from '../../config/dbConfig.js';
+import pool from '../../config/dbConfig.js';
 import logger from '../../utils/logger.js';
 import { GIFT_CARD_ORDER_STATUS, ACTIVATION_STATUS, API_PROVIDER, WALLET_TRANSACTION_SOURCE } from '../../config/constant/constant.js';
-import { getWoohooToken, getWoohoo2Token } from '../orders/orders.service.js';
+import { getWoohooToken } from '../categories/woohooAuth.service.js';
+import { getWoohoo2Token } from '../categories/woohoo2Auth.service.js';
 import { getActivatedCards as getWoohoo1ActivatedCards } from '../woohoo/woohoo.service.js';
 import { getActivatedCards as getWoohoo2ActivatedCards } from '../woohoo/woohoo2.service.js';
 import { creditWallet } from '../wallets/wallets.service.js';
 import { encrypt } from '../../utils/crypto.js';
-import { sendOrderCompletionEmailByOrderId } from '../../helpers/email.helper.js';
-
-let schemaInitialized = false;
+import { sendOrderCompletionEmailByOrderId } from '../orders/orders.service.js';
 
 /**
  * Extract cards array from Woohoo API response payload.
@@ -36,43 +35,11 @@ export const extractCardsFromWoohooResponse = (res) => {
 };
 
 /**
- * Ensure database table contains required activation fields
- */
-export const ensureActivationSchema = async () => {
-    if (schemaInitialized) return;
-    try {
-        const columnsToAdd = [
-            `ALTER TABLE gift_card_orders ADD COLUMN activation_status VARCHAR(20) DEFAULT 'PENDING'`,
-            `ALTER TABLE gift_card_orders ADD COLUMN activation_reference VARCHAR(255) DEFAULT NULL`,
-            `ALTER TABLE gift_card_orders ADD COLUMN activated_at DATETIME DEFAULT NULL`,
-            `ALTER TABLE gift_card_orders ADD COLUMN activation_error TEXT DEFAULT NULL`,
-            `ALTER TABLE gift_card_orders ADD COLUMN activation_attempts INT DEFAULT 0`
-        ];
-
-        for (const sql of columnsToAdd) {
-            try {
-                await pool.query(sql);
-            } catch (err) {
-                if (!err.message?.includes('Duplicate column') && !err.message?.includes('exists')) {
-                    // non-fatal schema check
-                }
-            }
-        }
-        schemaInitialized = true;
-        logger.info('[Activation Service] Schema columns verified successfully');
-    } catch (err) {
-        logger.error('[Activation Service] Schema verification error:', err.message);
-    }
-};
-
-/**
  * Process Activation API Flow strictly when all valid conditions are satisfied.
  * Protects against duplicate API calls using database row locks.
  * Frontend MUST NEVER call this or handle activation credentials directly.
  */
 export const processConditionalOrderActivation = async (orderId) => {
-    await ensureActivationSchema();
-
     const connection = await pool.getConnection();
     let lockedOrder = null;
     let itemsCount = 0;
@@ -82,9 +49,10 @@ export const processConditionalOrderActivation = async (orderId) => {
 
         // Lock order row for duplicate protection (SELECT FOR UPDATE)
         const [rows] = await connection.query(
-            `SELECT gco.*, u.id AS customer_id 
+            `SELECT gco.*, u.id AS customer_id, gc.api_provider AS gc_api_provider 
              FROM gift_card_orders gco 
              JOIN user_master u ON gco.user_id = u.id 
+             LEFT JOIN gift_cards gc ON gco.gift_card_id = gc.id
              WHERE gco.id = ? 
              FOR UPDATE`,
             [orderId]
@@ -193,7 +161,7 @@ export const processConditionalOrderActivation = async (orderId) => {
     
     try {
         let bearerToken;
-        const provider = lockedOrder.gift_card_id ? API_PROVIDER.WOOHOO : API_PROVIDER.WOOHOO;
+        const provider = lockedOrder.gc_api_provider === API_PROVIDER.WOOHOO2 ? API_PROVIDER.WOOHOO2 : API_PROVIDER.WOOHOO;
 
         if (provider === API_PROVIDER.WOOHOO2) {
             bearerToken = await getWoohoo2Token();
