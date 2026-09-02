@@ -143,27 +143,37 @@ export const listUsersService = async (page, limit) => {
         ]);
         const total = totalCount[0]?.total || 0;
 
-        const selectFields = ['id', 'name', 'email', 'phone', 'dob', 'profile_image', 'is_active'];
+        const selectFields = [
+            'um.id', 
+            'um.name', 
+            'um.email', 
+            'um.phone', 
+            'um.dob', 
+            'um.profile_image', 
+            'um.is_active',
+            'COALESCE(uw.balance, 0) AS wallet_balance'
+        ];
 
         if (availableCols.includes('createdAt')) {
-            selectFields.push('createdAt');
+            selectFields.push('um.createdAt');
         } else if (availableCols.includes('created_at')) {
-            selectFields.push('created_at AS createdAt');
+            selectFields.push('um.created_at AS createdAt');
         }
 
         if (availableCols.includes('modifiedAt')) {
-            selectFields.push('modifiedAt');
+            selectFields.push('um.modifiedAt');
         } else if (availableCols.includes('modified_at')) {
-            selectFields.push('modified_at AS modifiedAt');
+            selectFields.push('um.modified_at AS modifiedAt');
         } else if (availableCols.includes('updated_at')) {
-            selectFields.push('updated_at AS modifiedAt');
+            selectFields.push('um.updated_at AS modifiedAt');
         }
 
         const query = `
             SELECT ${selectFields.join(', ')} 
-            FROM user_master 
-            WHERE role = 3 
-            ORDER BY id DESC 
+            FROM user_master um
+            LEFT JOIN user_wallet uw ON um.id = uw.user_id
+            WHERE um.role = 3 
+            ORDER BY um.id DESC 
             LIMIT ? OFFSET ?
         `;
 
