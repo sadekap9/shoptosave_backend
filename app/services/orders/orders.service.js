@@ -182,15 +182,15 @@ export const placeOrderService = async (userId, orderData) => {
         const [orderResult] = await connection.query(
             `INSERT INTO gift_card_orders 
              (user_id, gift_card_id, amount, is_self_purchase, recipient_name, recipient_email, recipient_mobile, gift_message, 
-              wallet_transaction_id, woohoo_reference_no, status, wallet_amount, online_amount, payment_type)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0.00, ?)`,
+              woohoo_reference_no, status, wallet_amount, online_amount, payment_type)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0.00, ?)`,
             [
                 userId, giftCard.id, totalAmount, isSelfPurchase,
                 isSelfPurchase === 1 ? null : recipient_name,
                 isSelfPurchase === 1 ? null : recipient_email,
                 isSelfPurchase === 1 ? null : recipient_mobile,
                 isSelfPurchase === 1 ? null : (gift_message || null),
-                txnId, refno,
+                refno,
                 totalAmount,
                 GIFT_CARD_ORDER_PAYMENT_TYPE.WALLET_ONLY
             ]
@@ -1260,8 +1260,8 @@ export const persistExternalOrder = async (userId, body, woohooResponse) => {
         const [orderResult] = await connection.query(
             `INSERT INTO gift_card_orders 
               (user_id, gift_card_id, amount, is_self_purchase, recipient_name, recipient_email, recipient_mobile, gift_message, 
-               wallet_transaction_id, woohoo_reference_no, woohoo_order_id, status, wallet_amount, online_amount, payment_type, quantity, cashback_amount, payable_amount)
-             VALUES (?, ?, ?, 1, null, null, null, null, null, ?, ?, 2, ?, ?, 1, ?, 0.00, ?)`,
+               woohoo_reference_no, woohoo_order_id, status, wallet_amount, online_amount, payment_type, quantity, cashback_amount, payable_amount)
+             VALUES (?, ?, ?, 1, null, null, null, null, ?, ?, 2, ?, ?, 1, ?, 0.00, ?)`,
             [
                 userId,
                 giftCardId,
