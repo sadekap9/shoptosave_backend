@@ -1,6 +1,8 @@
 import cron from 'node-cron';
 import { syncCategoriesWithWoohoo, syncProductsWithWoohoo } from '../services/categories/categories.service.js';
 import { refreshWoohooToken } from '../services/categories/woohooAuth.service.js';
+import { resolvePendingOrdersService } from '../services/orders/orders.service.js';
+import { processPendingActivationRetries } from '../services/activation/activation.service.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -41,6 +43,24 @@ export const initCronJobs = () => {
             logger.info('Scheduled Woohoo Token Refresh Completed Successfully');
         } catch (error) {
             logger.error('Scheduled Woohoo Token Refresh Failed', { error: error.message });
+        }
+    });
+
+    // 4. Resolve pending/processing orders every 2 minutes
+    cron.schedule('*/2 * * * *', async () => {
+        try {
+            await resolvePendingOrdersService();
+        } catch (error) {
+            logger.error('Scheduled Pending Orders Resolution Failed', { error: error.message });
+        }
+    });
+
+    // 5. Retry pending/processing card activations every 2 minutes
+    cron.schedule('*/2 * * * *', async () => {
+        try {
+            await processPendingActivationRetries();
+        } catch (error) {
+            logger.error('Scheduled Pending Activation Retry Failed', { error: error.message });
         }
     });
 

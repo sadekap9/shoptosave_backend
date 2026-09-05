@@ -622,8 +622,8 @@ export const getActiveOffersService = async () => {
 /**
  * Validates a single offer for checkout or validation API.
  */
-export const validateOfferForOrder = async (userId, giftCardId, storeId, orderAmount, offerId = null, connection = null) => {
-    const db = connection || pool;
+export const validateOfferForOrder = async (userId, giftCardId, storeId, orderAmount, offerId = null, promoCode = null, connection = null) => {
+    const db = (connection && typeof connection.query === 'function') ? connection : pool;
     const amountVal = parseFloat(orderAmount);
 
     let offer = null;
@@ -635,10 +635,22 @@ export const validateOfferForOrder = async (userId, giftCardId, storeId, orderAm
             [offerId]
         );
         offer = foundOffer;
+    } else if (promoCode) {
+        const [[foundOffer]] = await db.query(
+            `SELECT id, title, offer_type, value, store_id, gift_card_id, start_date, end_date, status 
+             FROM offers 
+             WHERE title = ? AND status = ${OFFER_STATUS.ACTIVE}`,
+            [promoCode]
+        );
+        offer = foundOffer;
     }
 
     if (!offer) {
-        throw { message: 'Offer not found or inactive', code: 'OFFER_NOT_FOUND', statusCode: 400 };
+        throw { 
+            message: promoCode ? 'Promo code not found or inactive' : 'Offer not found or inactive', 
+            code: promoCode ? 'PROMO_CODE_NOT_FOUND' : 'OFFER_NOT_FOUND', 
+            statusCode: 400 
+        };
     }
 
     const now = new Date();

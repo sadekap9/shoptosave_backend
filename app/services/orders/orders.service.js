@@ -1,6 +1,8 @@
 import pool, { runInTransaction } from '../../config/dbConfig.js';
 import { getWoohooToken } from '../categories/woohooAuth.service.js';
+import { getWoohoo2Token } from '../categories/woohoo2Auth.service.js';
 import { placeWoohooOrder, getWoohooOrderByRefNo } from '../woohoo/woohoo.service.js';
+import { placeWoohooOrder as placeWoohoo2Order, getWoohooOrderByRefNo as getWoohoo2OrderByRefNo } from '../woohoo/woohoo2.service.js';
 import { creditWallet } from '../wallets/wallets.service.js';
 import { buildWoohooPayload } from '../../helpers/woohoo.helper.js';
 import logger from '../../utils/logger.js';
@@ -9,7 +11,8 @@ import { deductPayment } from '../payments/payment.service.js';
 import {
     WALLET_TRANSACTION_SOURCE,
     PAYMENT_METHOD,
-    GIFT_CARD_ORDER_PAYMENT_TYPE
+    GIFT_CARD_ORDER_PAYMENT_TYPE,
+    API_PROVIDER
 } from '../../config/constant/constant.js';
 import { validateOfferForOrder } from '../offers/offers.service.js';
 import { encrypt, decrypt } from '../../utils/crypto.js';
@@ -266,8 +269,8 @@ export const placeOrderService = async (userId, orderData) => {
                     c.cardId || c.card_id || c.id || null,
                     c.sku || null,
                     c.productName || c.product_name || c.name || null,
-                    encrypt(c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || ""),
-                    encrypt(c.cardPin || c.card_pin || c.pin || c.activationCode || c.activation_code || ""),
+                    encrypt(c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || c.voucherCode || c.voucher_code || c.claimCode || c.claim_code || ""),
+                    encrypt(c.cardPin || c.card_pin || c.pin || c.activationCode || c.activation_code || c.claimCode || c.claim_code || ""),
                     c.barcode || null,
                     c.amount || null,
                     c.validity || c.expiryDate || c.expiry_date || c.expiry || null,
@@ -506,19 +509,11 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
 
     logger.info(`[Order Flow] Initiating order. User: ${userId}, Total: ₹${totalAmount}, PaymentType: ${payment_type}`);
 
-    // Map payment_type string to constant
-    let paymentTypeInt;
-    if (typeof payment_type === 'string') {
-        const ptLower = payment_type.toLowerCase();
-        if (ptLower === 'wallet') paymentTypeInt = GIFT_CARD_ORDER_PAYMENT_TYPE.WALLET_ONLY;
-        else if (ptLower === 'online') paymentTypeInt = GIFT_CARD_ORDER_PAYMENT_TYPE.ONLINE_ONLY;
-        else if (ptLower === 'split') paymentTypeInt = GIFT_CARD_ORDER_PAYMENT_TYPE.SPLIT_PAYMENT;
-    } else {
-        paymentTypeInt = parseInt(payment_type);
-    }
+    // Parse payment_type as numeric value (supports number or numeric string like "1", "2", "3")
+    const paymentTypeInt = parseInt(payment_type, 10);
 
     if (![1, 2, 3].includes(paymentTypeInt)) {
-        throw { message: 'Invalid payment type. Use Wallet, Online, or Split.', code: 'INVALID_PAYMENT_TYPE', statusCode: 400 };
+        throw { message: 'Invalid payment type. Supported values are 1 (Wallet), 2 (Online), or 3 (Split).', code: 'INVALID_PAYMENT_TYPE', statusCode: 400 };
     }
 
     // Map payment_method string to constant (for online portion)
@@ -1067,9 +1062,10 @@ export const resolvePendingOrdersService = async () => {
     // 1. Fetch all orders that have been stuck in PENDING (status = 0) or PROCESSING (status = 1) for more than 2 minutes
     const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
     const [pendingOrders] = await pool.query(
-        `SELECT id, user_id, woohoo_reference_no, cashback_amount, wallet_amount, status
-         FROM gift_card_orders 
-         WHERE (status = 0 OR status = 1) AND created_at <= ?`,
+        `SELECT gco.id, gco.user_id, gco.woohoo_reference_no, gco.cashback_amount, gco.wallet_amount, gco.status, gc.api_provider
+         FROM gift_card_orders gco
+         LEFT JOIN gift_cards gc ON gco.gift_card_id = gc.id
+         WHERE (gco.status = 0 OR gco.status = 1) AND gco.created_at <= ?`,
         [twoMinutesAgo]
     );
 
@@ -1078,12 +1074,19 @@ export const resolvePendingOrdersService = async () => {
     }
 
     logger.info(`[Cron Resolver] Found ${pendingOrders.length} pending/processing orders to resolve.`);
-    const token = await getWoohooToken();
 
     for (const order of pendingOrders) {
         try {
             logger.info(`[Cron Resolver] Checking status of Order #${order.id} (Ref: ${order.woohoo_reference_no})`);
-            const woohooRes = await getWoohooOrderByRefNo(token, order.woohoo_reference_no);
+            const provider = order.api_provider === API_PROVIDER.WOOHOO2 ? API_PROVIDER.WOOHOO2 : API_PROVIDER.WOOHOO;
+            let woohooRes;
+            if (provider === API_PROVIDER.WOOHOO2) {
+                const token2 = await getWoohoo2Token();
+                woohooRes = await getWoohoo2OrderByRefNo(token2, order.woohoo_reference_no);
+            } else {
+                const token = await getWoohooToken();
+                woohooRes = await getWoohooOrderByRefNo(token, order.woohoo_reference_no);
+            }
 
             // If the order has status 'COMPLETE' or 'SUCCESS' or 'COMPLETED'
             const statusStr = (woohooRes.status || '').toLowerCase();
@@ -1112,8 +1115,8 @@ export const resolvePendingOrdersService = async () => {
                             c.cardId || c.card_id || c.id || null,
                             c.sku || null,
                             c.productName || c.product_name || c.name || null,
-                            encrypt(c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || ""),
-                            encrypt(c.cardPin || c.card_pin || c.pin || c.activationCode || c.activation_code || ""),
+                            encrypt(c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || c.voucherCode || c.voucher_code || c.claimCode || c.claim_code || ""),
+                            encrypt(c.cardPin || c.card_pin || c.pin || c.activationCode || c.activation_code || c.claimCode || c.claim_code || ""),
                             c.barcode || null,
                             c.amount || null,
                             c.validity || c.expiryDate || c.expiry_date || c.expiry || null,

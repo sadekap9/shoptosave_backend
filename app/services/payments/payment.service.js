@@ -66,15 +66,16 @@ export const createPaymentTransaction = async (userId, orderId, amount, paymentM
  */
 export const deductPayment = async (userId, amount, paymentType, orderId, paymentMethod, connection) => {
     const totalAmount = parseFloat(amount);
+    const parsedPaymentType = parseInt(paymentType, 10);
     let walletDeducted = 0.00;
     let onlineDeducted = 0.00;
     let walletTransactionId = null;
     let walletTxnNo = null;
     let paymentTxnNo = null;
 
-    logger.info(`[Payment Service] Processing payment. Type: ${paymentType}, Amount: ₹${totalAmount}, Order ID: ${orderId}`);
+    logger.info(`[Payment Service] Processing payment. Type: ${parsedPaymentType}, Amount: ₹${totalAmount}, Order ID: ${orderId}`);
 
-    if (paymentType === GIFT_CARD_ORDER_PAYMENT_TYPE.WALLET_ONLY) {
+    if (parsedPaymentType === GIFT_CARD_ORDER_PAYMENT_TYPE.WALLET_ONLY) {
         // Full wallet deduction
         const debitRes = await debitWallet(
             userId,
@@ -89,7 +90,7 @@ export const deductPayment = async (userId, amount, paymentType, orderId, paymen
         walletTxnNo = debitRes.transactionNo;
         logger.info(`[Payment Service] Wallet debited ₹${walletDeducted}. TxnNo: ${walletTxnNo}`);
 
-    } else if (paymentType === GIFT_CARD_ORDER_PAYMENT_TYPE.ONLINE_ONLY) {
+    } else if (parsedPaymentType === GIFT_CARD_ORDER_PAYMENT_TYPE.ONLINE_ONLY) {
         // Full online payment
         const payRes = await createPaymentTransaction(
             userId,
@@ -103,7 +104,7 @@ export const deductPayment = async (userId, amount, paymentType, orderId, paymen
         paymentTxnNo = payRes.paymentTxnNo;
         logger.info(`[Payment Service] Online payment ₹${onlineDeducted}. PayTxn: ${paymentTxnNo}`);
 
-    } else if (paymentType === GIFT_CARD_ORDER_PAYMENT_TYPE.SPLIT_PAYMENT) {
+    } else if (parsedPaymentType === GIFT_CARD_ORDER_PAYMENT_TYPE.SPLIT_PAYMENT) {
         // Split: use whatever wallet balance is available, rest online
         const wallet = await getOrCreateWallet(userId, connection);
         const walletBalance = parseFloat(wallet.balance);

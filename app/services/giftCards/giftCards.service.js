@@ -301,58 +301,18 @@ export const createGiftCardService = async (data) => {
     // Fetch live product details from Woohoo
     let liveProd = null;
     let apiProvider = API_PROVIDER.WOOHOO;
-    const testSku = sku.trim().toUpperCase();
-    if (testSku === 'CNPIN' || testSku === 'ABC3445588') {
-        liveProd = {
-            name: testSku === 'CNPIN' ? 'Nike Gift Card Mock' : 'Woohoo Product Mock',
-            id: testSku === 'CNPIN' ? '12345' : '67890',
-            sku: testSku,
-            brandName: testSku === 'CNPIN' ? 'Nike' : 'Brand Mock',
-            brandCode: testSku === 'CNPIN' ? 'NIKE001' : 'BRAND001',
-            description: 'Enjoy shopping with this gift card.',
-            shortDescription: 'Gift Card Mock',
-            importantInstructions: 'Valid for 1 year from the date of issue.',
-            tnc: {
-                content: '1. Redeemable at outlets. 2. Not reloadable.',
-                link: 'https://example.com/terms'
-            },
-            price: {
-                min: 500.00,
-                max: 10000.00,
-                currency: {
-                    code: 'INR',
-                    symbol: '₹'
-                }
-            },
-            expiry: '12 Months',
-            brandLogo: 'https://example.com/logo.png',
-            categories: [1, 2, 54],
-            type: 'e-gift-card',
-            payout: {
-                enabled: true
-            },
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            images: {
-                thumbnail: 'https://example.com/thumb.png',
-                mobile: 'https://example.com/mobile.png',
-                base: 'https://example.com/base.png',
-                small: 'https://example.com/small.png'
-            }
-        };
-    } else {
-        let storedProvider = null;
-        try {
-            const [[localProd]] = await pool.query(
-                'SELECT api_provider FROM woohoo_products WHERE sku = ? LIMIT 1',
-                [sku.trim()]
-            );
-            if (localProd && localProd.api_provider) {
-                storedProvider = localProd.api_provider;
-            }
-        } catch (dbErr) {
-            console.warn('Failed to query local woohoo_products for api_provider lookup:', dbErr.message);
+    let storedProvider = null;
+    try {
+        const [[localProd]] = await pool.query(
+            'SELECT api_provider FROM woohoo_products WHERE sku = ? LIMIT 1',
+            [sku.trim()]
+        );
+        if (localProd && localProd.api_provider) {
+            storedProvider = localProd.api_provider;
         }
+    } catch (dbErr) {
+        console.warn('Failed to query local woohoo_products for api_provider lookup:', dbErr.message);
+    }
 
         if (storedProvider === API_PROVIDER.WOOHOO2) {
             try {
@@ -394,7 +354,6 @@ export const createGiftCardService = async (data) => {
                 }
             }
         }
-    }
 
     if (!liveProd || !liveProd.sku) {
         return {
@@ -921,36 +880,83 @@ export const placeGiftCardOrder = async ({ sku, price, qty, amount, refno }) => 
         
         // Fetch api_provider from database for the given SKU
         const [[giftCard]] = await pool.query(
-            'SELECT api_provider FROM gift_cards WHERE sku = ? LIMIT 1',
+            'SELECT id, api_provider FROM gift_cards WHERE sku = ? LIMIT 1',
             [sku]
         );
         
-        const provider = giftCard ? giftCard.api_provider : API_PROVIDER.WOOHOO;
-        logger.info(`[GiftCard Service] Resolved api_provider "${provider}" for SKU: ${sku}`);
+        const primaryProvider = giftCard ? giftCard.api_provider : API_PROVIDER.WOOHOO;
+        logger.info(`[GiftCard Service] Primary api_provider "${primaryProvider}" for SKU: ${sku}`);
 
-        let bearerToken;
-        let responseData;
         const payload = buildWoohooPayload({ sku, price, qty, amount, refno });
         logger.info(`[Woohoo API Request Body]: ${JSON.stringify(payload, null, 2)}`);
         
-        if (provider === API_PROVIDER.WOOHOO2) {
-            bearerToken = await getWoohoo2Token();
-            responseData = await placeWoohoo2Order(bearerToken, payload);
-        } else {
-            bearerToken = await getWoohooToken();
-            responseData = await placeWoohooOrder(bearerToken, payload);
+        let responseData = null;
+        let successfulProvider = primaryProvider;
+
+        const executeOrderOnProvider = async (prov) => {
+            let token;
+            if (prov === API_PROVIDER.WOOHOO2) {
+                token = await getWoohoo2Token();
+                return await placeWoohoo2Order(token, payload);
+            } else {
+                token = await getWoohooToken();
+                return await placeWoohooOrder(token, payload);
+            }
+        };
+
+        const secondaryProvider = primaryProvider === API_PROVIDER.WOOHOO2 ? API_PROVIDER.WOOHOO : API_PROVIDER.WOOHOO2;
+
+        try {
+            responseData = await executeOrderOnProvider(primaryProvider);
+            const respCode = String(responseData?.code || responseData?.status || '');
+            if (responseData && (respCode === '5310' || responseData.status === 'FAILED' || responseData.status === 'CANCELLED')) {
+                logger.warn(`[GiftCard Service] Primary provider ${primaryProvider} returned status/code "${respCode}". Trying secondary provider ${secondaryProvider}...`);
+                try {
+                    const fallbackResp = await executeOrderOnProvider(secondaryProvider);
+                    if (fallbackResp && (fallbackResp.status === 'COMPLETE' || fallbackResp.status === 'PROCESSING' || fallbackResp.status === 'SUCCESS' || !fallbackResp.code)) {
+                        responseData = fallbackResp;
+                        successfulProvider = secondaryProvider;
+                    }
+                } catch (secErr) {
+                    logger.warn(`[GiftCard Service] Secondary provider ${secondaryProvider} fallback execution failed: ${secErr.message}`);
+                }
+            }
+        } catch (primErr) {
+            logger.warn(`[GiftCard Service] Primary provider ${primaryProvider} failed (${primErr.message}). Trying secondary provider ${secondaryProvider}...`);
+            try {
+                responseData = await executeOrderOnProvider(secondaryProvider);
+                successfulProvider = secondaryProvider;
+            } catch (secErr) {
+                throw primErr;
+            }
         }
-        
+
         logger.info(`[Woohoo API Response Body]: ${JSON.stringify(responseData, null, 2)}`);
         
-        logger.info(`[GiftCard Service] Woohoo response status: ${responseData.status}`);
+        // Update database if successful on secondary provider
+        if (giftCard && giftCard.id && successfulProvider !== giftCard.api_provider) {
+            try {
+                await pool.query('UPDATE gift_cards SET api_provider = ? WHERE id = ?', [successfulProvider, giftCard.id]);
+            } catch (dbErr) {
+                logger.warn(`[GiftCard Service] Failed to update api_provider in DB: ${dbErr.message}`);
+            }
+        }
+
+        const isSuccess = responseData && (
+            responseData.status === 'COMPLETE' || 
+            responseData.status === 'PROCESSING' || 
+            responseData.status === 'SUCCESS' || 
+            responseData.orderId
+        );
+
         return {
-            success: true,
-            data: responseData
+            success: isSuccess ? true : false,
+            data: responseData,
+            error: isSuccess ? null : (responseData?.message || `Woohoo order status: ${responseData?.status || 'FAILED'}`)
         };
     } catch (error) {
         const errorMsg = error.response?.data?.message || error.message;
-        logger.error('[GiftCard Service] Woohoo API call failed', { error: errorMsg });
+        logger.error('[GiftCard Service] Woohoo API call failed', { error: errorMsg, responseData: error.response?.data });
         return {
             success: false,
             error: errorMsg

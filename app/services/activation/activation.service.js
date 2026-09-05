@@ -294,3 +294,61 @@ export const processConditionalOrderActivation = async (orderId) => {
         };
     }
 };
+
+/**
+ * Background retry service for pending/processing order activations.
+ * Queries orders stuck in PENDING, PROCESSING, or FAILED activation state (with attempts < maxAttempts)
+ * and invokes processConditionalOrderActivation for each eligible order.
+ */
+export const processPendingActivationRetries = async (maxAttempts = 5) => {
+    try {
+        // 1. Reset any orders stuck in PROCESSING activation state for more than 2 minutes (e.g. from server crashes)
+        const twoMinsAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
+        await pool.query(
+            `UPDATE gift_card_orders 
+             SET activation_status = ? 
+             WHERE activation_status = ? 
+               AND updated_at <= ?`,
+            [ACTIVATION_STATUS.PENDING, ACTIVATION_STATUS.PROCESSING, twoMinsAgo]
+        );
+
+        // 2. Fetch orders eligible for activation retry:
+        // Order status is PROCESSING (1) or COMPLETE (2)
+        // Activation status is PENDING or FAILED
+        // Activation attempts < maxAttempts
+        const [pendingActivations] = await pool.query(
+            `SELECT id, woohoo_order_id, woohoo_reference_no, activation_attempts
+             FROM gift_card_orders
+             WHERE (status = ${GIFT_CARD_ORDER_STATUS.PROCESSING} OR status = ${GIFT_CARD_ORDER_STATUS.COMPLETE})
+               AND (activation_status = ? OR activation_status = ?)
+               AND activation_attempts < ?
+             ORDER BY id ASC
+             LIMIT 20`,
+            [ACTIVATION_STATUS.PENDING, ACTIVATION_STATUS.FAILED, maxAttempts]
+        );
+
+        if (pendingActivations.length === 0) {
+            return { processedCount: 0, successCount: 0 };
+        }
+
+        logger.info(`[Activation Retry Service] Found ${pendingActivations.length} orders needing activation retry.`);
+
+        let successCount = 0;
+        for (const order of pendingActivations) {
+            try {
+                logger.info(`[Activation Retry Service] Retrying activation for Order #${order.id} (Attempt ${order.activation_attempts + 1}/${maxAttempts})`);
+                const res = await processConditionalOrderActivation(order.id);
+                if (res && res.success) {
+                    successCount++;
+                }
+            } catch (retryErr) {
+                logger.error(`[Activation Retry Service] Error retrying Order #${order.id}: ${retryErr.message}`);
+            }
+        }
+
+        return { processedCount: pendingActivations.length, successCount };
+    } catch (error) {
+        logger.error('[Activation Retry Service] Error during activation retries:', error.message);
+        throw error;
+    }
+};
