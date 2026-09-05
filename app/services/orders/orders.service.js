@@ -3,7 +3,7 @@ import { getWoohooToken } from '../categories/woohooAuth.service.js';
 import { getWoohoo2Token } from '../categories/woohoo2Auth.service.js';
 import { placeWoohooOrder, getWoohooOrderByRefNo } from '../woohoo/woohoo.service.js';
 import { placeWoohooOrder as placeWoohoo2Order, getWoohooOrderByRefNo as getWoohoo2OrderByRefNo } from '../woohoo/woohoo2.service.js';
-import { creditWallet } from '../wallets/wallets.service.js';
+import { creditWallet, getOrCreateWallet } from '../wallets/wallets.service.js';
 import { buildWoohooPayload } from '../../helpers/woohoo.helper.js';
 import logger from '../../utils/logger.js';
 import { placeGiftCardOrder } from '../giftCards/giftCards.service.js';
