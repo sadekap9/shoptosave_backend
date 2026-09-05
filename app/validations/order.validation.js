@@ -39,9 +39,7 @@ export const giftCardOrderSchema = Joi.object({
         'any.required': 'qty is required',
         'number.min': 'qty must be at least 1'
     }),
-    payment_type: Joi.alternatives().try(Joi.number().integer(), Joi.string()).required().messages({
-        'any.required': 'payment_type is required'
-    }),
+    payment_type: Joi.alternatives().try(Joi.number().integer(), Joi.string()).optional().allow('', null),
     payment_method: Joi.alternatives().try(Joi.number().integer(), Joi.string()).optional(),
     is_self_purchase: Joi.alternatives().try(Joi.number().integer(), Joi.string()).optional(),
     recipient_name: Joi.string().max(100).optional().allow('', null),

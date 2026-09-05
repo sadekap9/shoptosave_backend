@@ -507,10 +507,15 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
 
     const totalAmount = parseFloat(price) * parseInt(qty);
 
-    logger.info(`[Order Flow] Initiating order. User: ${userId}, Total: ₹${totalAmount}, PaymentType: ${payment_type}`);
-
-    // Parse payment_type as numeric value (supports number or numeric string like "1", "2", "3")
-    const paymentTypeInt = parseInt(payment_type, 10);
+    // Parse payment_type flexibly (supports 1, 2, 3, "1", "2", "3", "wallet", "online", "split", etc.)
+    let paymentTypeInt = parseInt(payment_type, 10);
+    if (isNaN(paymentTypeInt)) {
+        const str = String(payment_type || '').toLowerCase().trim();
+        if (str === 'wallet' || str === 'wal' || str === 'w') paymentTypeInt = 1;
+        else if (str === 'online' || str === 'pg' || str === 'card' || str === 'upi' || str === 'o') paymentTypeInt = 2;
+        else if (str === 'split' || str === 'hybrid' || str === 'combo' || str === 's') paymentTypeInt = 3;
+        else if (!str) paymentTypeInt = 1; // Default fallback to 1 (Wallet)
+    }
 
     if (![1, 2, 3].includes(paymentTypeInt)) {
         throw { message: 'Invalid payment type. Supported values are 1 (Wallet), 2 (Online), or 3 (Split).', code: 'INVALID_PAYMENT_TYPE', statusCode: 400 };
