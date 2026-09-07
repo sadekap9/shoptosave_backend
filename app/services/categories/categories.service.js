@@ -121,28 +121,15 @@ export const saveCategoriesToDB = async (categories) => {
 
 
 /**
- * Fetches categories from Woohoo API and syncs them to local DB
+ * Category Sync disabled per architecture requirement (Product sync is strictly SKU-based).
  */
 export const syncCategoriesWithWoohoo = async () => {
-    try {
-        const token = await getWoohooToken();
-        const url = `${process.env.WOOHOO_API_BASE_URL}/v3/catalog/categories`;
-        
-        const headers = getWoohooHeaders('GET', url, null, token);
-        const response = await axios.get(url, { headers });
-
-        const woohooData = response.data;
-        
-        // Handle both single root object and array of roots
-        const categoriesToSync = Array.isArray(woohooData) ? woohooData : [woohooData];
-
-        await saveCategoriesToDB(categoriesToSync);
-        
-        return { success: true, count: categoriesToSync.length };
-    } catch (error) {
-        logger.error('Category Sync Failed', { error: error.message });
-        throw error;
-    }
+    logger.info('[Category Sync] Category sync is disabled. Application uses SKU-based product synchronization.');
+    return {
+        success: true,
+        message: 'Category sync is disabled. Use SKU-based product synchronization.',
+        categoriesProcessed: 0
+    };
 };
 
 export {

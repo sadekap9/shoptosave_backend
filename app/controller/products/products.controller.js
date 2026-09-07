@@ -49,6 +49,25 @@ export const syncProducts = async (req, res) => {
 };
 
 /**
+ * Synchronize product by SKU from Woohoo API into local DB (woohoo_products)
+ */
+export const syncProductBySku = async (req, res) => {
+    const sku = req.params.sku || req.body?.sku || req.query?.sku;
+    try {
+        const result = await productsService.syncProductBySkuService(sku);
+        return res.status(200).json(result);
+    } catch (error) {
+        logger.error('Error in syncProductBySku', { error: error.message || error });
+        const statusCode = error.statusCode || 500;
+        return res.status(statusCode).json({
+            success: false,
+            sku: sku || null,
+            message: error.message || 'Product SKU synchronization failed'
+        });
+    }
+};
+
+/**
  * Store products in the database (Single or Bulk)
  */
 export const storeProduct = async (req, res) => {

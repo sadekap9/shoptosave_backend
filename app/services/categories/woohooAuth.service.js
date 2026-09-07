@@ -98,10 +98,10 @@ export const getWoohooToken = async () => {
         // 1. Read from app_config table
         const cachedRows = await executeQuery(
             `SELECT config_key, config_value FROM app_config 
-             WHERE config_key IN ('woohoo_access_token', 'woohoo_token_expires_at')`
+             WHERE config_key IN ('woohoo_access_token', 'woohoo_bearer_token', 'woohoo_token_expires_at')`
         );
 
-        const tokenRow = cachedRows.find(r => r.config_key === 'woohoo_access_token');
+        const tokenRow = cachedRows.find(r => r.config_key === 'woohoo_access_token' || r.config_key === 'woohoo_bearer_token');
         const expiresRow = cachedRows.find(r => r.config_key === 'woohoo_token_expires_at');
 
         let token = tokenRow ? tokenRow.config_value : null;

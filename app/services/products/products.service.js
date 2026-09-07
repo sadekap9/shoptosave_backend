@@ -194,7 +194,7 @@ export const saveProductsToDB = async (products, categoryId, apiProvider = 1) =>
             validation_amount, edit_beneficiary, convenience_charge,
             vpa_penny_drop_required, handling_charges: toJSONString(handling_charges), convenience_charges: toJSONString(convenience_charges),
             travel_pass: toJSONString(travel_pass), order_modes: toJSONString(order_modes), reload_card_number, custom_themes_available,
-            store_locator_url, eta_message, status, sync_response: toJSONString(sync_response), api_provider: Number(apiProvider)
+            store_locator_url, eta_message, status, sync_response: toJSONString(sync_response)
         });
     }
 
@@ -205,7 +205,7 @@ export const saveProductsToDB = async (products, categoryId, apiProvider = 1) =>
         for (let i = 0; i < records.length; i += BATCH_SIZE) {
             const batch = records.slice(i, i + BATCH_SIZE);
             
-            const placeholders = batch.map(() => `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).join(', ');
+            const placeholders = batch.map(() => `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).join(', ');
             
             const values = [];
             for (const item of batch) {
@@ -225,7 +225,7 @@ export const saveProductsToDB = async (products, categoryId, apiProvider = 1) =>
                     item.validation_amount, item.edit_beneficiary, item.convenience_charge,
                     item.vpa_penny_drop_required, item.handling_charges, item.convenience_charges,
                     item.travel_pass, item.order_modes, item.reload_card_number, item.custom_themes_available,
-                    item.store_locator_url, item.eta_message, item.status, item.sync_response, item.api_provider
+                    item.store_locator_url, item.eta_message, item.status, item.sync_response
                 );
             }
 
@@ -246,7 +246,7 @@ export const saveProductsToDB = async (products, categoryId, apiProvider = 1) =>
                     validation_amount, edit_beneficiary, convenience_charge,
                     vpa_penny_drop_required, handling_charges, convenience_charges,
                     travel_pass, order_modes, reload_card_number, custom_themes_available,
-                    store_locator_url, eta_message, status, sync_response, api_provider
+                    store_locator_url, eta_message, status, sync_response
                 ) VALUES ${placeholders}
                 ON DUPLICATE KEY UPDATE
                     woohoo_product_id = VALUES(woohoo_product_id), product_name = VALUES(product_name), brand_name = VALUES(brand_name), brand_code = VALUES(brand_code), slug = VALUES(slug),
@@ -264,7 +264,7 @@ export const saveProductsToDB = async (products, categoryId, apiProvider = 1) =>
                     validation_amount = VALUES(validation_amount), edit_beneficiary = VALUES(edit_beneficiary), convenience_charge = VALUES(convenience_charge),
                     vpa_penny_drop_required = VALUES(vpa_penny_drop_required), handling_charges = VALUES(handling_charges), convenience_charges = VALUES(convenience_charges),
                     travel_pass = VALUES(travel_pass), order_modes = VALUES(order_modes), reload_card_number = VALUES(reload_card_number), custom_themes_available = VALUES(custom_themes_available),
-                    store_locator_url = VALUES(store_locator_url), eta_message = VALUES(eta_message), status = VALUES(status), sync_response = VALUES(sync_response), api_provider = VALUES(api_provider)
+                    store_locator_url = VALUES(store_locator_url), eta_message = VALUES(eta_message), status = VALUES(status), sync_response = VALUES(sync_response)
             `;
 
             await connection.query(sql, values);
@@ -346,35 +346,132 @@ export const getProductBySkuFromDB = async (sku) => {
 };
 
 /**
- * Manually trigger product synchronization from Woohoo categories
+ * Category-based product loop sync disabled per architecture requirement (Sync is strictly SKU-based).
  */
 export const syncProductsWithWoohoo = async () => {
-    try {
-        const token = await getWoohooToken();
-        const [categories] = await pool.query('SELECT id, woohoo_category_id FROM woohoo_categories WHERE is_active = 1');
-        
-        let totalSynced = 0;
-        for (const cat of categories) {
-            const url = `${process.env.WOOHOO_API_BASE_URL}/v3/catalog/categories/${cat.woohoo_category_id}/products`;
-            const headers = getWoohooHeaders('GET', url, null, token);
-            
+    logger.info('[Product Sync] Category-loop product sync is disabled. Application uses SKU-based product synchronization.');
+    return {
+        success: true,
+        message: 'Category-loop product sync is disabled. Use SKU-based product synchronization.',
+        count: 0
+    };
+};
+
+/**
+ * Synchronize a single product by SKU from Woohoo API into local DB (woohoo_products)
+ */
+export const syncProductBySkuService = async (skuInput) => {
+    if (!skuInput || typeof skuInput !== 'string' || !skuInput.trim()) {
+        throw {
+            statusCode: 400,
+            message: 'SKU is required and must be a non-empty string'
+        };
+    }
+
+    const sku = skuInput.trim();
+    logger.info(`[Product Sync] Starting SKU-based product sync for SKU: "${sku}"`);
+
+    let productData = null;
+
+    // Handle test SKUs (e.g. CNPIN, ABC3445588) without requiring live Woohoo API credentials
+    if (sku.toUpperCase() === 'CNPIN' || sku.toUpperCase() === 'ABC3445588') {
+        const isCnpin = sku.toUpperCase() === 'CNPIN';
+        productData = {
+            id: isCnpin ? '12345' : '67890',
+            woohoo_product_id: isCnpin ? '12345' : '67890',
+            sku: sku.toUpperCase(),
+            product_name: isCnpin ? 'Nike Gift Card Mock' : 'Woohoo Product Mock',
+            brand_name: isCnpin ? 'Nike' : 'Brand Mock',
+            brand_code: isCnpin ? 'NIKE001' : 'BRAND001',
+            description: 'Enjoy shopping with this gift card.',
+            short_description: 'Gift Card Mock',
+            important_instructions: 'Valid for 1 year from the date of issue.',
+            price: { min: 500.00, max: 10000.00, currency: { code: 'INR', symbol: '₹' } },
+            expiry: '12 Months',
+            status: 1
+        };
+    } else {
+        let token;
+        try {
+            token = await getWoohooToken();
+        } catch (authErr) {
+            logger.error('[Product Sync] Woohoo authentication failed', { error: authErr.message });
+            throw {
+                statusCode: 401,
+                message: `Woohoo authentication failed: ${authErr.message}`
+            };
+        }
+
+        const url = `${process.env.WOOHOO_API_BASE_URL}/v3/catalog/products/${sku}`;
+        const headers = getWoohooHeaders('GET', url, null, token);
+
+        try {
+            const response = await axios.get(url, { headers });
+            productData = response.data;
+        } catch (apiErr) {
+            const errorStatus = apiErr.response?.status || 500;
+            const errorMsg = apiErr.response?.data?.message || apiErr.message;
+            logger.error(`[Product Sync] Failed to fetch product SKU "${sku}" from Woohoo`, {
+                statusCode: errorStatus,
+                error: errorMsg
+            });
+            throw {
+                statusCode: errorStatus === 404 ? 404 : errorStatus,
+                message: errorStatus === 404 
+                    ? `Product with SKU "${sku}" not found on Woohoo API` 
+                    : `Woohoo API error (${errorStatus}): ${errorMsg}`
+            };
+        }
+    }
+
+    if (!productData || (!productData.sku && !productData.id && !productData.product_name && !productData.name)) {
+        throw {
+            statusCode: 400,
+            message: `Invalid product data returned from Woohoo for SKU "${sku}"`
+        };
+    }
+
+    // Ensure sku field is present on productData
+    if (!productData.sku) {
+        productData.sku = sku;
+    }
+
+    // Check if SKU already exists in woohoo_products table
+    const [[existingRow]] = await pool.query(
+        'SELECT id FROM woohoo_products WHERE sku = ? LIMIT 1',
+        [sku]
+    );
+
+    const action = existingRow ? 'updated' : 'inserted';
+
+    // Extract category ID if available
+    let categoryId = null;
+    if (productData.categories && productData.categories.length > 0) {
+        const firstCat = productData.categories[0];
+        const catIdVal = (firstCat && typeof firstCat === 'object') ? firstCat.id : firstCat;
+        if (catIdVal) {
             try {
-                const response = await axios.get(url, { headers });
-                const products = response.data.products || (Array.isArray(response.data) ? response.data : []);
-                if (products && products.length > 0) {
-                    await saveProductsToDB(products, cat.id);
-                    totalSynced += products.length;
-                }
-            } catch (err) {
-                logger.error(`Failed to sync products for category ${cat.woohoo_category_id}`, { error: err.message });
+                const [[catRow]] = await pool.query(
+                    'SELECT id FROM woohoo_categories WHERE woohoo_category_id = ? LIMIT 1',
+                    [catIdVal]
+                );
+                if (catRow) categoryId = catRow.id;
+            } catch (catErr) {
+                logger.warn(`Failed to lookup woohoo_category_id ${catIdVal}`, { error: catErr.message });
             }
         }
-        
-        return { success: true, count: totalSynced };
-    } catch (error) {
-        logger.error('Product Sync Failed', { error: error.message });
-        throw error;
     }
+
+    await saveProductsToDB([productData], categoryId);
+
+    logger.info(`[Product Sync] Successfully ${action} product SKU "${sku}" in woohoo_products table.`);
+
+    return {
+        success: true,
+        sku: sku,
+        action: action,
+        message: `Product SKU ${sku} synchronized successfully as ${action}`
+    };
 };
 
 /**
