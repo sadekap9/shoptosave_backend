@@ -596,8 +596,9 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
     const [[user]] = await pool.query('SELECT name, email, phone FROM user_master WHERE id = ?', [userId]);
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const userEmailStr = user?.email ? String(user.email).trim() : '';
-    if (!userEmailStr || !emailRegex.test(userEmailStr)) {
+    const effectiveEmail = (recipient_email || user?.email || '').trim();
+
+    if (!effectiveEmail || !emailRegex.test(effectiveEmail)) {
         throw {
             message: 'Email address is required to place an order.',
             code: 'EMAIL_REQUIRED',
@@ -605,8 +606,17 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
         };
     }
 
+    // Auto-update user_master email if user email was not set
+    if (!user?.email && effectiveEmail) {
+        try {
+            await pool.query('UPDATE user_master SET email = ? WHERE id = ?', [effectiveEmail, userId]);
+        } catch (e) {
+            // Silently ignore constraint errors if email is already taken
+        }
+    }
+
     const finalRecipientName = recipient_name || user?.name || 'Customer';
-    const finalRecipientEmail = recipient_email || userEmailStr;
+    const finalRecipientEmail = effectiveEmail;
     const finalRecipientMobile = recipient_mobile || user?.phone || '+918884520003';
     const isSelf = is_self_purchase !== undefined ? parseInt(is_self_purchase) : ((user && user.phone === finalRecipientMobile) ? 1 : 0);
 
