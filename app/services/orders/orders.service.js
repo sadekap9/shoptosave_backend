@@ -14,6 +14,7 @@ import {
 import { validateOfferForOrder } from '../offers/offers.service.js';
 import { encrypt, decrypt } from '../../utils/crypto.js';
 import { processConditionalOrderActivation } from '../activation/activation.service.js';
+import { sendOrderCompletionEmail } from '../../helpers/email.helper.js';
 
 /**
  * Fetch Company details from app_config table, fallback to file config
@@ -650,9 +651,9 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
                     giftcard_id,
                     totalAmount,
                     isSelf,
-                    isSelf === 1 ? null : finalRecipientName,
-                    isSelf === 1 ? null : finalRecipientEmail,
-                    isSelf === 1 ? null : finalRecipientMobile,
+                    finalRecipientName,
+                    finalRecipientEmail,
+                    finalRecipientMobile,
                     isSelf === 1 ? null : (gift_message || null),
                     woohooRefNo,
                     qty,
@@ -1376,10 +1377,8 @@ export const sendOrderCompletionEmailByOrderId = async (orderId) => {
         const user = userRes[0] || {};
         const giftCard = cardInfoRes[0] || {};
 
-        // Recipient email if provided (and not self purchase), else purchaser user email
-        const targetEmail = (orderRow.recipient_email && orderRow.is_self_purchase === 0) 
-            ? orderRow.recipient_email 
-            : user.email;
+        // Target email: recipient email if provided, else purchaser user email
+        const targetEmail = orderRow.recipient_email || user.email;
 
         if (!targetEmail) {
             logger.warn(`[Order Flow] Cannot send completion email for Order #${orderId}: No target email address found.`);
