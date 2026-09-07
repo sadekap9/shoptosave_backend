@@ -1,7 +1,7 @@
 import pool, { runInTransaction } from '../../config/dbConfig.js';
 import { getWoohooToken } from '../categories/woohooAuth.service.js';
 import { placeWoohooOrder, getWoohooOrderByRefNo } from '../woohoo/woohoo.service.js';
-import { creditWallet } from '../wallets/wallets.service.js';
+import { creditWallet, getOrCreateWallet, generateWalletTxnNo } from '../wallets/wallets.service.js';
 import { buildWoohooPayload } from '../../helpers/woohoo.helper.js';
 import logger from '../../utils/logger.js';
 import { placeGiftCardOrder } from '../giftCards/giftCards.service.js';
