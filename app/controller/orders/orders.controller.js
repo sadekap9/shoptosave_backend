@@ -112,9 +112,11 @@ export const placeGiftCardOrder = async (req, res) => {
         logger.error('[Order Controller] placeGiftCardOrder failed', { error: error.message || error });
 
         const statusCode = error.statusCode || 500;
+        const errorCode = error.code || 'ORDER_ERROR';
         return res.status(statusCode).json({
             success: false,
-            errors: [{ message: error.message || 'Internal server error during order placement' }],
+            code: errorCode,
+            errors: [{ message: error.message || 'Internal server error during order placement', code: errorCode }],
             result: {}
         });
     }

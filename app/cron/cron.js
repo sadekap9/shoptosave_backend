@@ -33,7 +33,6 @@ export const initCronJobs = () => {
     });
 
     // 3. Force-refresh Woohoo Bearer Token every hour
-    // Schedule: '0 * * * *'
     cron.schedule('0 * * * *', async () => {
         logger.info('Starting Scheduled Woohoo Token Refresh');
         try {
@@ -41,6 +40,16 @@ export const initCronJobs = () => {
             logger.info('Scheduled Woohoo Token Refresh Completed Successfully');
         } catch (error) {
             logger.error('Scheduled Woohoo Token Refresh Failed', { error: error.message });
+        }
+    });
+
+    // 4. Background Pending Order Resolver (Runs every 30 seconds)
+    cron.schedule('*/30 * * * * *', async () => {
+        try {
+            const { resolvePendingOrdersService } = await import('../services/orders/orders.service.js');
+            await resolvePendingOrdersService();
+        } catch (error) {
+            logger.error('[Cron Resolver] Background Pending Order Resolution Failed', { error: error.message });
         }
     });
 

@@ -1,6 +1,6 @@
 import pool, { runInTransaction } from '../../config/dbConfig.js';
 import { getWoohooToken } from '../categories/woohooAuth.service.js';
-import { placeWoohooOrder, getWoohooOrderByRefNo } from '../woohoo/woohoo.service.js';
+import { placeWoohooOrder, getWoohooOrderByRefNo, getActivatedCards } from '../woohoo/woohoo.service.js';
 import { creditWallet, getOrCreateWallet, generateWalletTxnNo } from '../wallets/wallets.service.js';
 import { buildWoohooPayload } from '../../helpers/woohoo.helper.js';
 import logger from '../../utils/logger.js';
@@ -594,8 +594,19 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
 
     // Retrieve user details
     const [[user]] = await pool.query('SELECT name, email, phone FROM user_master WHERE id = ?', [userId]);
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const userEmailStr = user?.email ? String(user.email).trim() : '';
+    if (!userEmailStr || !emailRegex.test(userEmailStr)) {
+        throw {
+            message: 'Email address is required to place an order.',
+            code: 'EMAIL_REQUIRED',
+            statusCode: 400
+        };
+    }
+
     const finalRecipientName = recipient_name || user?.name || 'Customer';
-    const finalRecipientEmail = recipient_email || user?.email || 'customer@example.com';
+    const finalRecipientEmail = recipient_email || userEmailStr;
     const finalRecipientMobile = recipient_mobile || user?.phone || '+918884520003';
     const isSelf = is_self_purchase !== undefined ? parseInt(is_self_purchase) : ((user && user.phone === finalRecipientMobile) ? 1 : 0);
 
@@ -1064,13 +1075,11 @@ export const refundOrderToWalletService = async (userId, orderId) => {
  * Cron task: Resolve all orders currently stuck in PENDING (status = 0) state
  */
 export const resolvePendingOrdersService = async () => {
-    // 1. Fetch all orders that have been stuck in PENDING (status = 0) or PROCESSING (status = 1) for more than 2 minutes
-    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
+    // 1. Fetch all orders currently in PENDING (status = 0) or PROCESSING (status = 1) state
     const [pendingOrders] = await pool.query(
         `SELECT id, user_id, woohoo_reference_no, cashback_amount, wallet_amount, status
          FROM gift_card_orders 
-         WHERE (status = 0 OR status = 1) AND created_at <= ?`,
-        [twoMinutesAgo]
+         WHERE (status = 0 OR status = 1)`
     );
 
     if (pendingOrders.length === 0) {
@@ -1087,7 +1096,17 @@ export const resolvePendingOrdersService = async () => {
 
             // If the order has status 'COMPLETE' or 'SUCCESS' or 'COMPLETED'
             const statusStr = (woohooRes.status || '').toLowerCase();
-            const cards = woohooRes.cards || (woohooRes.card ? [woohooRes.card] : []);
+            let cards = woohooRes.cards || (woohooRes.card ? [woohooRes.card] : []);
+            
+            // If cards array is missing in status response, fetch cards via Order Cards API
+            if (cards.length === 0 && woohooRes.orderId) {
+                try {
+                    const cardsRes = await getActivatedCards(token, woohooRes.orderId);
+                    cards = cardsRes.cards || (cardsRes.card ? [cardsRes.card] : []);
+                } catch (cardErr) {
+                    logger.warn(`[Cron Resolver] Failed to fetch activated cards for Order #${woohooRes.orderId}: ${cardErr.message}`);
+                }
+            }
             
             if (statusStr === 'complete' || statusStr === 'success' || statusStr === 'completed') {
                 const mainCard = cards[0];
