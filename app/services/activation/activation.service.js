@@ -3,8 +3,8 @@ import logger from '../../utils/logger.js';
 import { GIFT_CARD_ORDER_STATUS, ACTIVATION_STATUS, API_PROVIDER, WALLET_TRANSACTION_SOURCE } from '../../config/constant/constant.js';
 import { getWoohooToken } from '../categories/woohooAuth.service.js';
 import { getWoohoo2Token } from '../categories/woohoo2Auth.service.js';
-import { getActivatedCards as getWoohoo1ActivatedCards } from '../woohoo/woohoo.service.js';
-import { getActivatedCards as getWoohoo2ActivatedCards } from '../woohoo/woohoo2.service.js';
+import { getActivatedCards as getWoohoo1ActivatedCards, getWoohooOrderByRefNo as getWoohoo1OrderByRefNo } from '../woohoo/woohoo.service.js';
+import { getActivatedCards as getWoohoo2ActivatedCards, getWoohooOrderByRefNo as getWoohoo2OrderByRefNo } from '../woohoo/woohoo2.service.js';
 import { creditWallet } from '../wallets/wallets.service.js';
 import { encrypt } from '../../utils/crypto.js';
 import { sendOrderCompletionEmailByOrderId } from '../orders/orders.service.js';
@@ -183,17 +183,57 @@ export const processConditionalOrderActivation = async (orderId) => {
             bearerToken = await getWoohooToken();
         }
 
-        const woohooOrderId = lockedOrder.woohoo_order_id || lockedOrder.woohoo_reference_no;
-        
-        let activationResult;
-        if (provider === API_PROVIDER.WOOHOO2) {
-            activationResult = await getWoohoo2ActivatedCards(bearerToken, woohooOrderId);
-        } else {
-            activationResult = await getWoohoo1ActivatedCards(bearerToken, woohooOrderId);
+        let woohooOrderId = lockedOrder.woohoo_order_id;
+        let activationResult = null;
+
+        // If woohoo_order_id is missing or equals refno, query Woohoo order details by refno first
+        if (!woohooOrderId || woohooOrderId === lockedOrder.woohoo_reference_no) {
+            try {
+                let refRes;
+                if (provider === API_PROVIDER.WOOHOO2) {
+                    refRes = await getWoohoo2OrderByRefNo(bearerToken, lockedOrder.woohoo_reference_no);
+                } else {
+                    refRes = await getWoohoo1OrderByRefNo(bearerToken, lockedOrder.woohoo_reference_no);
+                }
+
+                let orderData = refRes;
+                if (Array.isArray(refRes)) {
+                    orderData = refRes[0] || {};
+                } else if (refRes && typeof refRes === 'object' && refRes.order) {
+                    orderData = refRes.order;
+                }
+
+                woohooOrderId = orderData.orderId || orderData.order_id || orderData.id || refRes.orderId || null;
+                if (woohooOrderId) {
+                    await pool.query('UPDATE gift_card_orders SET woohoo_order_id = ? WHERE id = ?', [woohooOrderId, orderId]);
+                }
+                activationResult = refRes;
+            } catch (refErr) {
+                logger.warn(`[Activation Flow] Order #${orderId} GET order by refno failed: ${refErr.message}`);
+            }
+        }
+
+        // Call Activated Cards API if woohooOrderId exists
+        const targetId = woohooOrderId || lockedOrder.woohoo_order_id;
+        if (targetId) {
+            try {
+                let cardRes;
+                if (provider === API_PROVIDER.WOOHOO2) {
+                    cardRes = await getWoohoo2ActivatedCards(bearerToken, targetId);
+                } else {
+                    cardRes = await getWoohoo1ActivatedCards(bearerToken, targetId);
+                }
+                if (cardRes) {
+                    activationResult = cardRes;
+                }
+            } catch (cardErr) {
+                logger.warn(`[Activation Flow] Order #${orderId} GET activated cards failed: ${cardErr.message}`);
+            }
         }
 
         const extractedCards = extractCardsFromWoohooResponse(activationResult);
-        const isComplete = activationResult?.status === 'COMPLETE' || activationResult?.status === 'SUCCESS' || extractedCards.length > 0;
+        const statusStr = (activationResult?.status || activationResult?.orderStatus || '').toLowerCase();
+        const isComplete = statusStr === 'complete' || statusStr === 'success' || statusStr === 'completed' || extractedCards.length > 0;
 
         if (isComplete) {
             const activationRef = activationResult.orderId || activationResult.referenceNo || `ACT_${orderId}_${Date.now()}`;
