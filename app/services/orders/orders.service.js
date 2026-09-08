@@ -385,7 +385,7 @@ export const getOrderHistoryService = async (userId, page = 1, limit = 10) => {
     const parsedLimit = Math.max(1, parseInt(limit) || 10);
     const offset = (parsedPage - 1) * parsedLimit;
 
-    const [[countResult], [orders]] = await Promise.all([
+    let [[countResult], [orders]] = await Promise.all([
         pool.query(
             `SELECT COUNT(*) as total
              FROM gift_card_orders gco
@@ -406,12 +406,38 @@ export const getOrderHistoryService = async (userId, page = 1, limit = 10) => {
         )
     ]);
 
+    // Live-resolve pending/processing/timeout orders via Woohoo Status & Activated Cards APIs
+    const pendingOrdersToResolve = orders.filter(o => 
+        (o.status === 0 || o.status === 1 || (o.status === 4 && (o.failure_reason?.toLowerCase().includes('timeout') || o.failure_reason?.toLowerCase().includes('unsuccessful')))) && 
+        o.woohoo_reference_no
+    );
+
+    if (pendingOrdersToResolve.length > 0) {
+        await Promise.allSettled(
+            pendingOrdersToResolve.map(o => processConditionalOrderActivation(o.id))
+        );
+
+        // Re-fetch page of orders to get updated statuses and card counts
+        const [refetchedOrders] = await pool.query(
+            `SELECT gco.id, gc.brand_name, gco.amount, gco.discount_amount, gco.cashback_amount, gco.payable_amount,
+                    gco.status, gco.activation_status, gco.created_at, gco.woohoo_reference_no, gco.woohoo_reference_no AS reference_id,
+                    gco.quantity, gco.wallet_amount, gco.online_amount, gco.payment_type, gco.failure_reason,
+                    (SELECT COUNT(*) FROM gift_card_order_items gcoi WHERE gcoi.order_id = gco.id) AS cards_count
+             FROM gift_card_orders gco
+             JOIN gift_cards gc ON gco.gift_card_id = gc.id
+             WHERE gco.user_id = ?
+             ORDER BY gco.id DESC
+             LIMIT ? OFFSET ?`,
+            [userId, parsedLimit, offset]
+        );
+        orders = refetchedOrders;
+    }
+
     const totalOrders = countResult[0]?.total || 0;
 
     const formattedOrders = orders.map(o => {
         let effectiveStatus = o.status;
-        // If cards have been generated or order was activated, status MUST be COMPLETE (2)
-        if ((o.cards_count > 0 || o.activation_status === 'ACTIVATED') && o.status !== 5) {
+        if ((o.cards_count > 0 || o.activation_status === 2 || o.activation_status === 'ACTIVATED') && o.status !== 5) {
             effectiveStatus = 2;
         }
         return {
@@ -449,7 +475,7 @@ export const getOrderHistoryService = async (userId, page = 1, limit = 10) => {
  * Get Order Details with Payment Breakdown by ID
  */
 export const getOrderById = async (userId, orderId) => {
-    const [orderResult, itemsResult] = await Promise.all([
+    let [orderResult, itemsResult] = await Promise.all([
         pool.query(
             `SELECT id, user_id, gift_card_id, amount, sku, quantity, status, activation_status, is_self_purchase,
                     recipient_name, recipient_email, recipient_mobile, gift_message,
@@ -466,7 +492,7 @@ export const getOrderById = async (userId, orderId) => {
         )
     ]);
 
-    const [[order]] = orderResult;
+    let [[order]] = orderResult;
     if (!order) {
         throw { message: 'Order not found', code: 'NOT_FOUND', statusCode: 404 };
     }
@@ -474,13 +500,38 @@ export const getOrderById = async (userId, orderId) => {
         throw { message: 'Order does not belong to this user', code: 'UNAUTHORIZED', statusCode: 403 };
     }
 
-    const [items] = itemsResult;
+    let [items] = itemsResult;
+
+    // If order is pending/processing/timeout and has refno, resolve via Woohoo Status & Activated Cards APIs
+    if ((order.status === 0 || order.status === 1 || (order.status === 4 && (order.failure_reason?.toLowerCase().includes('timeout') || order.failure_reason?.toLowerCase().includes('unsuccessful')))) && order.woohoo_reference_no) {
+        await processConditionalOrderActivation(orderId).catch(err => logger.error(`[Order System] Order #${orderId} on-demand resolution error:`, err.message));
+
+        // Re-fetch order and items
+        [orderResult, itemsResult] = await Promise.all([
+            pool.query(
+                `SELECT id, user_id, gift_card_id, amount, sku, quantity, status, activation_status, is_self_purchase,
+                        recipient_name, recipient_email, recipient_mobile, gift_message,
+                        wallet_amount, online_amount, payment_type, woohoo_order_id,
+                        woohoo_reference_no, woohoo_reference_no AS reference_id, offer_id, discount_amount, cashback_amount, 
+                        payable_amount, failure_reason, created_at
+                 FROM gift_card_orders WHERE id = ?`,
+                [orderId]
+            ),
+            pool.query(
+                `SELECT id, woohoo_card_id, sku, product_name, card_number, card_pin, barcode, amount, validity, issuance_date, card_view_identifier 
+                 FROM gift_card_order_items WHERE order_id = ?`,
+                [orderId]
+            )
+        ]);
+        [[order]] = orderResult;
+        [items] = itemsResult;
+    }
 
     // Auto-correct order status to COMPLETE (2) if cards exist or activation succeeded
-    if ((items.length > 0 || order.activation_status === 'ACTIVATED') && order.status !== 2 && order.status !== 5) {
+    if ((items.length > 0 || order.activation_status === 2 || order.activation_status === 'ACTIVATED') && order.status !== 2 && order.status !== 5) {
         order.status = 2;
         pool.query(
-            `UPDATE gift_card_orders SET status = 2, activation_status = 'ACTIVATED' WHERE id = ?`,
+            `UPDATE gift_card_orders SET status = 2, activation_status = 2 WHERE id = ?`,
             [orderId]
         ).catch(err => logger.error(`[Order System] Failed to auto-correct order #${orderId} status:`, err.message));
     }

@@ -185,13 +185,12 @@ export const processConditionalOrderActivation = async (orderId) => {
             bearerToken = await getWoohooToken();
         }
 
-        let woohooOrderId = lockedOrder.woohoo_order_id;
-        let activationResult = null;
+        let refRes = null;
+        let cardRes = null;
 
-        // If woohoo_order_id is missing or equals refno, query Woohoo order details by refno first
+        // If woohoo_order_id is missing or equals refno, query Woohoo order details by refno first (Status API)
         if (!woohooOrderId || woohooOrderId === lockedOrder.woohoo_reference_no) {
             try {
-                let refRes;
                 if (provider === API_PROVIDER.WOOHOO2) {
                     refRes = await getWoohoo2OrderByRefNo(bearerToken, lockedOrder.woohoo_reference_no);
                 } else {
@@ -205,11 +204,10 @@ export const processConditionalOrderActivation = async (orderId) => {
                     orderData = refRes.order;
                 }
 
-                woohooOrderId = orderData.orderId || orderData.order_id || orderData.id || refRes.orderId || null;
+                woohooOrderId = orderData.orderId || orderData.order_id || orderData.id || refRes?.orderId || null;
                 if (woohooOrderId) {
                     await pool.query('UPDATE gift_card_orders SET woohoo_order_id = ? WHERE id = ?', [woohooOrderId, orderId]);
                 }
-                activationResult = refRes;
             } catch (refErr) {
                 logger.warn(`[Activation Flow] Order #${orderId} GET order by refno failed: ${refErr.message}`);
             }
@@ -219,26 +217,37 @@ export const processConditionalOrderActivation = async (orderId) => {
         const targetId = woohooOrderId || lockedOrder.woohoo_order_id;
         if (targetId) {
             try {
-                let cardRes;
                 if (provider === API_PROVIDER.WOOHOO2) {
                     cardRes = await getWoohoo2ActivatedCards(bearerToken, targetId);
                 } else {
                     cardRes = await getWoohoo1ActivatedCards(bearerToken, targetId);
-                }
-                if (cardRes) {
-                    activationResult = cardRes;
                 }
             } catch (cardErr) {
                 logger.warn(`[Activation Flow] Order #${orderId} GET activated cards failed: ${cardErr.message}`);
             }
         }
 
-        const extractedCards = extractCardsFromWoohooResponse(activationResult);
-        const statusStr = (activationResult?.status || activationResult?.orderStatus || '').toLowerCase();
+        const cardsFromRef = extractCardsFromWoohooResponse(refRes);
+        const cardsFromCardRes = extractCardsFromWoohooResponse(cardRes);
+        const allExtractedCards = [...cardsFromRef, ...cardsFromCardRes];
+        
+        // Deduplicate cards
+        const extractedCards = [];
+        const seenCardKeys = new Set();
+        for (const c of allExtractedCards) {
+            const key = c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || c.cardId || c.id;
+            if (key && seenCardKeys.has(key)) continue;
+            if (key) seenCardKeys.add(key);
+            extractedCards.push(c);
+        }
+
+        const refStatus = (refRes?.status || refRes?.orderStatus || '').toLowerCase();
+        const cardStatus = (cardRes?.status || cardRes?.orderStatus || '').toLowerCase();
+        const statusStr = refStatus || cardStatus || '';
         const isComplete = statusStr === 'complete' || statusStr === 'success' || statusStr === 'completed' || extractedCards.length > 0;
 
         if (isComplete) {
-            const activationRef = activationResult.orderId || activationResult.referenceNo || `ACT_${orderId}_${Date.now()}`;
+            const activationRef = cardRes?.orderId || refRes?.orderId || cardRes?.referenceNo || refRes?.referenceNo || `ACT_${orderId}_${Date.now()}`;
             
             await runInTransaction(async (conn) => {
                 // Update order to COMPLETE (2) & ACTIVATED
@@ -313,21 +322,25 @@ export const processConditionalOrderActivation = async (orderId) => {
                 cardsCount: extractedCards.length
             };
         } else {
-            const errorMsg = activationResult?.message || 'Activation API response pending or processing';
+            const statusLower = (activationResult?.status || activationResult?.orderStatus || '').toLowerCase();
+            const isExplicitFailure = statusLower === 'failed' || statusLower === 'cancelled' || statusLower === 'rejected';
+            const targetActStatus = isExplicitFailure ? ACTIVATION_STATUS.FAILED : ACTIVATION_STATUS.PROCESSING;
+            const errorMsg = activationResult?.message || `Activation API response: ${statusLower || 'pending'}`;
+            
             await pool.query(
                 `UPDATE gift_card_orders 
                  SET activation_status = ?,
                      activation_attempts = activation_attempts + 1,
                      activation_error = ?
                  WHERE id = ?`,
-                [ACTIVATION_STATUS.FAILED, errorMsg.substring(0, 255), orderId]
+                [targetActStatus, errorMsg.substring(0, 255), orderId]
             );
 
-            logger.warn(`[Activation Flow] Activation response unsuccessful for Order #${orderId}. Marked as FAILED.`);
+            logger.warn(`[Activation Flow] Activation response pending for Order #${orderId}. Status: ${targetActStatus}`);
             return {
                 success: false,
                 eligible: true,
-                status: ACTIVATION_STATUS.FAILED,
+                status: targetActStatus,
                 error: errorMsg
             };
         }
