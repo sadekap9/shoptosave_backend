@@ -394,8 +394,9 @@ export const getOrderHistoryService = async (userId, page = 1, limit = 10) => {
         ),
         pool.query(
             `SELECT gco.id, gc.brand_name, gco.amount, gco.discount_amount, gco.cashback_amount, gco.payable_amount,
-                    gco.status, gco.created_at, gco.woohoo_reference_no, gco.quantity,
-                    gco.wallet_amount, gco.online_amount, gco.payment_type
+                    gco.status, gco.activation_status, gco.created_at, gco.woohoo_reference_no, gco.woohoo_reference_no AS reference_id,
+                    gco.quantity, gco.wallet_amount, gco.online_amount, gco.payment_type, gco.failure_reason,
+                    (SELECT COUNT(*) FROM gift_card_order_items gcoi WHERE gcoi.order_id = gco.id) AS cards_count
              FROM gift_card_orders gco
              JOIN gift_cards gc ON gco.gift_card_id = gc.id
              WHERE gco.user_id = ?
@@ -407,16 +408,24 @@ export const getOrderHistoryService = async (userId, page = 1, limit = 10) => {
 
     const totalOrders = countResult[0]?.total || 0;
 
-    const formattedOrders = orders.map(o => ({
-        ...o,
-        amount: parseFloat(o.amount) || 0,
-        discount_amount: parseFloat(o.discount_amount) || 0,
-        cashback_amount: parseFloat(o.cashback_amount) || 0,
-        payable_amount: parseFloat(o.payable_amount) || 0,
-        wallet_amount: parseFloat(o.wallet_amount) || 0,
-        online_amount: parseFloat(o.online_amount) || 0,
-        quantity: parseInt(o.quantity) || 0
-    }));
+    const formattedOrders = orders.map(o => {
+        let effectiveStatus = o.status;
+        // If cards have been generated or order was activated, status MUST be COMPLETE (2)
+        if ((o.cards_count > 0 || o.activation_status === 'ACTIVATED') && o.status !== 5) {
+            effectiveStatus = 2;
+        }
+        return {
+            ...o,
+            status: effectiveStatus,
+            amount: parseFloat(o.amount) || 0,
+            discount_amount: parseFloat(o.discount_amount) || 0,
+            cashback_amount: parseFloat(o.cashback_amount) || 0,
+            payable_amount: parseFloat(o.payable_amount) || 0,
+            wallet_amount: parseFloat(o.wallet_amount) || 0,
+            online_amount: parseFloat(o.online_amount) || 0,
+            quantity: parseInt(o.quantity) || 0
+        };
+    });
 
     const totalPages = Math.ceil(totalOrders / parsedLimit);
 
@@ -442,10 +451,10 @@ export const getOrderHistoryService = async (userId, page = 1, limit = 10) => {
 export const getOrderById = async (userId, orderId) => {
     const [orderResult, itemsResult] = await Promise.all([
         pool.query(
-            `SELECT id, user_id, gift_card_id, amount, sku, quantity, status, is_self_purchase,
+            `SELECT id, user_id, gift_card_id, amount, sku, quantity, status, activation_status, is_self_purchase,
                     recipient_name, recipient_email, recipient_mobile, gift_message,
                     wallet_amount, online_amount, payment_type, woohoo_order_id,
-                    woohoo_reference_no, offer_id, discount_amount, cashback_amount, 
+                    woohoo_reference_no, woohoo_reference_no AS reference_id, offer_id, discount_amount, cashback_amount, 
                     payable_amount, failure_reason, created_at
              FROM gift_card_orders WHERE id = ?`,
             [orderId]
@@ -466,6 +475,16 @@ export const getOrderById = async (userId, orderId) => {
     }
 
     const [items] = itemsResult;
+
+    // Auto-correct order status to COMPLETE (2) if cards exist or activation succeeded
+    if ((items.length > 0 || order.activation_status === 'ACTIVATED') && order.status !== 2 && order.status !== 5) {
+        order.status = 2;
+        pool.query(
+            `UPDATE gift_card_orders SET status = 2, activation_status = 'ACTIVATED' WHERE id = ?`,
+            [orderId]
+        ).catch(err => logger.error(`[Order System] Failed to auto-correct order #${orderId} status:`, err.message));
+    }
+
     const formattedCards = items.map(item => ({
         id: item.id,
         card_number: decrypt(item.card_number),
