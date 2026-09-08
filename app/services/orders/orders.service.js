@@ -1,5 +1,5 @@
 import pool, { runInTransaction } from '../../config/dbConfig.js';
-import { getWoohooToken } from '../categories/woohooAuth.service.js';
+import { getWoohooToken, refreshWoohooToken } from '../categories/woohooAuth.service.js';
 import { placeWoohooOrder, getWoohooOrderByRefNo, getActivatedCards } from '../woohoo/woohoo.service.js';
 import { creditWallet, getOrCreateWallet, generateWalletTxnNo } from '../wallets/wallets.service.js';
 import { buildWoohooPayload } from '../../helpers/woohoo.helper.js';
@@ -1102,12 +1102,23 @@ export const resolvePendingOrdersService = async () => {
     }
 
     logger.info(`[Cron Resolver] Found ${pendingOrders.length} pending/processing orders to resolve.`);
-    const token = await getWoohooToken();
+    let token = await getWoohooToken();
 
     for (const order of pendingOrders) {
         try {
             logger.info(`[Cron Resolver] Checking status of Order #${order.id} (Ref: ${order.woohoo_reference_no})`);
-            const woohooRes = await getWoohooOrderByRefNo(token, order.woohoo_reference_no);
+            let woohooRes;
+            try {
+                woohooRes = await getWoohooOrderByRefNo(token, order.woohoo_reference_no);
+            } catch (err) {
+                if (err.response?.status === 401) {
+                    logger.warn('[Cron Resolver] Woohoo token expired (401). Force-refreshing token and retrying...');
+                    token = await refreshWoohooToken();
+                    woohooRes = await getWoohooOrderByRefNo(token, order.woohoo_reference_no);
+                } else {
+                    throw err;
+                }
+            }
 
             // If the order has status 'COMPLETE' or 'SUCCESS' or 'COMPLETED'
             const statusStr = (woohooRes.status || '').toLowerCase();
@@ -1211,40 +1222,51 @@ export const resolvePendingOrdersService = async () => {
                 });
                 logger.info(`[Cron Resolver] Resolved Order #${order.id} as FAILED. Wallet portion refunded.`);
             } else {
-                logger.info(`[Cron Resolver] Order #${order.id} is still in status '${statusStr}' on Woohoo.`);
+                logger.info(`[Cron Resolver] Order #${order.id} status '${statusStr}' unresolvable. Marking as FAILED.`);
+                await runInTransaction(async (connection) => {
+                    await connection.query(
+                        'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
+                        [`Order resolution unsuccessful (status: ${statusStr || 'unknown'})`, order.id]
+                    );
+
+                    const walletAmount = parseFloat(order.wallet_amount) || 0;
+                    if (walletAmount > 0) {
+                        await creditWallet(
+                            order.user_id,
+                            walletAmount,
+                            WALLET_TRANSACTION_SOURCE.REFUND,
+                            order.id,
+                            `Refund for failed order #${order.id}`,
+                            connection
+                        );
+                    }
+                });
+                logger.info(`[Cron Resolver] Order #${order.id} marked as FAILED. Wallet portion refunded.`);
             }
         } catch (err) {
-            // If Woohoo returns 404/not found, it means the order was never actually created at the provider!
-            // Thus, we can safely mark it as failed and refund the wallet!
-            if (err.response?.status === 404) {
-                logger.warn(`[Cron Resolver] Order #${order.id} not found at Woohoo. Refunding user...`);
-                try {
-                    await runInTransaction(async (connection) => {
-                        await connection.query(
-                            'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
-                            ['Order not found at provider', order.id]
+            logger.warn(`[Cron Resolver] Error checking Order #${order.id}: ${err.message}. Marking as FAILED and refunding...`);
+            try {
+                await runInTransaction(async (connection) => {
+                    await connection.query(
+                        'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
+                        [`Order resolution error: ${err.message}`.substring(0, 255), order.id]
+                    );
+
+                    const walletAmount = parseFloat(order.wallet_amount) || 0;
+                    if (walletAmount > 0) {
+                        await creditWallet(
+                            order.user_id,
+                            walletAmount,
+                            WALLET_TRANSACTION_SOURCE.REFUND,
+                            order.id,
+                            `Refund for failed order #${order.id}`,
+                            connection
                         );
-
-
-
-                        const walletAmount = parseFloat(order.wallet_amount) || 0;
-                        if (walletAmount > 0) {
-                            await creditWallet(
-                                order.user_id,
-                                walletAmount,
-                                WALLET_TRANSACTION_SOURCE.REFUND,
-                                order.id,
-                                `Refund for failed order #${order.id}`,
-                                connection
-                            );
-                        }
-                    });
-                    logger.info(`[Cron Resolver] Order #${order.id} resolved as FAILED (not found).`);
-                } catch (refundErr) {
-                    logger.error(`[Cron Resolver] Failed to refund not-found order #${order.id}: ${refundErr.message}`);
-                }
-            } else {
-                logger.error(`[Cron Resolver] Error checking Order #${order.id}: ${err.message}`);
+                    }
+                });
+                logger.info(`[Cron Resolver] Order #${order.id} resolved as FAILED due to resolution error.`);
+            } catch (refundErr) {
+                logger.error(`[Cron Resolver] Failed to mark/refund order #${order.id}: ${refundErr.message}`);
             }
         }
     }

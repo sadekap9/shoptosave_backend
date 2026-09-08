@@ -264,14 +264,14 @@ export const processConditionalOrderActivation = async (orderId) => {
                      activation_attempts = activation_attempts + 1,
                      activation_error = ?
                  WHERE id = ?`,
-                [ACTIVATION_STATUS.PENDING, errorMsg.substring(0, 255), orderId]
+                [ACTIVATION_STATUS.FAILED, errorMsg.substring(0, 255), orderId]
             );
 
-            logger.warn(`[Activation Flow] Activated Cards API returned pending response for Order #${orderId}: ${errorMsg}`);
+            logger.warn(`[Activation Flow] Activation response unsuccessful for Order #${orderId}. Marked as FAILED.`);
             return {
                 success: false,
                 eligible: true,
-                status: ACTIVATION_STATUS.PENDING,
+                status: ACTIVATION_STATUS.FAILED,
                 error: errorMsg
             };
         }

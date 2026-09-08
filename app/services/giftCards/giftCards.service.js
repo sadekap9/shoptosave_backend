@@ -1,9 +1,9 @@
 import pool from '../../config/dbConfig.js';
 import fs from 'fs';
 import { giftCardImageType, uploadFolders, OFFER_TYPE, VALUE_TYPE, API_PROVIDER } from '../../config/constant/constant.js';
-import { getWoohooToken } from '../categories/woohooAuth.service.js';
+import { getWoohooToken, refreshWoohooToken } from '../categories/woohooAuth.service.js';
 import { getWoohooProduct, placeWoohooOrder } from '../woohoo/woohoo.service.js';
-import { getWoohoo2Token } from '../categories/woohoo2Auth.service.js';
+import { getWoohoo2Token, refreshWoohoo2Token } from '../categories/woohoo2Auth.service.js';
 import { getWoohooProduct as getWoohoo2Product, placeWoohooOrder as placeWoohoo2Order } from '../woohoo/woohoo2.service.js';
 import { saveProductsToDB } from '../products/products.service.js';
 import { sanitizePaginationParams, buildPagination } from '../../helpers/pagination.helper.js';
@@ -933,12 +933,33 @@ export const placeGiftCardOrder = async ({ sku, price, qty, amount, refno }) => 
         const payload = buildWoohooPayload({ sku, price, qty, amount, refno });
         logger.info(`[Woohoo API Request Body]: ${JSON.stringify(payload, null, 2)}`);
         
-        if (provider === API_PROVIDER.WOOHOO2) {
-            bearerToken = await getWoohoo2Token();
-            responseData = await placeWoohoo2Order(bearerToken, payload);
-        } else {
-            bearerToken = await getWoohooToken();
-            responseData = await placeWoohooOrder(bearerToken, payload);
+        try {
+            if (provider === API_PROVIDER.WOOHOO2) {
+                bearerToken = await getWoohoo2Token();
+                responseData = await placeWoohoo2Order(bearerToken, payload);
+            } else {
+                bearerToken = await getWoohooToken();
+                responseData = await placeWoohooOrder(bearerToken, payload);
+            }
+        } catch (firstErr) {
+            const firstErrStr = String(firstErr.response?.data?.message || firstErr.message || '').toLowerCase();
+            const isTokenError = firstErr.response?.status === 401 || 
+                                 firstErrStr.includes('token_rejected') || 
+                                 firstErrStr.includes('signature_invalid') ||
+                                 firstErrStr.includes('unauthorized');
+
+            if (isTokenError) {
+                logger.warn(`[GiftCard Service] Woohoo Token rejected/expired (${firstErrStr}). Force-refreshing token and retrying...`);
+                if (provider === API_PROVIDER.WOOHOO2) {
+                    bearerToken = await refreshWoohoo2Token();
+                    responseData = await placeWoohoo2Order(bearerToken, payload);
+                } else {
+                    bearerToken = await refreshWoohooToken();
+                    responseData = await placeWoohooOrder(bearerToken, payload);
+                }
+            } else {
+                throw firstErr;
+            }
         }
         
         logger.info(`[Woohoo API Response Body]: ${JSON.stringify(responseData, null, 2)}`);
