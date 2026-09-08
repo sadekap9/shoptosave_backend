@@ -10,6 +10,20 @@ import { encrypt } from '../../utils/crypto.js';
 import { sendOrderCompletionEmailByOrderId } from '../orders/orders.service.js';
 
 /**
+ * Unpack order data object from various Woohoo API response wrappers
+ */
+export const unpackWoohooOrderData = (res) => {
+    if (!res) return {};
+    if (Array.isArray(res)) return unpackWoohooOrderData(res[0]);
+    if (typeof res === 'object') {
+        if (Array.isArray(res.orders) && res.orders.length > 0) return unpackWoohooOrderData(res.orders[0]);
+        if (res.order && typeof res.order === 'object') return unpackWoohooOrderData(res.order);
+        if (res.data && typeof res.data === 'object') return unpackWoohooOrderData(res.data);
+    }
+    return res;
+};
+
+/**
  * Extract cards array from Woohoo API response payload.
  * Supports top-level cards array, products[sku].cards structure (Image 2), and single card object.
  */
@@ -150,18 +164,13 @@ export const processConditionalOrderActivation = async (orderId) => {
             return { success: false, eligible: false, reason: skipReason };
         }
 
-        const isAlreadyProcessing = lockedOrder.activation_status === ACTIVATION_STATUS.PROCESSING || lockedOrder.activation_status === 'PROCESSING';
-        if (isAlreadyProcessing) {
-            await connection.commit();
-            logger.warn(`[Activation Flow] Skipped order #${orderId}: Activation already in progress.`);
-            return { success: false, eligible: false, reason: 'CONCURRENT_ACTIVATION_IN_PROGRESS' };
+        // Mark activation_status as PROCESSING if currently 0 (PENDING)
+        if (lockedOrder.activation_status === ACTIVATION_STATUS.PENDING) {
+            await connection.query(
+                `UPDATE gift_card_orders SET activation_status = ? WHERE id = ?`,
+                [ACTIVATION_STATUS.PROCESSING, orderId]
+            );
         }
-
-        // Set activation status to PROCESSING before invoking provider API
-        await connection.query(
-            `UPDATE gift_card_orders SET activation_status = ? WHERE id = ?`,
-            [ACTIVATION_STATUS.PROCESSING, orderId]
-        );
         await connection.commit();
 
     } catch (dbErr) {
@@ -173,7 +182,7 @@ export const processConditionalOrderActivation = async (orderId) => {
     }
 
     // ─── EXECUTE DOWNSTREAM ACTIVATION API ──────────────────────────────────────
-    logger.info(`[Activation Flow] All 10 conditions satisfied. Invoking Activation API for Order #${orderId}`);
+    logger.info(`[Activation Flow] All conditions satisfied. Invoking Status & Activation APIs for Order #${orderId}`);
     
     try {
         let bearerToken;
@@ -187,6 +196,7 @@ export const processConditionalOrderActivation = async (orderId) => {
 
         let refRes = null;
         let cardRes = null;
+        let woohooOrderId = lockedOrder.woohoo_order_id;
 
         // If woohoo_order_id is missing or equals refno, query Woohoo order details by refno first (Status API)
         if (!woohooOrderId || woohooOrderId === lockedOrder.woohoo_reference_no) {
@@ -197,15 +207,9 @@ export const processConditionalOrderActivation = async (orderId) => {
                     refRes = await getWoohoo1OrderByRefNo(bearerToken, lockedOrder.woohoo_reference_no);
                 }
 
-                let orderData = refRes;
-                if (Array.isArray(refRes)) {
-                    orderData = refRes[0] || {};
-                } else if (refRes && typeof refRes === 'object' && refRes.order) {
-                    orderData = refRes.order;
-                }
-
+                const orderData = unpackWoohooOrderData(refRes);
                 woohooOrderId = orderData.orderId || orderData.order_id || orderData.id || refRes?.orderId || null;
-                if (woohooOrderId) {
+                if (woohooOrderId && woohooOrderId !== lockedOrder.woohoo_reference_no) {
                     await pool.query('UPDATE gift_card_orders SET woohoo_order_id = ? WHERE id = ?', [woohooOrderId, orderId]);
                 }
             } catch (refErr) {
@@ -215,7 +219,7 @@ export const processConditionalOrderActivation = async (orderId) => {
 
         // Call Activated Cards API if woohooOrderId exists
         const targetId = woohooOrderId || lockedOrder.woohoo_order_id;
-        if (targetId) {
+        if (targetId && targetId !== lockedOrder.woohoo_reference_no) {
             try {
                 if (provider === API_PROVIDER.WOOHOO2) {
                     cardRes = await getWoohoo2ActivatedCards(bearerToken, targetId);
@@ -241,8 +245,10 @@ export const processConditionalOrderActivation = async (orderId) => {
             extractedCards.push(c);
         }
 
-        const refStatus = (refRes?.status || refRes?.orderStatus || '').toLowerCase();
-        const cardStatus = (cardRes?.status || cardRes?.orderStatus || '').toLowerCase();
+        const refOrderData = unpackWoohooOrderData(refRes);
+        const cardOrderData = unpackWoohooOrderData(cardRes);
+        const refStatus = (refOrderData?.status || refOrderData?.orderStatus || refOrderData?.state || refRes?.status || '').toLowerCase();
+        const cardStatus = (cardOrderData?.status || cardOrderData?.orderStatus || cardOrderData?.state || cardRes?.status || '').toLowerCase();
         const statusStr = refStatus || cardStatus || '';
         const isComplete = statusStr === 'complete' || statusStr === 'success' || statusStr === 'completed' || extractedCards.length > 0;
 

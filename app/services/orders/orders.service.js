@@ -1209,7 +1209,7 @@ export const resolvePendingOrdersService = async () => {
     const [pendingOrders] = await pool.query(
         `SELECT id, user_id, woohoo_reference_no, cashback_amount, wallet_amount, status, created_at, failure_reason
          FROM gift_card_orders 
-         WHERE (status = 0 OR status = 1)
+         WHERE (status = 0 OR status = 1 OR (status = 4 AND (failure_reason LIKE '%timeout%' OR failure_reason LIKE '%unsuccessful%')))
            AND woohoo_reference_no IS NOT NULL`
     );
 
@@ -1218,194 +1218,19 @@ export const resolvePendingOrdersService = async () => {
     }
 
     logger.info(`[Cron Resolver] Found ${pendingOrders.length} pending/processing/timeout orders to resolve.`);
-    let token = await getWoohooToken();
 
     for (const order of pendingOrders) {
         try {
-            logger.info(`[Cron Resolver] Checking status of Order #${order.id} (Ref: ${order.woohoo_reference_no})`);
-            let woohooRes;
-            try {
-                woohooRes = await getWoohooOrderByRefNo(token, order.woohoo_reference_no);
-            } catch (err) {
-                if (err.response?.status === 401) {
-                    logger.warn('[Cron Resolver] Woohoo token expired (401). Force-refreshing token and retrying...');
-                    token = await refreshWoohooToken();
-                    woohooRes = await getWoohooOrderByRefNo(token, order.woohoo_reference_no);
-                } else {
-                    throw err;
-                }
-            }
-
-            // Safely unpack array or nested object from Woohoo API response
-            let orderData = woohooRes;
-            if (Array.isArray(woohooRes)) {
-                orderData = woohooRes[0] || {};
-            } else if (woohooRes && typeof woohooRes === 'object' && woohooRes.order) {
-                orderData = woohooRes.order;
-            }
-
-            const statusStr = (orderData.status || orderData.orderStatus || orderData.state || orderData.order_status || '').toLowerCase();
-            const woohooOrderId = orderData.orderId || orderData.order_id || orderData.id || woohooRes.orderId || null;
-            let cards = extractCardsFromWoohooResponse(orderData);
-            if (cards.length === 0 && woohooRes) {
-                cards = extractCardsFromWoohooResponse(woohooRes);
-            }
-
-            // If cards array is missing in status response, fetch cards via Order Cards API if woohooOrderId exists
-            if (cards.length === 0 && woohooOrderId) {
-                try {
-                    const cardsRes = await getActivatedCards(token, woohooOrderId);
-                    cards = extractCardsFromWoohooResponse(cardsRes);
-                } catch (cardErr) {
-                    logger.warn(`[Cron Resolver] Failed to fetch activated cards for Order #${woohooOrderId}: ${cardErr.message}`);
-                }
-            }
-
-            const isSuccessOrComplete = statusStr === 'complete' || statusStr === 'success' || statusStr === 'completed' || cards.length > 0;
-
-            if (isSuccessOrComplete) {
-                await runInTransaction(async (connection) => {
-                    await connection.query(
-                        `UPDATE gift_card_orders 
-                         SET status = 2, 
-                             woohoo_order_id = ?, 
-                             woohoo_response = ?
-                         WHERE id = ?`,
-                        [
-                            woohooOrderId,
-                            JSON.stringify(woohooRes),
-                            order.id
-                        ]
-                    );
-
-                    // Insert child cards if available
-                    if (cards.length > 0) {
-                        const itemValues = cards.map(c => [
-                            order.id,
-                            c.cardId || c.card_id || c.id || null,
-                            c.sku || null,
-                            c.productName || c.product_name || c.name || null,
-                            encrypt(c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || ""),
-                            encrypt(c.cardPin || c.card_pin || c.pin || c.activationCode || c.activation_code || ""),
-                            c.barcode || null,
-                            c.amount || null,
-                            c.validity || c.expiryDate || c.expiry_date || c.expiry || null,
-                            c.issuanceDate || c.issuance_date || null,
-                            c.cardView?.identifier || c.card_view?.identifier || null
-                        ]);
-                        await connection.query(
-                            `INSERT INTO gift_card_order_items 
-                             (order_id, woohoo_card_id, sku, product_name, card_number, card_pin, barcode, amount, validity, issuance_date, card_view_identifier) 
-                             VALUES ?`,
-                            [itemValues]
-                        );
-                    }
-
-                    // Credit cashback if cashback_amount > 0
-                    if (order && parseFloat(order.cashback_amount) > 0) {
-                        await creditWallet(
-                            order.user_id,
-                            parseFloat(order.cashback_amount),
-                            WALLET_TRANSACTION_SOURCE.CASHBACK,
-                            order.id,
-                            `Cashback reward for order #${order.id}`,
-                            connection
-                        );
-
-                        // Update total_cashback_earned in user_wallet
-                        await connection.query(
-                            'UPDATE user_wallet SET total_cashback_earned = total_cashback_earned + ? WHERE user_id = ?',
-                            [parseFloat(order.cashback_amount), order.user_id]
-                        );
-                    }
-                });
-                logger.info(`[Cron Resolver] Resolved Order #${order.id} as COMPLETE.`);
-
-                // Trigger order completion email (non-blocking)
-                sendOrderCompletionEmailByOrderId(order.id).catch(err => logger.error('[Cron Resolver] Email notification error:', err));
-
-                // Trigger conditional activation API flow (backend only)
-                processConditionalOrderActivation(order.id).catch(err => logger.error('[Cron Resolver] Activation flow error:', err.message));
-            } else if (statusStr === 'failed' || statusStr === 'cancelled' || statusStr === 'rejected') {
-                // Clear rejection or cancelled by provider -> fail order and refund wallet
-                await pool.query(
-                    'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
-                    [`Woohoo error: ${orderData.message || woohooRes.message || 'Cancelled by provider'}`, order.id]
-                );
-
-                const walletAmount = parseFloat(order.wallet_amount) || 0;
-                if (walletAmount > 0 && order.user_id) {
-                    try {
-                        await runInTransaction(async (connection) => {
-                            await creditWallet(
-                                order.user_id,
-                                walletAmount,
-                                WALLET_TRANSACTION_SOURCE.REFUND,
-                                order.id,
-                                `Refund for failed order #${order.id}`,
-                                connection
-                            );
-                        });
-                    } catch (walletErr) {
-                        logger.error(`[Cron Resolver] Wallet refund skipped for Order #${order.id}: ${walletErr.message}`);
-                    }
-                }
-                logger.info(`[Cron Resolver] Resolved Order #${order.id} as FAILED.`);
-            } else if (statusStr === 'processing' || statusStr === 'pending' || statusStr === 'queued' || statusStr === 'created') {
-                logger.info(`[Cron Resolver] Order #${order.id} status is '${statusStr}'. Attempting card activation...`);
-                if (woohooOrderId) {
-                    await pool.query(
-                        'UPDATE gift_card_orders SET status = 1, woohoo_order_id = ? WHERE id = ?',
-                        [woohooOrderId, order.id]
-                    );
-                }
-
-                // Attempt conditional activation to complete order & save cards
-                const activationRes = await processConditionalOrderActivation(order.id).catch(err => {
-                    logger.error(`[Cron Resolver] Activation error for Order #${order.id}:`, err.message);
-                    return { success: false };
-                });
-
-                if (activationRes?.success || activationRes?.status === 'ACTIVATED') {
-                    logger.info(`[Cron Resolver] Order #${order.id} successfully activated & completed!`);
-                } else {
-                    const createdAtTime = order.created_at ? new Date(order.created_at).getTime() : Date.now();
-                    const ageInMinutes = (Date.now() - createdAtTime) / (60 * 1000);
-                    if (ageInMinutes > 15) {
-                        logger.warn(`[Cron Resolver] Order #${order.id} exceeded 15m timeout in state '${statusStr}'. Marking as FAILED.`);
-                        await pool.query(
-                            'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
-                            [`Order processing timed out (15m limit reached)`, order.id]
-                        );
-                        const walletAmount = parseFloat(order.wallet_amount) || 0;
-                        if (walletAmount > 0 && order.user_id) {
-                            try {
-                                await runInTransaction(async (connection) => {
-                                    await creditWallet(
-                                        order.user_id,
-                                        walletAmount,
-                                        WALLET_TRANSACTION_SOURCE.REFUND,
-                                        order.id,
-                                        `Refund for failed order #${order.id}`,
-                                        connection
-                                    );
-                                });
-                            } catch (walletErr) {
-                                logger.error(`[Cron Resolver] Wallet refund skipped for Order #${order.id}: ${walletErr.message}`);
-                            }
-                        }
-                    } else {
-                        logger.info(`[Cron Resolver] Order #${order.id} is processing (${ageInMinutes.toFixed(1)}m old). Will re-check on next pass.`);
-                    }
-                }
-            } else {
+            logger.info(`[Cron Resolver] Processing resolution for Order #${order.id} (Ref: ${order.woohoo_reference_no})`);
+            const actRes = await processConditionalOrderActivation(order.id);
+            if (!actRes?.success) {
                 const createdAtTime = order.created_at ? new Date(order.created_at).getTime() : Date.now();
                 const ageInMinutes = (Date.now() - createdAtTime) / (60 * 1000);
-                if (ageInMinutes > 15) {
-                    logger.info(`[Cron Resolver] Order #${order.id} status '${statusStr}' unresolvable after 15m. Marking as FAILED.`);
+                if (ageInMinutes > 15 && order.status !== 4 && order.status !== 5 && order.status !== 2) {
+                    logger.warn(`[Cron Resolver] Order #${order.id} unresolvable after 15m (${ageInMinutes.toFixed(1)}m old). Marking as FAILED.`);
                     await pool.query(
                         'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
-                        [`Order resolution unsuccessful (status: ${statusStr || 'unknown'})`, order.id]
+                        [`Order resolution unsuccessful after 15 minutes limit`, order.id]
                     );
 
                     const walletAmount = parseFloat(order.wallet_amount) || 0;
@@ -1425,9 +1250,6 @@ export const resolvePendingOrdersService = async () => {
                             logger.error(`[Cron Resolver] Wallet refund skipped for Order #${order.id}: ${walletErr.message}`);
                         }
                     }
-                    logger.info(`[Cron Resolver] Order #${order.id} marked as FAILED.`);
-                } else {
-                    logger.info(`[Cron Resolver] Order #${order.id} status '${statusStr}' pending (${ageInMinutes.toFixed(1)}m old). Will re-check on next pass.`);
                 }
             }
         } catch (err) {
