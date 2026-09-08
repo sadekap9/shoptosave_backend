@@ -256,16 +256,13 @@ export const processConditionalOrderActivation = async (orderId) => {
             const activationRef = cardRes?.orderId || refRes?.orderId || cardRes?.referenceNo || refRes?.referenceNo || `ACT_${orderId}_${Date.now()}`;
             
             await runInTransaction(async (conn) => {
-                // Update order to COMPLETE (2) & ACTIVATED
+                // Update order to COMPLETE (2) & ACTIVATED (2)
                 await conn.query(
                     `UPDATE gift_card_orders 
                      SET status = 2,
-                         activation_status = ?,
-                         activation_reference = ?,
-                         activated_at = NOW(),
-                         activation_error = NULL
+                         activation_status = ?
                      WHERE id = ?`,
-                    [ACTIVATION_STATUS.ACTIVATED, activationRef, orderId]
+                    [ACTIVATION_STATUS.ACTIVATED, orderId]
                 );
 
                 // Insert card items if present and not already inserted
@@ -328,16 +325,15 @@ export const processConditionalOrderActivation = async (orderId) => {
                 cardsCount: extractedCards.length
             };
         } else {
-            const statusLower = (activationResult?.status || activationResult?.orderStatus || '').toLowerCase();
+            const statusLower = (refStatus || cardStatus || '').toLowerCase();
             const isExplicitFailure = statusLower === 'failed' || statusLower === 'cancelled' || statusLower === 'rejected';
             const targetActStatus = isExplicitFailure ? ACTIVATION_STATUS.FAILED : ACTIVATION_STATUS.PROCESSING;
-            const errorMsg = activationResult?.message || `Activation API response: ${statusLower || 'pending'}`;
+            const errorMsg = `Activation API response: ${statusLower || 'pending'}`;
             
             await pool.query(
                 `UPDATE gift_card_orders 
                  SET activation_status = ?,
-                     activation_attempts = activation_attempts + 1,
-                     activation_error = ?
+                     failure_reason = ?
                  WHERE id = ?`,
                 [targetActStatus, errorMsg.substring(0, 255), orderId]
             );
@@ -356,8 +352,7 @@ export const processConditionalOrderActivation = async (orderId) => {
         await pool.query(
             `UPDATE gift_card_orders 
              SET activation_status = ?,
-                 activation_attempts = activation_attempts + 1,
-                 activation_error = ?
+                 failure_reason = ?
              WHERE id = ?`,
             [ACTIVATION_STATUS.FAILED, errorMsg.substring(0, 255), orderId]
         );
