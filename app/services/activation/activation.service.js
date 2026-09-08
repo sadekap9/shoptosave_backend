@@ -15,6 +15,13 @@ import { sendOrderCompletionEmailByOrderId } from '../orders/orders.service.js';
  */
 export const extractCardsFromWoohooResponse = (res) => {
     if (!res) return [];
+    if (Array.isArray(res)) {
+        const cards = [];
+        for (const item of res) {
+            cards.push(...extractCardsFromWoohooResponse(item));
+        }
+        return cards;
+    }
     if (Array.isArray(res.cards) && res.cards.length > 0) {
         return res.cards;
     }
@@ -30,6 +37,9 @@ export const extractCardsFromWoohooResponse = (res) => {
     }
     if (res.card && typeof res.card === 'object') {
         return [res.card];
+    }
+    if (res.cardNumber || res.card_number || res.cardNo || res.number || res.card_no) {
+        return [res];
     }
     return [];
 };
@@ -81,10 +91,15 @@ export const processConditionalOrderActivation = async (orderId) => {
         // Condition 2: Order belongs to valid customer
         const cond2 = !!lockedOrder.customer_id;
 
-        // Condition 3: Order is in required state (PROCESSING=1 or COMPLETE=2)
-        const cond3 = lockedOrder.status === GIFT_CARD_ORDER_STATUS.PROCESSING || lockedOrder.status === GIFT_CARD_ORDER_STATUS.COMPLETE;
+        // Condition 3: Order is in required state (PENDING=0, PROCESSING=1, COMPLETE=2, or FAILED due to initial API timeout)
+        const isTimeoutFailed = lockedOrder.status === GIFT_CARD_ORDER_STATUS.FAILED && 
+                               (lockedOrder.failure_reason?.toLowerCase().includes('timeout') || lockedOrder.failure_reason?.toLowerCase().includes('unsuccessful'));
+        const cond3 = lockedOrder.status === GIFT_CARD_ORDER_STATUS.PENDING || 
+                      lockedOrder.status === GIFT_CARD_ORDER_STATUS.PROCESSING || 
+                      lockedOrder.status === GIFT_CARD_ORDER_STATUS.COMPLETE ||
+                      isTimeoutFailed;
 
-        // Condition 4: Spend API / order processing was successful
+        // Condition 4: Spend API / order processing was successful or refno present
         const cond4 = !!(lockedOrder.woohoo_order_id || lockedOrder.woohoo_reference_no);
 
         // Condition 5: Required card/gift-card information was received or pending retrieval
@@ -96,9 +111,8 @@ export const processConditionalOrderActivation = async (orderId) => {
         // Condition 7: Order has NOT already been activated
         const cond7 = lockedOrder.activation_status !== ACTIVATION_STATUS.ACTIVATED;
 
-        // Condition 8: Order is NOT cancelled, failed, refunded, or ineligible
-        const cond8 = lockedOrder.status !== GIFT_CARD_ORDER_STATUS.FAILED &&
-                      lockedOrder.status !== GIFT_CARD_ORDER_STATUS.CANCELLED &&
+        // Condition 8: Order is NOT cancelled or refunded
+        const cond8 = lockedOrder.status !== GIFT_CARD_ORDER_STATUS.CANCELLED &&
                       lockedOrder.status !== GIFT_CARD_ORDER_STATUS.REFUNDED;
 
         // Condition 9: Activation API has NOT already been successfully called
@@ -113,7 +127,7 @@ export const processConditionalOrderActivation = async (orderId) => {
             let skipReason = 'INELIGIBLE_CONDITIONS';
             if (lockedOrder.activation_status === ACTIVATION_STATUS.ACTIVATED) {
                 skipReason = 'ALREADY_ACTIVATED';
-            } else if (lockedOrder.status === GIFT_CARD_ORDER_STATUS.FAILED) {
+            } else if (lockedOrder.status === GIFT_CARD_ORDER_STATUS.FAILED && !isTimeoutFailed) {
                 skipReason = 'ORDER_FAILED';
             } else if (lockedOrder.status === GIFT_CARD_ORDER_STATUS.CANCELLED) {
                 skipReason = 'ORDER_CANCELLED';
