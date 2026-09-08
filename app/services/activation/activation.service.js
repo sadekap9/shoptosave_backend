@@ -109,14 +109,15 @@ export const processConditionalOrderActivation = async (orderId) => {
         const cond6 = !!lockedOrder.woohoo_reference_no;
 
         // Condition 7: Order has NOT already been activated
-        const cond7 = lockedOrder.activation_status !== ACTIVATION_STATUS.ACTIVATED;
+        const isAlreadyActivated = lockedOrder.activation_status === ACTIVATION_STATUS.ACTIVATED || lockedOrder.activation_status === 'ACTIVATED';
+        const cond7 = !isAlreadyActivated;
 
         // Condition 8: Order is NOT cancelled or refunded
         const cond8 = lockedOrder.status !== GIFT_CARD_ORDER_STATUS.CANCELLED &&
                       lockedOrder.status !== GIFT_CARD_ORDER_STATUS.REFUNDED;
 
         // Condition 9: Activation API has NOT already been successfully called
-        const cond9 = !lockedOrder.activation_reference && lockedOrder.activation_status !== ACTIVATION_STATUS.ACTIVATED;
+        const cond9 = !lockedOrder.activation_reference && !isAlreadyActivated;
 
         // Condition 10: Authentication / OAuth bearer token capability valid
         const cond10 = true;
@@ -125,7 +126,7 @@ export const processConditionalOrderActivation = async (orderId) => {
 
         if (!isEligible) {
             let skipReason = 'INELIGIBLE_CONDITIONS';
-            if (lockedOrder.activation_status === ACTIVATION_STATUS.ACTIVATED) {
+            if (isAlreadyActivated) {
                 skipReason = 'ALREADY_ACTIVATED';
             } else if (lockedOrder.status === GIFT_CARD_ORDER_STATUS.FAILED && !isTimeoutFailed) {
                 skipReason = 'ORDER_FAILED';
@@ -137,7 +138,7 @@ export const processConditionalOrderActivation = async (orderId) => {
                 skipReason = 'SPEND_API_DATA_MISSING';
             }
 
-            if (!cond8 && lockedOrder.activation_status !== ACTIVATION_STATUS.ACTIVATED) {
+            if (!cond8 && !isAlreadyActivated) {
                 await connection.query(
                     `UPDATE gift_card_orders SET activation_status = ? WHERE id = ?`,
                     [ACTIVATION_STATUS.NOT_ELIGIBLE, orderId]
@@ -149,7 +150,8 @@ export const processConditionalOrderActivation = async (orderId) => {
             return { success: false, eligible: false, reason: skipReason };
         }
 
-        if (lockedOrder.activation_status === ACTIVATION_STATUS.PROCESSING) {
+        const isAlreadyProcessing = lockedOrder.activation_status === ACTIVATION_STATUS.PROCESSING || lockedOrder.activation_status === 'PROCESSING';
+        if (isAlreadyProcessing) {
             await connection.commit();
             logger.warn(`[Activation Flow] Skipped order #${orderId}: Activation already in progress.`);
             return { success: false, eligible: false, reason: 'CONCURRENT_ACTIVATION_IN_PROGRESS' };
