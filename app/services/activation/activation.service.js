@@ -1,4 +1,4 @@
-import pool from '../../config/dbConfig.js';
+import pool, { runInTransaction } from '../../config/dbConfig.js';
 import logger from '../../utils/logger.js';
 import { GIFT_CARD_ORDER_STATUS, ACTIVATION_STATUS, API_PROVIDER, WALLET_TRANSACTION_SOURCE } from '../../config/constant/constant.js';
 import { getWoohooToken } from '../categories/woohooAuth.service.js';
