@@ -794,6 +794,25 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
 
     // Stage 3: Resolve order based on Woohoo response
     if (!woohooResult.success) {
+        const isTimeout = woohooResult.error?.toLowerCase().includes('timeout');
+        if (isTimeout) {
+            logger.info(`[Order Flow] Woohoo order #${orderId} timed out on provider API. Leaving order in PROCESSING state for cron resolution.`);
+            await pool.query(
+                'UPDATE gift_card_orders SET status = 1, failure_reason = ? WHERE id = ?',
+                [`Woohoo provider API timed out: ${woohooResult.error}`, orderId]
+            );
+            processConditionalOrderActivation(orderId).catch(err => logger.error('[Order Flow] Activation flow error:', err.message));
+            return {
+                success: true,
+                message: 'Order is processing asynchronously',
+                data: {
+                    orderId,
+                    woohooOrderId: null,
+                    status: 'PROCESSING'
+                }
+            };
+        }
+
         // Clear rejection -> refund wallet portion and fail order
         logger.warn(`[Order Flow] Woohoo rejected the order: ${woohooResult.error}. Refunding...`, {
             refno: woohooRefNo,
