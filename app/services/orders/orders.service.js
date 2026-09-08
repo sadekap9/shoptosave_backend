@@ -1135,11 +1135,11 @@ export const refundOrderToWalletService = async (userId, orderId) => {
  * Cron task: Resolve all orders currently stuck in PENDING (status = 0) state
  */
 export const resolvePendingOrdersService = async () => {
-    // 1. Fetch all orders currently in PENDING (0), PROCESSING (1), or FAILED due to API timeout
+    // 1. Fetch all orders currently in PENDING (0) or PROCESSING (1) state
     const [pendingOrders] = await pool.query(
         `SELECT id, user_id, woohoo_reference_no, cashback_amount, wallet_amount, status, created_at, failure_reason
          FROM gift_card_orders 
-         WHERE (status IN (0, 1) OR (status = 4 AND (failure_reason LIKE '%timeout%' OR failure_reason LIKE '%unsuccessful%')))
+         WHERE (status = 0 OR status = 1)
            AND woohoo_reference_no IS NOT NULL`
     );
 
@@ -1258,15 +1258,15 @@ export const resolvePendingOrdersService = async () => {
                 processConditionalOrderActivation(order.id).catch(err => logger.error('[Cron Resolver] Activation flow error:', err.message));
             } else if (statusStr === 'failed' || statusStr === 'cancelled' || statusStr === 'rejected') {
                 // Clear rejection or cancelled by provider -> fail order and refund wallet
-                await runInTransaction(async (connection) => {
-                    await connection.query(
-                        'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
-                        [`Woohoo error: ${orderData.message || woohooRes.message || 'Cancelled by provider'}`, order.id]
-                    );
+                await pool.query(
+                    'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
+                    [`Woohoo error: ${orderData.message || woohooRes.message || 'Cancelled by provider'}`, order.id]
+                );
 
-                    const walletAmount = parseFloat(order.wallet_amount) || 0;
-                    if (walletAmount > 0 && order.user_id) {
-                        try {
+                const walletAmount = parseFloat(order.wallet_amount) || 0;
+                if (walletAmount > 0 && order.user_id) {
+                    try {
+                        await runInTransaction(async (connection) => {
                             await creditWallet(
                                 order.user_id,
                                 walletAmount,
@@ -1275,11 +1275,11 @@ export const resolvePendingOrdersService = async () => {
                                 `Refund for failed order #${order.id}`,
                                 connection
                             );
-                        } catch (walletErr) {
-                            logger.error(`[Cron Resolver] Wallet refund skipped for Order #${order.id}: ${walletErr.message}`);
-                        }
+                        });
+                    } catch (walletErr) {
+                        logger.error(`[Cron Resolver] Wallet refund skipped for Order #${order.id}: ${walletErr.message}`);
                     }
-                });
+                }
                 logger.info(`[Cron Resolver] Resolved Order #${order.id} as FAILED.`);
             } else if (statusStr === 'processing' || statusStr === 'pending' || statusStr === 'queued' || statusStr === 'created') {
                 logger.info(`[Cron Resolver] Order #${order.id} status is '${statusStr}'. Attempting card activation...`);
@@ -1303,14 +1303,14 @@ export const resolvePendingOrdersService = async () => {
                     const ageInMinutes = (Date.now() - createdAtTime) / (60 * 1000);
                     if (ageInMinutes > 15) {
                         logger.warn(`[Cron Resolver] Order #${order.id} exceeded 15m timeout in state '${statusStr}'. Marking as FAILED.`);
-                        await runInTransaction(async (connection) => {
-                            await connection.query(
-                                'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
-                                [`Order processing timed out (15m limit reached)`, order.id]
-                            );
-                            const walletAmount = parseFloat(order.wallet_amount) || 0;
-                            if (walletAmount > 0 && order.user_id) {
-                                try {
+                        await pool.query(
+                            'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
+                            [`Order processing timed out (15m limit reached)`, order.id]
+                        );
+                        const walletAmount = parseFloat(order.wallet_amount) || 0;
+                        if (walletAmount > 0 && order.user_id) {
+                            try {
+                                await runInTransaction(async (connection) => {
                                     await creditWallet(
                                         order.user_id,
                                         walletAmount,
@@ -1319,11 +1319,11 @@ export const resolvePendingOrdersService = async () => {
                                         `Refund for failed order #${order.id}`,
                                         connection
                                     );
-                                } catch (walletErr) {
-                                    logger.error(`[Cron Resolver] Wallet refund skipped for Order #${order.id}: ${walletErr.message}`);
-                                }
+                                });
+                            } catch (walletErr) {
+                                logger.error(`[Cron Resolver] Wallet refund skipped for Order #${order.id}: ${walletErr.message}`);
                             }
-                        });
+                        }
                     } else {
                         logger.info(`[Cron Resolver] Order #${order.id} is processing (${ageInMinutes.toFixed(1)}m old). Will re-check on next pass.`);
                     }
@@ -1333,34 +1333,27 @@ export const resolvePendingOrdersService = async () => {
                 const ageInMinutes = (Date.now() - createdAtTime) / (60 * 1000);
                 if (ageInMinutes > 15) {
                     logger.info(`[Cron Resolver] Order #${order.id} status '${statusStr}' unresolvable after 15m. Marking as FAILED.`);
-                    try {
-                        await runInTransaction(async (connection) => {
-                            await connection.query(
-                                'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
-                                [`Order resolution unsuccessful (status: ${statusStr || 'unknown'})`, order.id]
-                            );
+                    await pool.query(
+                        'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
+                        [`Order resolution unsuccessful (status: ${statusStr || 'unknown'})`, order.id]
+                    );
 
-                            const walletAmount = parseFloat(order.wallet_amount) || 0;
-                            if (walletAmount > 0 && order.user_id) {
-                                try {
-                                    await creditWallet(
-                                        order.user_id,
-                                        walletAmount,
-                                        WALLET_TRANSACTION_SOURCE.REFUND,
-                                        order.id,
-                                        `Refund for failed order #${order.id}`,
-                                        connection
-                                    );
-                                } catch (walletErr) {
-                                    logger.error(`[Cron Resolver] Wallet refund skipped for Order #${order.id}: ${walletErr.message}`);
-                                }
-                            }
-                        });
-                    } catch (txErr) {
-                        await pool.query(
-                            'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
-                            [`Order resolution unsuccessful: ${statusStr || 'unknown'}`, order.id]
-                        );
+                    const walletAmount = parseFloat(order.wallet_amount) || 0;
+                    if (walletAmount > 0 && order.user_id) {
+                        try {
+                            await runInTransaction(async (connection) => {
+                                await creditWallet(
+                                    order.user_id,
+                                    walletAmount,
+                                    WALLET_TRANSACTION_SOURCE.REFUND,
+                                    order.id,
+                                    `Refund for failed order #${order.id}`,
+                                    connection
+                                );
+                            });
+                        } catch (walletErr) {
+                            logger.error(`[Cron Resolver] Wallet refund skipped for Order #${order.id}: ${walletErr.message}`);
+                        }
                     }
                     logger.info(`[Cron Resolver] Order #${order.id} marked as FAILED.`);
                 } else {
