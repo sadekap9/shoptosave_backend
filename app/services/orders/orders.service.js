@@ -1107,6 +1107,12 @@ export const refundOrderToWalletService = async (userId, orderId) => {
             connection
         );
 
+        // 3. Mark order as Refunded (status = 5)
+        await connection.query(
+            'UPDATE gift_card_orders SET status = 5 WHERE id = ?',
+            [orderId]
+        );
+
         // 4. Fetch updated wallet balance
         const [[updatedWallet]] = await connection.query(
             'SELECT balance FROM user_wallet WHERE user_id = ?',
