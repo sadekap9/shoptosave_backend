@@ -109,9 +109,9 @@ export const getWoohoo2Token = async () => {
         } else {
             const expiresAt = new Date(expiresAtStr);
             const bufferTime = 5 * 60 * 1000; // 5-minute buffer
-            if (expiresAt.getTime() - bufferTime <= Date.now()) {
+            if (isNaN(expiresAt.getTime()) || expiresAt.getTime() - bufferTime <= Date.now()) {
                 needsRefresh = true;
-                logger.info(`[Woohoo2 Auth] Cached token is expired or close to expiring (expires at: ${expiresAtStr}).`);
+                logger.info(`[Woohoo2 Auth] Cached token is expired, invalid date, or close to expiring (expires at: ${expiresAtStr}).`);
             }
         }
 

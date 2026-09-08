@@ -49,7 +49,7 @@ export const processConditionalOrderActivation = async (orderId) => {
 
         // Lock order row for duplicate protection (SELECT FOR UPDATE)
         const [rows] = await connection.query(
-            `SELECT gco.*, u.id AS customer_id, gc.api_provider AS gc_api_provider 
+            `SELECT gco.*, u.id AS customer_id, gc.api_provider AS gc_api_provider, gc.sku AS gc_sku, gc.gift_card_name 
              FROM gift_card_orders gco 
              JOIN user_master u ON gco.user_id = u.id 
              LEFT JOIN gift_cards gc ON gco.gift_card_id = gc.id
@@ -199,11 +199,13 @@ export const processConditionalOrderActivation = async (orderId) => {
 
                 // Insert card items if present and not already inserted
                 if (extractedCards.length > 0 && itemsCount === 0) {
+                    const fallbackSku = lockedOrder.sku || lockedOrder.gc_sku || null;
+                    const fallbackName = lockedOrder.gift_card_name || null;
                     const itemValues = extractedCards.map(c => [
                         orderId,
                         c.cardId || c.card_id || c.id || null,
-                        c.sku || null,
-                        c.productName || c.product_name || c.name || null,
+                        c.sku || fallbackSku || null,
+                        c.productName || c.product_name || c.name || fallbackName || null,
                         encrypt(c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || ""),
                         encrypt(c.cardPin || c.card_pin || c.pin || c.activationCode || c.activation_code || ""),
                         c.barcode || null,

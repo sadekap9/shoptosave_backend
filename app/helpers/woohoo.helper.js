@@ -102,43 +102,48 @@ export const getWoohooHeaders = (method, url, body = null, token = null, customC
 /**
  * Step 13: Build Woohoo Payload from order details, gift card SKU, and company billing configs
  */
-export const buildWoohooPayload = (order, giftCard, companyConfig) => {
-    const refno = `NEWTRONE_S2S-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
-    const companyFirst = companyConfig.name.split(' ')[0] || 'Shop2Save';
-    const companyLast = companyConfig.name.split(' ').slice(1).join(' ') || 'Billing';
+export const buildWoohooPayload = (order = {}, giftCard = {}, companyConfig = {}) => {
+    const refno = order.refno || `NEWTRONE_S2S-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const companyName = companyConfig?.name || 'Shop2Save Billing';
+    const companyFirst = companyName.split(' ')[0] || 'Shop2Save';
+    const companyLast = companyName.split(' ').slice(1).join(' ') || 'Billing';
+
+    const sku = giftCard?.sku || order?.sku || 'EGCGBNIK001';
+    const amount = parseFloat(order?.amount || order?.price || 0);
+    const qty = parseInt(order?.qty || 1, 10);
 
     return {
         address: {
             firstname: companyFirst,
             lastname: companyLast,
-            email: companyConfig.email,
-            telephone: companyConfig.mobile,
-            address1: companyConfig.address1,
-            address2: companyConfig.address2 || '',
-            city: companyConfig.city,
-            state: companyConfig.state,
-            country: companyConfig.country,
-            pincode: companyConfig.pincode
+            email: companyConfig?.email || 'billing@shoptosave.in',
+            telephone: companyConfig?.mobile || '+918884520003',
+            address1: companyConfig?.address1 || 'Koramangala',
+            address2: companyConfig?.address2 || '',
+            city: companyConfig?.city || 'Bangalore',
+            state: companyConfig?.state || 'Karnataka',
+            country: companyConfig?.country || 'IN',
+            pincode: companyConfig?.pincode || '560095'
         },
         payments: [
             {
                 code: 'disbursement',
-                amount: parseFloat(order.amount)
+                amount: amount
             }
         ],
         refno,
-        syncOnly: (parseInt(order.qty || 1, 10) > 5) ? false : true,
+        syncOnly: (qty > 5) ? false : true,
         deliveryMode: 'API',
         products: [
             {
-                sku: giftCard.sku,
-                qty: parseInt(order.qty || 1, 10),
-                price: parseFloat(order.amount),
+                sku: sku,
+                qty: qty,
+                price: order?.price ? parseFloat(order.price) : amount,
                 recipient: {
-                    name: order.recipient_name,
-                    email: order.recipient_email,
-                    telephone: order.recipient_mobile,
-                    message: order.gift_message || ''
+                    name: order?.recipient_name || 'Customer',
+                    email: order?.recipient_email || 'customer@example.com',
+                    telephone: order?.recipient_mobile || '+918884520003',
+                    message: order?.gift_message || ''
                 }
             }
         ]

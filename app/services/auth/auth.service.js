@@ -413,7 +413,9 @@ export const createPinService = async (data, meta) => {
             message: 'Registration successful',
             data: {
                 token: accessToken,
+                access_token: accessToken,
                 refreshToken: refreshToken,
+                refresh_token: refreshToken,
                 user: {
                     id: user.id,
                     mobile: user.phone
@@ -527,7 +529,9 @@ export const loginPinService = async (data, meta) => {
             message: 'Login successful',
             data: {
                 token: accessToken,
+                access_token: accessToken,
                 refreshToken: refreshToken,
+                refresh_token: refreshToken,
                 user: {
                     id: user.id,
                     mobile: user.phone
@@ -653,7 +657,10 @@ export const refreshTokenService = async (refreshToken) => {
             statusCode: 200,
             message: 'New access token generated',
             data: {
-                access_token: newAccessToken
+                access_token: newAccessToken,
+                token: newAccessToken,
+                refresh_token: refreshToken,
+                refreshToken: refreshToken
             }
         };
 

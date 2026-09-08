@@ -176,14 +176,15 @@ export const placeOrderService = async (userId, orderData) => {
         );
         const txnId = txnResult.insertId;
 
+        const orderSku = giftCard.sku || payload.sku || null;
         // 10. Insert gift_card_orders with status = Pending (0)
         const [orderResult] = await connection.query(
             `INSERT INTO gift_card_orders 
-             (user_id, gift_card_id, amount, is_self_purchase, recipient_name, recipient_email, recipient_mobile, gift_message, 
+             (user_id, gift_card_id, sku, amount, is_self_purchase, recipient_name, recipient_email, recipient_mobile, gift_message, 
               wallet_transaction_id, woohoo_reference_no, status, wallet_amount, online_amount, payment_type)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0.00, ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0.00, ?)`,
             [
-                userId, giftCard.id, totalAmount, isSelfPurchase,
+                userId, giftCard.id, orderSku, totalAmount, isSelfPurchase,
                 isSelfPurchase === 1 ? null : recipient_name,
                 isSelfPurchase === 1 ? null : recipient_email,
                 isSelfPurchase === 1 ? null : recipient_mobile,
@@ -532,8 +533,8 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
     // Fetch gift card details first
     const [[giftCard]] = await pool.query(
         `SELECT id, sku, store_id, gift_card_name, min_denomination, max_denomination
-         FROM gift_cards WHERE id = ?`,
-        [giftcard_id]
+         FROM gift_cards WHERE id = ? OR sku = ? LIMIT 1`,
+        [giftcard_id, sku || giftcard_id]
     );
     if (!giftCard) {
         throw { message: 'Gift card not found', code: 'NOT_FOUND', statusCode: 404 };
@@ -638,17 +639,19 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
                 connection
             );
 
+            const orderSku = giftCard.sku || payload.sku || null;
             // Insert gift_card_orders in PENDING (0) state
             const [orderResult] = await connection.query(
                 `INSERT INTO gift_card_orders 
-                 (user_id, gift_card_id, amount, is_self_purchase, recipient_name, recipient_email, recipient_mobile, gift_message,
+                 (user_id, gift_card_id, sku, amount, is_self_purchase, recipient_name, recipient_email, recipient_mobile, gift_message,
                   woohoo_reference_no, status, quantity, wallet_amount, online_amount, payment_type,
                   woohoo_order_id, woohoo_response,
                   offer_id, discount_amount, cashback_amount, payable_amount)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)`,
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)`,
                 [
                     userId,
                     giftcard_id,
+                    orderSku,
                     totalAmount,
                     isSelf,
                     finalRecipientName,
@@ -857,11 +860,12 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
 
             // Insert child cards
             if (cards.length > 0) {
+                const orderSku = giftCard.sku || payload.sku || null;
                 const itemValues = cards.map(c => [
                     orderId,
                     c.cardId || c.card_id || c.id || null,
-                    c.sku || null,
-                    c.productName || c.product_name || c.name || null,
+                    c.sku || orderSku || null,
+                    c.productName || c.product_name || c.name || giftCard.gift_card_name || null,
                     encrypt(c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || ""),
                     encrypt(c.cardPin || c.card_pin || c.pin || c.activationCode || c.activation_code || ""),
                     c.barcode || null,
@@ -880,9 +884,9 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
 
             // Fetch updated order row
             const [[orderRow]] = await connection.query(
-                `SELECT id, user_id, gift_card_id, amount, status, wallet_amount,
+                `SELECT id, user_id, gift_card_id, sku, amount, status, wallet_amount,
                         online_amount, discount_amount, cashback_amount, payable_amount,
-                        woohoo_reference_no, woohoo_order_id, quantity, payment_type
+                        woohoo_reference_no, woohoo_reference_no AS reference_id, woohoo_order_id, quantity, payment_type
                  FROM gift_card_orders WHERE id = ?`,
                 [orderId]
             );
@@ -1286,12 +1290,13 @@ export const persistExternalOrder = async (userId, body, woohooResponse) => {
         // Insert gift_card_orders
         const [orderResult] = await connection.query(
             `INSERT INTO gift_card_orders 
-              (user_id, gift_card_id, amount, is_self_purchase, recipient_name, recipient_email, recipient_mobile, gift_message, 
+              (user_id, gift_card_id, sku, amount, is_self_purchase, recipient_name, recipient_email, recipient_mobile, gift_message, 
                wallet_transaction_id, woohoo_reference_no, woohoo_order_id, status, wallet_amount, online_amount, payment_type, quantity, cashback_amount, payable_amount)
-             VALUES (?, ?, ?, 1, null, null, null, null, null, ?, ?, 2, ?, ?, 1, ?, 0.00, ?)`,
+             VALUES (?, ?, ?, ?, 1, null, null, null, null, null, ?, ?, 2, ?, ?, 1, ?, 0.00, ?)`,
             [
                 userId,
                 giftCardId,
+                sku || null,
                 totalAmount,
                 refno,
                 woohooResponse.orderId || null,
