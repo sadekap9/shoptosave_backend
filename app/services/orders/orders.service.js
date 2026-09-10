@@ -1072,7 +1072,7 @@ export const resolvePendingOrdersService = async () => {
     const [pendingOrders] = await pool.query(
         `SELECT id, user_id, woohoo_reference_no, cashback_amount, wallet_amount, status, created_at, failure_reason
          FROM gift_card_orders 
-         WHERE (status = 0 OR status = 1 OR (status = 4 AND (failure_reason LIKE '%timeout%' OR failure_reason LIKE '%unsuccessful%')))
+         WHERE (status = 0 OR status = 1)
            AND woohoo_reference_no IS NOT NULL`
     );
 
@@ -1080,7 +1080,7 @@ export const resolvePendingOrdersService = async () => {
         return;
     }
 
-    logger.info(`[Cron Resolver] Found ${pendingOrders.length} pending/processing/timeout orders to resolve.`);
+    logger.info(`[Cron Resolver] Found ${pendingOrders.length} pending/processing orders to resolve.`);
 
     for (const order of pendingOrders) {
         try {
@@ -1090,29 +1090,47 @@ export const resolvePendingOrdersService = async () => {
                 const createdAtTime = order.created_at ? new Date(order.created_at).getTime() : Date.now();
                 const ageInMinutes = (Date.now() - createdAtTime) / (60 * 1000);
                 if (ageInMinutes > 15 && order.status !== 4 && order.status !== 5 && order.status !== 2) {
-                    logger.warn(`[Cron Resolver] Order #${order.id} unresolvable after 15m (${ageInMinutes.toFixed(1)}m old). Marking as FAILED.`);
-                    await pool.query(
-                        'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
-                        [`Order resolution unsuccessful after 15 minutes limit`, order.id]
-                    );
+                    logger.warn(`[Cron Resolver] Order #${order.id} unresolvable after 15m (${ageInMinutes.toFixed(1)}m old). Marking as FAILED and processing refund if applicable.`);
+                    
+                    await runInTransaction(async (connection) => {
+                        // Lock order row to prevent race conditions across concurrent cron runs
+                        const [[lockedOrder]] = await connection.query(
+                            'SELECT id, status, wallet_amount, user_id FROM gift_card_orders WHERE id = ? FOR UPDATE',
+                            [order.id]
+                        );
 
-                    const walletAmount = parseFloat(order.wallet_amount) || 0;
-                    if (walletAmount > 0 && order.user_id) {
-                        try {
-                            await runInTransaction(async (connection) => {
-                                await creditWallet(
-                                    order.user_id,
-                                    walletAmount,
-                                    WALLET_TRANSACTION_SOURCE.REFUND,
-                                    order.id,
-                                    `Refund for failed order #${order.id}`,
-                                    connection
-                                );
-                            });
-                        } catch (walletErr) {
-                            logger.error(`[Cron Resolver] Wallet refund skipped for Order #${order.id}: ${walletErr.message}`);
+                        if (!lockedOrder || lockedOrder.status === 4 || lockedOrder.status === 5 || lockedOrder.status === 2 || lockedOrder.status === 3) {
+                            logger.info(`[Cron Resolver] Order #${order.id} already finalized with status ${lockedOrder?.status}. Skipping.`);
+                            return;
                         }
-                    }
+
+                        // Mark order as permanently FAILED (status = 4)
+                        await connection.query(
+                            'UPDATE gift_card_orders SET status = 4, failure_reason = ? WHERE id = ?',
+                            ['Order resolution unsuccessful after 15 minutes limit', order.id]
+                        );
+
+                        // Idempotency check: verify if refund transaction already exists for this order
+                        const [[existingRefund]] = await connection.query(
+                            'SELECT id FROM wallet_transactions WHERE order_id = ? AND source = ? LIMIT 1',
+                            [order.id, WALLET_TRANSACTION_SOURCE.REFUND]
+                        );
+
+                        const walletAmount = parseFloat(lockedOrder.wallet_amount) || 0;
+                        if (walletAmount > 0 && lockedOrder.user_id && !existingRefund) {
+                            await creditWallet(
+                                lockedOrder.user_id,
+                                walletAmount,
+                                WALLET_TRANSACTION_SOURCE.REFUND,
+                                order.id,
+                                `Refund for failed order #${order.id}`,
+                                connection
+                            );
+                            logger.info(`[Cron Resolver] Refund of ₹${walletAmount} processed for Order #${order.id}`);
+                        } else if (existingRefund) {
+                            logger.info(`[Cron Resolver] Refund already exists for Order #${order.id}. Skipping duplicate refund.`);
+                        }
+                    });
                 }
             }
         } catch (err) {
