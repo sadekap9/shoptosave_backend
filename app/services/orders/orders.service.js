@@ -365,7 +365,7 @@ export const getOrderHistoryService = async (userId, page = 1, limit = 10) => {
                     gco.recipient_name, gco.recipient_email, gco.recipient_mobile, gco.gift_message, 
                     gco.status, gco.activation_status, gco.created_at, gco.woohoo_reference_no, gco.woohoo_reference_no AS reference_id,
                     gco.wallet_amount, gco.online_amount, gco.discount_amount, gco.cashback_amount, gco.payable_amount,
-                    gc.gift_card_name, gc.brand_name, gc.image_url, gc.store_id
+                    gc.gift_card_name, gc.brand_name, gc.gift_card_image AS image_url, gc.store_id
              FROM gift_card_orders gco
              LEFT JOIN gift_cards gc ON gco.gift_card_id = gc.id
              WHERE gco.user_id = ?
@@ -445,7 +445,7 @@ export const getOrderById = async (userId, orderId) => {
                 gco.recipient_name, gco.recipient_email, gco.recipient_mobile, gco.gift_message, 
                 gco.status, gco.activation_status, gco.created_at, gco.woohoo_reference_no, gco.woohoo_reference_no AS reference_id,
                 gco.wallet_amount, gco.online_amount, gco.discount_amount, gco.cashback_amount, gco.payable_amount, gco.failure_reason,
-                gc.gift_card_name, gc.brand_name, gc.image_url, gc.store_id
+                gc.gift_card_name, gc.brand_name, gc.gift_card_image AS image_url, gc.store_id
          FROM gift_card_orders gco
          LEFT JOIN gift_cards gc ON gco.gift_card_id = gc.id
          WHERE gco.id = ? AND gco.user_id = ?`,
