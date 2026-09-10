@@ -652,9 +652,9 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
         }
     }
 
-    const finalRecipientName = recipient_name || user?.name || 'Customer';
+    const finalRecipientName = recipient_name || user?.name || '';
     const finalRecipientEmail = effectiveEmail;
-    const finalRecipientMobile = recipient_mobile || user?.phone || '+918884520003';
+    const finalRecipientMobile = recipient_mobile || user?.phone || '';
     const isSelf = is_self_purchase !== undefined ? parseInt(is_self_purchase) : ((user && user.phone === finalRecipientMobile) ? 1 : 0);
 
     const woohooRefNo = generateWoohooRefNo(userId);
@@ -871,6 +871,80 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
     // ─── 4. DIRECT SUCCESS (ORDER COMPLETED) ──────────────────────────────────
     const cards = woohooResponseData.cards || (woohooResponseData.card ? [woohooResponseData.card] : []);
 
+    try {
+        let orderId;
+        await runInTransaction(async (connection) => {
+            const deduct = await deductPayment(userId, payableAmount, paymentTypeInt, null, paymentMethodInt, connection);
+            const [orderRes] = await connection.query(
+                `INSERT INTO gift_card_orders 
+                 (user_id, gift_card_id, sku, amount, is_self_purchase, recipient_name, recipient_email, recipient_mobile, gift_message,
+                  woohoo_reference_no, status, quantity, wallet_amount, online_amount, payment_type, woohoo_order_id, woohoo_response,
+                  offer_id, discount_amount, cashback_amount, payable_amount)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    userId, giftcard_id, orderSku, totalAmount, isSelf,
+                    finalRecipientName, finalRecipientEmail, finalRecipientMobile,
+                    isSelf === 1 ? null : (gift_message || null),
+                    woohooRefNo, qty, deduct.walletDeducted, deduct.onlineDeducted, paymentTypeInt,
+                    woohooResponseData.orderId || null, JSON.stringify(woohooResponseData),
+                    appliedOfferId, discountAmount, cashbackAmount, payableAmount
+                ]
+            );
+            orderId = orderRes.insertId;
+            if (deduct.walletTransactionId) {
+                await connection.query('UPDATE wallet_transactions SET order_id = ? WHERE id = ?', [orderId, deduct.walletTransactionId]);
+            }
+
+            if (cards.length > 0) {
+                const itemValues = cards.map(c => {
+                    const parsedCardId = parseInt(c.cardId || c.card_id || c.id);
+                    const cardIdVal = isNaN(parsedCardId) ? null : parsedCardId;
+                    return [
+                        orderId,
+                        cardIdVal,
+                        c.sku || orderSku || null,
+                        c.productName || c.product_name || c.name || giftCard.gift_card_name || null,
+                        encrypt(c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || ""),
+                        encrypt(c.cardPin || c.card_pin || c.pin || c.activationCode || c.activation_code || ""),
+                        c.barcode || null,
+                        c.amount || price || null,
+                        c.validity || c.expiryDate || c.expiry_date || c.expiry || null,
+                        c.issuanceDate || c.issuance_date || null,
+                        c.cardView?.identifier || c.card_view?.identifier || null
+                    ];
+                });
+
+                await connection.query(
+                    `INSERT INTO gift_card_order_items 
+                     (order_id, woohoo_card_id, sku, product_name, card_number, card_pin, barcode, amount, validity, issuance_date, card_view_identifier) 
+                     VALUES ?`,
+                    [itemValues]
+                );
+            }
+        });
+
+        const cashbackPct = parseFloat(giftCard.cashback_percentage) || 0;
+        if (cashbackPct > 0) {
+            try {
+                await runInTransaction(async (conn) => {
+                    await creditCashback(userId, orderId, totalAmount, cashbackPct, conn);
+                });
+            } catch (cbErr) {
+                logger.error('[Order System] Cashback credit failed (non-critical)', { error: cbErr.message });
+            }
+        }
+
+        sendOrderCompletionEmailByOrderId(orderId).catch(err => logger.error('[Order System] Email notification error:', err));
+        processConditionalOrderActivation(orderId).catch(err => logger.error('[Order System] Activation flow error:', err.message));
+
+        return {
+            success: true,
+            message: 'Order completed successfully',
+            data: { orderId, woohooOrderId: woohooResponseData.orderId, status: 'COMPLETED', cards }
+        };
+    } catch (err) {
+        logger.error('[Order Flow] Direct success local save failed:', err);
+        throw {
             message: `Order completed at provider but failed to save details locally. Please contact support. Ref: ${woohooRefNo}`,
             code: 'LOCAL_SAVE_FAILED',
             statusCode: 500
