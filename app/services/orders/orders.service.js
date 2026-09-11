@@ -480,23 +480,64 @@ export const getOrderById = async (userId, orderId) => {
         [orderId]
     );
 
-    const cards = items.map(item => ({
-        id: item.id,
-        card_number: decrypt(item.card_number),
-        card_pin: decrypt(item.card_pin),
-        amount: parseFloat(item.amount) || 0,
-        validity: item.validity,
-        sku: item.sku,
-        productName: item.product_name,
-        cardId: item.woohoo_card_id,
-        barcode: item.barcode,
-        issuanceDate: item.issuance_date,
-        cardView: {
-            identifier: item.card_view_identifier
+    let rawWoohooResp = null;
+    try {
+        if (order.woohoo_response) {
+            rawWoohooResp = typeof order.woohoo_response === 'string' ? JSON.parse(order.woohoo_response) : order.woohoo_response;
         }
-    }));
+    } catch (e) {
+        // ignore JSON parse error
+    }
+
+    const woohooCards = extractCardsFromWoohooResponse(rawWoohooResp);
+
+    const cards = items.map((item, idx) => {
+        const rawCard = woohooCards[idx] || woohooCards[0] || {};
+        return {
+            id: item.id,
+            card_number: decrypt(item.card_number),
+            card_pin: decrypt(item.card_pin),
+            amount: parseFloat(item.amount) || 0,
+            validity: item.validity,
+            sku: item.sku,
+            productName: item.product_name,
+            cardId: item.woohoo_card_id,
+            barcode: item.barcode,
+            issuanceDate: item.issuance_date,
+            activationCode: rawCard.activationCode || rawCard.activation_code || rawCard.activationPin || rawCard.activation_pin || null,
+            activationUrl: rawCard.activationUrl || rawCard.activation_url || rawCard.claimUrl || rawCard.claim_url || null,
+            cardView: {
+                identifier: item.card_view_identifier
+            }
+        };
+    });
+
+    if (cards.length === 0 && woohooCards.length > 0) {
+        woohooCards.forEach((c, idx) => {
+            cards.push({
+                id: idx + 1,
+                card_number: c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || "",
+                card_pin: c.cardPin || c.card_pin || c.pin || "",
+                amount: parseFloat(c.amount) || parseFloat(order.amount) || 0,
+                validity: c.validity || c.expiryDate || c.expiry_date || null,
+                sku: c.sku || order.sku || null,
+                productName: c.productName || c.product_name || order.gift_card_name || null,
+                cardId: c.cardId || c.card_id || c.id || null,
+                barcode: c.barcode || null,
+                issuanceDate: c.issuanceDate || c.issuance_date || null,
+                activationCode: c.activationCode || c.activation_code || c.activationPin || c.activation_pin || null,
+                activationUrl: c.activationUrl || c.activation_url || c.claimUrl || c.claim_url || null,
+                cardView: {
+                    identifier: c.cardView?.identifier || c.card_view?.identifier || null
+                }
+            });
+        });
+    }
 
     const mainCard = cards[0] || {};
+    const firstWoohooCard = woohooCards[0] || {};
+    const topActivationCode = mainCard.activationCode || firstWoohooCard.activationCode || firstWoohooCard.activation_code || null;
+    const topActivationUrl = mainCard.activationUrl || firstWoohooCard.activationUrl || firstWoohooCard.activation_url || firstWoohooCard.claimUrl || firstWoohooCard.claim_url || null;
 
     return {
         success: true,
@@ -512,6 +553,10 @@ export const getOrderById = async (userId, orderId) => {
             payable_amount: parseFloat(order.payable_amount) || 0,
             gift_card_number: mainCard.card_number || null,
             gift_card_pin: mainCard.card_pin || null,
+            activation_code: topActivationCode,
+            activation_url: topActivationUrl,
+            activationCode: topActivationCode,
+            activationUrl: topActivationUrl,
             expiry_date: mainCard.validity || null,
             cards
         }
