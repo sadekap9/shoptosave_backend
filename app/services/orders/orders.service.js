@@ -1,6 +1,6 @@
 import pool, { runInTransaction } from '../../config/dbConfig.js';
 import { getWoohooToken, refreshWoohooToken } from '../categories/woohooAuth.service.js';
-import { placeWoohooOrder, getWoohooOrderByRefNo, getActivatedCards } from '../woohoo/woohoo.service.js';
+import { placeWoohooOrder, getWoohooOrderByRefNo } from '../woohoo/woohoo.service.js';
 import { creditWallet, getOrCreateWallet, generateWalletTxnNo } from '../wallets/wallets.service.js';
 import { buildWoohooPayload } from '../../helpers/woohoo.helper.js';
 import logger from '../../utils/logger.js';
@@ -711,6 +711,8 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
                 }
             });
 
+            logger.warn(`[Order Flow] Woohoo Order API timed out for Order #${orderId} (Ref: ${woohooRefNo}): ${errorMsg}. Saved order as PROCESSING for asynchronous reconciliation.`);
+
             return {
                 success: true,
                 message: 'Order is processing asynchronously',
@@ -771,6 +773,8 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
                     await connection.query('UPDATE wallet_transactions SET order_id = ? WHERE id = ?', [orderId, deduct.walletTransactionId]);
                 }
             });
+
+            logger.warn(`[Order Flow] Woohoo Order API timed out for Order #${orderId} (Ref: ${woohooRefNo}): ${errorReason}. Saved order as PROCESSING for asynchronous reconciliation.`);
 
             return {
                 success: true,
@@ -860,6 +864,9 @@ export const placeGiftCardOrderFlow = async (userId, payload) => {
                 await connection.query('UPDATE wallet_transactions SET order_id = ? WHERE id = ?', [orderId, deduct.walletTransactionId]);
             }
         });
+
+        logger.info(`[Order Flow] Asynchronous order created for Order #${orderId}. Status: 1 (PROCESSING), Ref: ${woohooRefNo}, Woohoo Order ID: ${woohooResponseData.orderId || 'N/A'}`);
+        processConditionalOrderActivation(orderId).catch(err => logger.error('[Order System] Activation flow error:', err.message));
 
         return {
             success: true,

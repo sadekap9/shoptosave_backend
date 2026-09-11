@@ -138,6 +138,8 @@ export const processConditionalOrderActivation = async (orderId) => {
 
         const isEligible = cond1 && cond2 && cond3 && cond4 && cond5 && cond6 && cond7 && cond8 && cond9 && cond10;
 
+        logger.info(`[Activation Flow] Order #${orderId} reconciliation eligibility checked: eligible=${isEligible}, status=${lockedOrder.status}, ref=${lockedOrder.woohoo_reference_no}`);
+
         if (!isEligible) {
             let skipReason = 'INELIGIBLE_CONDITIONS';
             if (isAlreadyActivated) {
@@ -181,8 +183,8 @@ export const processConditionalOrderActivation = async (orderId) => {
         connection.release();
     }
 
-    // ─── EXECUTE DOWNSTREAM ACTIVATION API ──────────────────────────────────────
-    logger.info(`[Activation Flow] All conditions satisfied. Invoking Status & Activation APIs for Order #${orderId}`);
+    // ─── EXECUTE RECONCILIATION & ORDER STATUS CHECK ───────────────────────────
+    logger.info(`[Activation Flow] Reconciliation started for Order #${orderId} (Ref: ${lockedOrder.woohoo_reference_no})`);
     
     try {
         let bearerToken;
@@ -195,64 +197,72 @@ export const processConditionalOrderActivation = async (orderId) => {
         }
 
         let refRes = null;
-        let cardRes = null;
         let woohooOrderId = lockedOrder.woohoo_order_id;
 
-        // If woohoo_order_id is missing or equals refno, query Woohoo order details by refno first (Status API)
-        if (!woohooOrderId || woohooOrderId === lockedOrder.woohoo_reference_no) {
-            try {
-                if (provider === API_PROVIDER.WOOHOO2) {
-                    refRes = await getWoohoo2OrderByRefNo(bearerToken, lockedOrder.woohoo_reference_no);
-                } else {
-                    refRes = await getWoohoo1OrderByRefNo(bearerToken, lockedOrder.woohoo_reference_no);
-                }
-
-                const orderData = unpackWoohooOrderData(refRes);
-                woohooOrderId = orderData.orderId || orderData.order_id || orderData.id || refRes?.orderId || null;
-                if (woohooOrderId && woohooOrderId !== lockedOrder.woohoo_reference_no) {
-                    await pool.query('UPDATE gift_card_orders SET woohoo_order_id = ? WHERE id = ?', [woohooOrderId, orderId]);
-                }
-            } catch (refErr) {
-                logger.warn(`[Activation Flow] Order #${orderId} GET order by refno failed: ${refErr.message}`);
+        // Step 1: Call Order Status API by reference number
+        logger.info(`[Activation Flow] Order Status API called for Order #${orderId} (Ref: ${lockedOrder.woohoo_reference_no})`);
+        try {
+            if (provider === API_PROVIDER.WOOHOO2) {
+                refRes = await getWoohoo2OrderByRefNo(bearerToken, lockedOrder.woohoo_reference_no);
+            } else {
+                refRes = await getWoohoo1OrderByRefNo(bearerToken, lockedOrder.woohoo_reference_no);
             }
-        }
-
-        // Call Activated Cards API if woohooOrderId exists
-        const targetId = woohooOrderId || lockedOrder.woohoo_order_id;
-        if (targetId && targetId !== lockedOrder.woohoo_reference_no) {
-            try {
-                if (provider === API_PROVIDER.WOOHOO2) {
-                    cardRes = await getWoohoo2ActivatedCards(bearerToken, targetId);
-                } else {
-                    cardRes = await getWoohoo1ActivatedCards(bearerToken, targetId);
-                }
-            } catch (cardErr) {
-                logger.warn(`[Activation Flow] Order #${orderId} GET activated cards failed: ${cardErr.message}`);
-            }
-        }
-
-        const cardsFromRef = extractCardsFromWoohooResponse(refRes);
-        const cardsFromCardRes = extractCardsFromWoohooResponse(cardRes);
-        const allExtractedCards = [...cardsFromRef, ...cardsFromCardRes];
-        
-        // Deduplicate cards
-        const extractedCards = [];
-        const seenCardKeys = new Set();
-        for (const c of allExtractedCards) {
-            const key = c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || c.cardId || c.id;
-            if (key && seenCardKeys.has(key)) continue;
-            if (key) seenCardKeys.add(key);
-            extractedCards.push(c);
+        } catch (refErr) {
+            logger.warn(`[Activation Flow] Order Status API call failed for Order #${orderId} (Ref: ${lockedOrder.woohoo_reference_no}): ${refErr.message}`);
         }
 
         const refOrderData = unpackWoohooOrderData(refRes);
-        const cardOrderData = unpackWoohooOrderData(cardRes);
-        const refStatus = (refOrderData?.status || refOrderData?.orderStatus || refOrderData?.state || refRes?.status || '').toLowerCase();
-        const cardStatus = (cardOrderData?.status || cardOrderData?.orderStatus || cardOrderData?.state || cardRes?.status || '').toLowerCase();
-        const statusStr = refStatus || cardStatus || '';
-        const isComplete = statusStr === 'complete' || statusStr === 'success' || statusStr === 'completed' || extractedCards.length > 0;
+        woohooOrderId = refOrderData?.orderId || refOrderData?.order_id || refOrderData?.id || refRes?.orderId || lockedOrder.woohoo_order_id;
+        
+        if (woohooOrderId && woohooOrderId !== lockedOrder.woohoo_reference_no && woohooOrderId !== lockedOrder.woohoo_order_id) {
+            await pool.query('UPDATE gift_card_orders SET woohoo_order_id = ? WHERE id = ?', [woohooOrderId, orderId]);
+        }
 
-        if (isComplete) {
+        const cardsFromRef = extractCardsFromWoohooResponse(refRes);
+        const refStatus = (refOrderData?.status || refOrderData?.orderStatus || refOrderData?.state || refRes?.status || '').toLowerCase();
+        
+        logger.info(`[Activation Flow] Order Status API response for Order #${orderId}: status = '${refStatus || 'UNKNOWN'}', Woohoo Order ID = '${woohooOrderId || 'N/A'}'`);
+
+        const isStatusComplete = refStatus === 'complete' || refStatus === 'success' || refStatus === 'completed' || cardsFromRef.length > 0;
+        const isStatusFailed = refStatus === 'failed' || refStatus === 'cancelled' || refStatus === 'rejected' || refStatus === 'error';
+
+        // Step 2: Evaluate status decision
+        if (isStatusComplete) {
+            // ONLY NOW trigger Activated Cards API / card activation logic
+            logger.info(`[Activation Flow] Decision: Order Status is COMPLETED for Order #${orderId}. Reason: Verified status '${refStatus || 'COMPLETED'}' from Order Status API.`);
+            
+            let cardRes = null;
+            const targetId = woohooOrderId || lockedOrder.woohoo_reference_no;
+
+            // Trigger Activated Cards API ONLY IF cards are not already present in Order Status response
+            if (cardsFromRef.length === 0 && targetId && targetId !== lockedOrder.woohoo_reference_no) {
+                logger.info(`[Activation Flow] Activated Cards API called for Order #${orderId} (Woohoo Order ID: ${targetId}). Reason: Order Status is COMPLETED, fetching card credentials.`);
+                try {
+                    if (provider === API_PROVIDER.WOOHOO2) {
+                        cardRes = await getWoohoo2ActivatedCards(bearerToken, targetId);
+                    } else {
+                        cardRes = await getWoohoo1ActivatedCards(bearerToken, targetId);
+                    }
+                } catch (cardErr) {
+                    logger.warn(`[Activation Flow] Activated Cards API call failed for Order #${orderId}: ${cardErr.message}`);
+                }
+            } else if (cardsFromRef.length > 0) {
+                logger.info(`[Activation Flow] Card credentials obtained directly from Order Status API for Order #${orderId}. Skipping separate Activated Cards API call.`);
+            }
+
+            const cardsFromCardRes = extractCardsFromWoohooResponse(cardRes);
+            const allExtractedCards = [...cardsFromRef, ...cardsFromCardRes];
+            
+            // Deduplicate cards
+            const extractedCards = [];
+            const seenCardKeys = new Set();
+            for (const c of allExtractedCards) {
+                const key = c.cardNumber || c.card_number || c.cardNo || c.number || c.card_no || c.cardId || c.id;
+                if (key && seenCardKeys.has(key)) continue;
+                if (key) seenCardKeys.add(key);
+                extractedCards.push(c);
+            }
+
             const activationRef = cardRes?.orderId || refRes?.orderId || cardRes?.referenceNo || refRes?.referenceNo || `ACT_${orderId}_${Date.now()}`;
             
             await runInTransaction(async (conn) => {
@@ -324,44 +334,62 @@ export const processConditionalOrderActivation = async (orderId) => {
                 reference: activationRef,
                 cardsCount: extractedCards.length
             };
+        } else if (isStatusFailed) {
+            // FAILED / CANCELLED / REJECTED Status
+            logger.warn(`[Activation Flow] Decision: Order Status is ${refStatus.toUpperCase()} for Order #${orderId}. Activated Cards API will NOT be called. Marking order as FAILED.`);
+
+            const failureReason = `Woohoo order status: ${refStatus}`;
+            await pool.query(
+                `UPDATE gift_card_orders 
+                 SET status = 4,
+                     activation_status = ?,
+                     failure_reason = ?
+                 WHERE id = ?`,
+                [ACTIVATION_STATUS.FAILED, failureReason, orderId]
+            );
+
+            return {
+                success: false,
+                eligible: true,
+                status: ACTIVATION_STATUS.FAILED,
+                error: failureReason
+            };
         } else {
-            const statusLower = (refStatus || cardStatus || '').toLowerCase();
-            const isExplicitFailure = statusLower === 'failed' || statusLower === 'cancelled' || statusLower === 'rejected';
-            const targetActStatus = isExplicitFailure ? ACTIVATION_STATUS.FAILED : ACTIVATION_STATUS.PROCESSING;
-            const errorMsg = `Activation API response: ${statusLower || 'pending'}`;
-            
+            // PROCESSING / PENDING / UNKNOWN / API ERROR
+            logger.info(`[Activation Flow] Decision: Order Status is '${refStatus || 'PENDING'}' for Order #${orderId}. Activated Cards API will NOT be called. Keeping order in PROCESSING.`);
+
+            const procReason = `Woohoo order status pending: ${refStatus || 'no response'}`;
             await pool.query(
                 `UPDATE gift_card_orders 
                  SET activation_status = ?,
                      failure_reason = ?
                  WHERE id = ?`,
-                [targetActStatus, errorMsg.substring(0, 255), orderId]
+                [ACTIVATION_STATUS.PROCESSING, procReason.substring(0, 255), orderId]
             );
 
-            logger.warn(`[Activation Flow] Activation response pending for Order #${orderId}. Status: ${targetActStatus}`);
             return {
                 success: false,
                 eligible: true,
-                status: targetActStatus,
-                error: errorMsg
+                status: ACTIVATION_STATUS.PROCESSING,
+                error: procReason
             };
         }
     } catch (apiErr) {
         const errorMsg = apiErr.response?.data?.message || apiErr.message || 'Activation API exception';
+        logger.error(`[Activation Flow] Activation API exception for Order #${orderId}:`, errorMsg);
         
         await pool.query(
             `UPDATE gift_card_orders 
              SET activation_status = ?,
                  failure_reason = ?
              WHERE id = ?`,
-            [ACTIVATION_STATUS.FAILED, errorMsg.substring(0, 255), orderId]
+            [ACTIVATION_STATUS.PROCESSING, errorMsg.substring(0, 255), orderId]
         );
 
-        logger.error(`[Activation Flow] Activation API exception for Order #${orderId}:`, errorMsg);
         return {
             success: false,
             eligible: true,
-            status: ACTIVATION_STATUS.FAILED,
+            status: ACTIVATION_STATUS.PROCESSING,
             error: errorMsg
         };
     }
